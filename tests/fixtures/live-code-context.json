@@ -147,5 +147,30 @@
         "renameEvidence": null
       }
     ]
+  },
+  "producerCompatibility": {
+    "warning": "SYNTHETIC ONLY — independent corpus annotations and code provenance fixtures for L9-E compatibility tests.",
+    "corpusAnnotations": {
+      "nodeId": "cart_add_item",
+      "description": "Independent human-authored corpus description preserved across live producer cycles.",
+      "citations": [
+        {
+          "source_file": "docs/cart-architecture.md",
+          "page": 1,
+          "note": "Synthetic L9-E corpus citation"
+        }
+      ],
+      "communityLabel": "Annotated Commerce Domain",
+      "graphProvenance": {
+        "source_owner": "corpus",
+        "source_id": "synthetic-corpus-v1",
+        "source_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+        "adapter_version": "engram-corpus/1",
+        "input_digest": "2222222222222222222222222222222222222222222222222222222222222222",
+        "observed_at": "2026-01-01T00:00:00.000Z"
+      }
+    },
+    "sourceSnippetPath": "src/cart.ts",
+    "sourceSnippet": "export function addCartItem(items: string[], item: string): string[] {\n  return [...items, item];\n}\n"
   }
 }

@@ -15,29 +15,70 @@ import { fileURLToPath } from "node:url";
 import {
   ADVERTISED_LANGUAGES,
   CAPABILITY_IDS,
+  CONTRACT_VERSION,
+  FACT_SCHEMA_VERSION,
   GRAMMAR_UNAVAILABLE_REASON,
+  MAX_FACT_BATCH_BYTES,
+  POLICY_VERSION,
+  CONTENT_POLICY_VERSION,
+  PRODUCER_NAME,
   describeCapabilities,
+  isStrictBatchId,
+  isStrictGenerationId,
+  isStrictSnapshotId,
   type CapabilityId,
   type CapabilityStatus,
+  type CodeAnalysisFactDto,
+  type CoverageFactDto,
   type CoverageReport,
+  type DeclarationRevocationDto,
   type FactSinkPort,
+  type FactSinkReceipt,
   type GrammarCoverageDto,
   type HistoryPersistencePort,
+  type LiveFactDto,
   type LiveScope,
+  type QualifiedOid,
+  type ReasonAnchorFactDto,
+  type ReasonAnchorPinDto,
+  type RevocationReason,
   type ScopeFencingTokenDto,
   type ValidationResult,
   type WorkspaceDeclarationDto,
+  validateDeclarationRevocation,
   validateFactBatch,
+  validateLiveFact,
+  validateQualifiedOid,
+  validateScopeFencingToken,
   validateWorkspaceDeclaration,
 } from "./contracts.js";
+import { buildFactBatch } from "./batch-codec.js";
+import { classifyPath, containsSecretText } from "./content-policy.js";
 import {
   analyzeCode,
+  toReasonAnchorFact,
   type AnalyzeCodeInput,
   type AnalyzeCodeOutcome,
   type CodeAnalysisPorts,
   type GrammarStatusPort,
   type VerifiedCaptureEvidenceDto,
 } from "./code-analysis.js";
+import { toCodeAnalysisFact } from "./facts.js";
+import { formatProducerGenerationId } from "./generation.js";
+import {
+  createLiveDeclaration,
+  reviseLiveDeclaration,
+  revokeLiveDeclaration,
+  isSameClone,
+  classifyLifecycleEvent,
+  type CreateLiveDeclarationInput,
+  type LiveDeclarationPatch,
+} from "./registration.js";
+import {
+  runUnregisterPurge,
+  type LatestSnapshotPort,
+  type UnregisterPurgeOutcome,
+} from "./snapshots.js";
 import {
   composeFactoryGitExecutor,
   runGithubPrCapability,
@@ -280,6 +321,35 @@ export interface CodeAnalysisRequest {
   readonly cache?: CodeAnalysisPorts["cache"];
   /** Optional live L4a worktree capture to supply verified capture evidence for local (treeOid === null) analysis. */
   readonly capture?: LocalCaptureAnalysisOptions;
+  /** Optional L9-E / L3a-E2 fenced delivery controls for emitting CodeAnalysisFactDto batches via FactSinkPort. */
+  readonly generationId?: string;
+  readonly fencingToken?: ScopeFencingTokenDto;
+  readonly expectedIncarnation?: string;
+  readonly batchId?: string;
+  readonly maxBatchBytes?: number;
+  readonly commit?: QualifiedOid | null;
+  readonly blob?: QualifiedOid | null;
+  readonly pathBytes?: Uint8Array;
+  readonly reasonAnchors?: readonly ReasonAnchorPinDto[];
+}
+
+export interface DisableProducerRequest {
+  readonly reason?: RevocationReason;
+  readonly revocation?: DeclarationRevocationDto;
+  readonly generationId?: string;
+  readonly store?: LatestSnapshotPort;
+}
+
+export interface DisableProducerResult {
+  readonly disabled: true;
+  readonly declarationId: string;
+  readonly cloneId: string;
+  readonly worktreeId: string;
+  readonly declarationRevision: number;
+  readonly revocation: DeclarationRevocationDto;
+  readonly shutdownCompleted: boolean;
+  readonly purgeOutcome: UnregisterPurgeOutcome | null;
+  readonly preservedCommittedHistory: true;
 }
 
 export type CapabilityRequest =
@@ -303,6 +373,9 @@ export interface CodeAnalysisCapabilityResult extends CapabilityStatus {
   readonly analysis?: AnalyzeCodeOutcome;
   /** Present when a live L4a capture was executed to verify local analysis bounds. */
   readonly capture?: CaptureResult;
+  /** Present when fenced FactSinkPort delivery was requested on this code-analysis invocation. */
+  readonly generationId?: string;
+  readonly batches?: readonly DeliveredBatchSummary[];
 }
 
 export type CapabilityResult =
@@ -340,6 +413,7 @@ export interface LiveFactory {
   grammarCoverageReport(language: string): CoverageReport;
   loadGrammar(language: string): Promise<GrammarLoadResult>;
   validateBatch(batch: unknown): ValidationResult;
+  disable(request?: DisableProducerRequest): Promise<DisableProducerResult>;
 }
 
 interface GrammarManifestEntry {
@@ -436,6 +510,9 @@ export function createLiveFactory(options: CreateLiveFactoryOptions): LiveFactor
   const extractor = createProductionParseAdapter(runtime);
 
   function loadHandle(language: string, bytes: Uint8Array, digest: string): Promise<object> {
+    if (disabledRevocation !== null) {
+      return Promise.reject(new Error("producer declaration disabled/revoked"));
+    }
     const cached = grammarHandles.get(language);
     if (cached?.digest === digest) return cached.handle;
     runtimeInit ??= Promise.resolve().then(() => runtime.init?.()).catch((error: unknown) => {
@@ -443,7 +520,13 @@ export function createLiveFactory(options: CreateLiveFactoryOptions): LiveFactor
       throw error;
     });
     const handle = runtimeInit.then(async () => {
+      if (disabledRevocation !== null) {
+        throw new Error("producer declaration disabled/revoked");
+      }
       const grammar = await runtime.loadLanguage(Uint8Array.from(bytes));
+      if (disabledRevocation !== null) {
+        throw new Error("producer declaration disabled/revoked");
+      }
       if (!grammar || typeof grammar !== "object") throw new Error("no grammar handle");
       return grammar;
     }).catch((error: unknown) => {
@@ -523,11 +606,397 @@ export function createLiveFactory(options: CreateLiveFactoryOptions): LiveFactor
     generationCompletion: ports.generationCompletion,
   };
   const schedulingController = createLocalSchedulingController(localContext);
+  let disabledRevocation: DeclarationRevocationDto | null = null;
+
+  interface PreparedCodeDelivery {
+    readonly generationId: string;
+    readonly batchId: string;
+    readonly maxBatchBytes: number;
+    readonly expectedScope: LiveScope;
+    readonly expectedIncarnation?: string;
+    readonly fencingToken: ScopeFencingTokenDto;
+    readonly policyVersion: typeof POLICY_VERSION | typeof CONTENT_POLICY_VERSION;
+    readonly commit?: QualifiedOid | null;
+    readonly blob?: QualifiedOid | null;
+    readonly pathBytes?: Uint8Array;
+    readonly reasonAnchorFacts: readonly ReasonAnchorFactDto[];
+  }
+
+  const HEX_OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+  const HEX_64 = /^[0-9a-f]{64}$/;
+
+  function safePolicyReason(detail: string): string {
+    return containsSecretText(detail) ? "operation refused by content policy" : detail;
+  }
+
+  function readValidClockNowMs():
+    | { readonly ok: true; readonly nowMs: number }
+    | { readonly ok: false; readonly reason: string } {
+    if (!ports.clock || typeof ports.clock.now !== "function") {
+      return { ok: false, reason: "missing host clock port (ports.clock.now)" };
+    }
+    let nowMs: number;
+    try {
+      nowMs = ports.clock.now();
+    } catch (error) {
+      return { ok: false, reason: `host clock port refused: ${safePolicyReason(errorMessage(error))}` };
+    }
+    if (typeof nowMs !== "number" || !Number.isSafeInteger(nowMs) || nowMs <= 0) {
+      return { ok: false, reason: "host clock port must return a positive safe-integer Unix millisecond timestamp" };
+    }
+    return { ok: true, nowMs };
+  }
+
+  function cloneScopeFencingToken(token: ScopeFencingTokenDto): ScopeFencingTokenDto {
+    return {
+      tokenId: token.tokenId,
+      scope: {
+        tenant: token.scope.tenant,
+        clone: token.scope.clone,
+        ...(token.scope.worktree !== undefined ? { worktree: token.scope.worktree } : {}),
+      },
+      epoch: token.epoch,
+      epochId: token.epochId,
+      declarationRevision: token.declarationRevision,
+      projectionIncarnation: token.projectionIncarnation,
+      issuedAt: token.issuedAt,
+      expiresAt: token.expiresAt,
+    };
+  }
+
+  function cloneQualifiedOidOrNull(oid: QualifiedOid | null | undefined): QualifiedOid | null | undefined {
+    if (oid === undefined || oid === null) return oid;
+    return { algorithm: oid.algorithm, oid: oid.oid };
+  }
+
+  function screenLocalAnalysisOutputs(analysis: AnalyzeCodeOutcome): string | null {
+    for (const sym of analysis.symbols) {
+      if (
+        containsSecretText(sym.name) ||
+        containsSecretText(sym.slot) ||
+        containsSecretText(sym.path) ||
+        !classifyPath(sym.path).allowed
+      ) {
+        return `local code-analysis symbol refused by content policy (${CONTENT_POLICY_VERSION})`;
+      }
+    }
+    for (const call of analysis.calls) {
+      if (
+        containsSecretText(call.from) ||
+        containsSecretText(call.target) ||
+        containsSecretText(call.path) ||
+        !classifyPath(call.path).allowed
+      ) {
+        return `local code-analysis call refused by content policy (${CONTENT_POLICY_VERSION})`;
+      }
+    }
+    for (const edge of analysis.inheritances) {
+      if (
+        containsSecretText(edge.child) ||
+        containsSecretText(edge.parent) ||
+        containsSecretText(edge.path) ||
+        !classifyPath(edge.path).allowed
+      ) {
+        return `local code-analysis inheritance refused by content policy (${CONTENT_POLICY_VERSION})`;
+      }
+    }
+    for (const item of analysis.unresolved) {
+      if (containsSecretText(item.name) || containsSecretText(item.reason)) {
+        return `local code-analysis unresolved entry refused by content policy (${CONTENT_POLICY_VERSION})`;
+      }
+    }
+    return null;
+  }
+
+  function wantsCodeDelivery(codeReq: CodeAnalysisRequest | undefined): boolean {
+    if (!codeReq) return false;
+    return (
+      codeReq.generationId !== undefined ||
+      codeReq.fencingToken !== undefined ||
+      codeReq.expectedIncarnation !== undefined ||
+      codeReq.batchId !== undefined ||
+      codeReq.maxBatchBytes !== undefined ||
+      codeReq.commit !== undefined ||
+      codeReq.blob !== undefined ||
+      codeReq.pathBytes !== undefined ||
+      codeReq.reasonAnchors !== undefined
+    );
+  }
+
+  function validateCodeDelivery(
+    codeReq: CodeAnalysisRequest,
+  ): { readonly ok: true; readonly prepared: PreparedCodeDelivery } | { readonly ok: false; readonly reason: string } {
+    if (disabledRevocation !== null) {
+      return { ok: false, reason: "producer declaration disabled/revoked" };
+    }
+    if (!ports.factSink || typeof ports.factSink.deliver !== "function") {
+      return { ok: false, reason: "missing host fact sink port (ports.factSink.deliver)" };
+    }
+    const clockCheck = readValidClockNowMs();
+    if (!clockCheck.ok) return clockCheck;
+    const nowMs = clockCheck.nowMs;
+    if (!codeReq.objects || typeof codeReq.objects.loadBlob !== "function") {
+      return { ok: false, reason: "code-analysis delivery requires an injected retained-object port (objects.loadBlob)" };
+    }
+    const generationId = codeReq.generationId;
+    if (!isStrictGenerationId(generationId)) {
+      return { ok: false, reason: 'code-analysis request.generationId must be a strict fixed-width generation id ("gen:" plus 10 digits)' };
+    }
+    const genDigits = generationId.slice("gen:".length);
+    const batchId = codeReq.batchId ?? `batch:code-analysis:${genDigits}:000001`;
+    if (!isStrictBatchId(batchId, "batch:")) {
+      return { ok: false, reason: 'code-analysis request.batchId must be a strict opaque batch id starting with "batch:"' };
+    }
+    const maxBatchBytes = codeReq.maxBatchBytes ?? MAX_FACT_BATCH_BYTES;
+    if (typeof maxBatchBytes !== "number" || !Number.isSafeInteger(maxBatchBytes) || maxBatchBytes <= 0 || maxBatchBytes > MAX_FACT_BATCH_BYTES) {
+      return { ok: false, reason: `code-analysis request.maxBatchBytes must be a positive safe integer <= ${MAX_FACT_BATCH_BYTES}` };
+    }
+    const expectedIncarnation = codeReq.expectedIncarnation;
+    if (expectedIncarnation !== undefined && (typeof expectedIncarnation !== "string" || expectedIncarnation.length === 0)) {
+      return { ok: false, reason: "code-analysis request.expectedIncarnation must be a non-empty string when present" };
+    }
+
+    const input = codeReq.input;
+    if (typeof input.language !== "string" || input.language.length === 0 || input.language.includes("\0")) {
+      return { ok: false, reason: "code-analysis input.language must be a non-empty string without NUL" };
+    }
+    if (typeof input.path !== "string" || input.path.length === 0 || input.path.includes("\0")) {
+      return { ok: false, reason: "code-analysis input.path must be a non-empty string without NUL" };
+    }
+    if (typeof input.content !== "string") {
+      return { ok: false, reason: "code-analysis input.content must be a string" };
+    }
+    if (typeof input.configHash !== "string" || !HEX_64.test(input.configHash)) {
+      return { ok: false, reason: "code-analysis input.configHash must be a 64-character lowercase hex digest" };
+    }
+    if (typeof input.dependencyHash !== "string" || !HEX_64.test(input.dependencyHash)) {
+      return { ok: false, reason: "code-analysis input.dependencyHash must be a 64-character lowercase hex digest" };
+    }
+    if (input.treeOid !== null && (typeof input.treeOid !== "string" || !HEX_OID.test(input.treeOid))) {
+      return { ok: false, reason: "code-analysis input.treeOid must be null or a 40/64-character lowercase hex OID" };
+    }
+
+    const isCommitted = input.treeOid !== null;
+    if (isCommitted && input.snapshotId != null) {
+      return { ok: false, reason: "committed code-analysis compatibility delivery cannot reference a local snapshotId" };
+    }
+    if (!isCommitted) {
+      if (!isStrictSnapshotId(input.snapshotId)) {
+        return { ok: false, reason: "local code-analysis delivery requires a valid non-null lsnap snapshotId" };
+      }
+      if (codeReq.reasonAnchors !== undefined || codeReq.commit !== undefined) {
+        return { ok: false, reason: "local snapshot-bound code-analysis delivery cannot attach committed commit or reasonAnchors" };
+      }
+      const pathPolicy = classifyPath(input.path);
+      if (!pathPolicy.allowed) {
+        return { ok: false, reason: `local code-analysis delivery refused: ${pathPolicy.reason}` };
+      }
+      if (containsSecretText(input.language) || containsSecretText(input.path) || containsSecretText(input.content)) {
+        return { ok: false, reason: `local code-analysis delivery refused by content policy (${CONTENT_POLICY_VERSION})` };
+      }
+    }
+
+    let clonedPathBytes: Uint8Array | undefined;
+    if (codeReq.pathBytes !== undefined) {
+      if (!(codeReq.pathBytes instanceof Uint8Array) || !ArrayBuffer.isView(codeReq.pathBytes)) {
+        return { ok: false, reason: "code-analysis request.pathBytes must be a Uint8Array when present" };
+      }
+      clonedPathBytes = Uint8Array.from(codeReq.pathBytes);
+      if (clonedPathBytes.byteLength === 0 || clonedPathBytes.includes(0)) {
+        return { ok: false, reason: "code-analysis request.pathBytes must be non-empty and NUL-free" };
+      }
+      if (!isCommitted) {
+        const pathBytesPolicy = classifyPath(clonedPathBytes);
+        if (!pathBytesPolicy.allowed) {
+          return { ok: false, reason: `local code-analysis delivery refused: ${pathBytesPolicy.reason}` };
+        }
+      }
+    }
+
+    const expectedScope: LiveScope = isCommitted
+      ? { tenant: declaration.tenant, clone: declaration.cloneId }
+      : { tenant: declaration.tenant, clone: declaration.cloneId, worktree: declaredWorktreeId };
+    const token = codeReq.fencingToken;
+    const tokenCheck = validateScopeFencingToken(token, expectedScope, expectedIncarnation, nowMs);
+    if (!tokenCheck.ok) {
+      return { ok: false, reason: `code-analysis fencing token rejected: ${tokenCheck.errors.join("; ")}` };
+    }
+    if (token!.declarationRevision !== declaration.declarationRevision) {
+      return { ok: false, reason: "code-analysis fencing token declarationRevision mismatch" };
+    }
+    const clonedToken = cloneScopeFencingToken(token!);
+
+    const expectedAlg = isCommitted ? (input.treeOid!.length === 64 ? "sha256" : "sha1") : undefined;
+    for (const [label, oid] of [["commit", codeReq.commit], ["blob", codeReq.blob]] as const) {
+      if (oid === undefined || oid === null) continue;
+      const oidCheck = validateQualifiedOid(oid);
+      if (!oidCheck.ok) {
+        return { ok: false, reason: `code-analysis ${label} OID rejected: ${oidCheck.errors.join("; ")}` };
+      }
+      if (expectedAlg !== undefined && oid.algorithm !== expectedAlg) {
+        return { ok: false, reason: `code-analysis ${label} algorithm mismatch (${oid.algorithm} !== ${expectedAlg})` };
+      }
+    }
+
+    const reasonAnchorFacts: ReasonAnchorFactDto[] = [];
+    if (codeReq.reasonAnchors !== undefined) {
+      if (!Array.isArray(codeReq.reasonAnchors)) {
+        return { ok: false, reason: "code-analysis request.reasonAnchors must be an array" };
+      }
+      for (const pin of codeReq.reasonAnchors) {
+        try {
+          reasonAnchorFacts.push(toReasonAnchorFact(scope, pin));
+        } catch (error) {
+          return { ok: false, reason: `code-analysis reasonAnchor rejected: ${safePolicyReason(errorMessage(error))}` };
+        }
+      }
+    }
+
+    return {
+      ok: true,
+      prepared: {
+        generationId,
+        batchId,
+        maxBatchBytes,
+        expectedScope,
+        ...(expectedIncarnation !== undefined ? { expectedIncarnation } : {}),
+        fencingToken: clonedToken,
+        policyVersion: isCommitted ? POLICY_VERSION : CONTENT_POLICY_VERSION,
+        ...(codeReq.commit !== undefined ? { commit: cloneQualifiedOidOrNull(codeReq.commit) } : {}),
+        ...(codeReq.blob !== undefined ? { blob: cloneQualifiedOidOrNull(codeReq.blob) } : {}),
+        ...(clonedPathBytes !== undefined ? { pathBytes: clonedPathBytes } : {}),
+        reasonAnchorFacts,
+      },
+    };
+  }
+
+  async function deliverPreparedCodeBatch(
+    prepared: PreparedCodeDelivery,
+    input: AnalyzeCodeInput,
+    analysis: AnalyzeCodeOutcome,
+    probe: GrammarProbe,
+  ): Promise<{ readonly ok: true; readonly batches: readonly DeliveredBatchSummary[] } | { readonly ok: false; readonly reason: string }> {
+    if (disabledRevocation !== null) {
+      return { ok: false, reason: "producer declaration disabled/revoked" };
+    }
+    if (prepared.policyVersion === CONTENT_POLICY_VERSION) {
+      if (
+        !classifyPath(input.path).allowed ||
+        containsSecretText(input.language) ||
+        containsSecretText(input.path) ||
+        containsSecretText(input.content)
+      ) {
+        return { ok: false, reason: `local code-analysis delivery refused by content policy (${CONTENT_POLICY_VERSION})` };
+      }
+      if (prepared.pathBytes !== undefined && !classifyPath(prepared.pathBytes).allowed) {
+        return { ok: false, reason: `local code-analysis delivery refused by content policy (${CONTENT_POLICY_VERSION})` };
+      }
+      const derivedPolicyViolation = screenLocalAnalysisOutputs(analysis);
+      if (derivedPolicyViolation !== null) {
+        return { ok: false, reason: derivedPolicyViolation };
+      }
+    }
+
+    const clockCheck = readValidClockNowMs();
+    if (!clockCheck.ok) return clockCheck;
+    const checkedAt = clockCheck.nowMs;
+
+    let built: ReturnType<typeof buildFactBatch>;
+    try {
+      const grammarEvidence = probe.state === "available"
+        ? { version: probe.version, digest: probe.bytesSha256, grammarId: `tree-sitter-${probe.language}` }
+        : { version: null };
+      const codeFact: CodeAnalysisFactDto = toCodeAnalysisFact(input, analysis, grammarEvidence, {
+        ...(prepared.commit !== undefined ? { commit: prepared.commit } : {}),
+        ...(prepared.blob !== undefined ? { blob: prepared.blob } : {}),
+        ...(prepared.pathBytes !== undefined ? { pathBytes: prepared.pathBytes } : {}),
+        policyVersion: prepared.policyVersion,
+      });
+
+      const rawReason = analysis.coverage.reason && !containsSecretText(analysis.coverage.reason)
+        ? analysis.coverage.reason
+        : `code-analysis ${analysis.state}`;
+      const coverageFact: CoverageFactDto = {
+        kind: "coverage",
+        schemaVersion: FACT_SCHEMA_VERSION,
+        axis: "ast",
+        state: analysis.coverage.state,
+        reason: rawReason,
+        checkedAt,
+        pendingCount: analysis.state === "complete" ? 0 : 1,
+        pendingFrontier: null,
+        lastSuccessAt: analysis.state === "complete" ? checkedAt : null,
+      };
+
+      const facts: LiveFactDto[] = [codeFact, ...prepared.reasonAnchorFacts, coverageFact];
+      for (const fact of facts) {
+        const check = validateLiveFact(fact);
+        if (!check.ok) {
+          return { ok: false, reason: `code-analysis fact validation failed: ${check.errors.join("; ")}` };
+        }
+      }
+
+      built = buildFactBatch(
+        {
+          scope: prepared.expectedScope,
+          producerName: PRODUCER_NAME,
+          contractVersion: CONTRACT_VERSION,
+          policyVersion: prepared.policyVersion,
+          generationId: prepared.generationId,
+          batchId: prepared.batchId,
+          facts,
+        },
+        { maxBytes: prepared.maxBatchBytes },
+      );
+    } catch (error) {
+      return { ok: false, reason: `code-analysis batch preparation refused: ${safePolicyReason(errorMessage(error))}` };
+    }
+
+    if (disabledRevocation !== null) {
+      return { ok: false, reason: "producer declaration disabled/revoked before code-analysis batch delivery" };
+    }
+    const deliverClock = readValidClockNowMs();
+    if (!deliverClock.ok) return deliverClock;
+    const recheck = validateScopeFencingToken(
+      prepared.fencingToken,
+      prepared.expectedScope,
+      prepared.expectedIncarnation,
+      deliverClock.nowMs,
+    );
+    if (!recheck.ok) {
+      return { ok: false, reason: `code-analysis fencing token expired or revoked before delivery: ${recheck.errors.join("; ")}` };
+    }
+    if (prepared.fencingToken.declarationRevision !== declaration.declarationRevision) {
+      return { ok: false, reason: "code-analysis fencing token declarationRevision mismatch before delivery" };
+    }
+    let receipt: FactSinkReceipt;
+    try {
+      receipt = await ports.factSink.deliver(built.batch, cloneScopeFencingToken(prepared.fencingToken));
+    } catch (error) {
+      return { ok: false, reason: `fact sink refused code-analysis batch ${built.batch.batchId}: ${safePolicyReason(errorMessage(error))}` };
+    }
+    if (!receipt || typeof receipt !== "object" || receipt.received !== true || receipt.batchId !== built.batch.batchId) {
+      return { ok: false, reason: `fact sink returned invalid acknowledgement for batch ${built.batch.batchId}` };
+    }
+    return {
+      ok: true,
+      batches: [{
+        batchId: built.batch.batchId,
+        batchDigest: built.batch.batchDigest,
+        byteLength: built.encoded.byteLength,
+        factCount: built.batch.facts.length,
+        receipt,
+      }],
+    };
+  }
 
   async function runCapabilityImpl(capability: CapabilityId, request?: CapabilityRequest): Promise<CapabilityResult> {
     const status = describeCapabilities().find((entry) => entry.capability === capability);
     if (!status) {
       throw new Error(`unknown capability "${String(capability)}"; known capabilities: ${CAPABILITY_IDS.join(", ")}`);
+    }
+    if (disabledRevocation !== null) {
+      return { ...status, state: "unavailable", delivered: false, reason: "producer declaration disabled/revoked" };
     }
     if (status.state === "unavailable") {
       return { ...status, state: "unavailable", delivered: false };
@@ -571,16 +1040,33 @@ export function createLiveFactory(options: CreateLiveFactoryOptions): LiveFactor
         throw new Error("code-analysis input must be a plain object");
       }
       const pinned = structuredClone(input);
+      const invalidDeliveryTreeOid =
+        wantsCodeDelivery(codeRequest) &&
+        pinned.treeOid !== null &&
+        (typeof pinned.treeOid !== "string" || !HEX_OID.test(pinned.treeOid));
       const worktreeId = pinned.treeOid === null ? declaredWorktreeId : null;
       const requestedScope: LiveScope = pinned.scope;
       const scopeWorktree = requestedScope?.worktree;
-      if (requestedScope?.tenant !== scope.tenant || requestedScope.clone !== scope.clone
-        || (scopeWorktree != null && scopeWorktree !== worktreeId)
-        || (pinned.worktreeId != null && pinned.worktreeId !== worktreeId)) {
+      if (
+        requestedScope?.tenant !== scope.tenant ||
+        requestedScope.clone !== scope.clone ||
+        (!invalidDeliveryTreeOid &&
+          ((scopeWorktree != null && scopeWorktree !== worktreeId) ||
+            (pinned.worktreeId != null && pinned.worktreeId !== worktreeId)))
+      ) {
         throw new Error("code-analysis scope does not match the workspace declaration");
       }
       const analysisScope: LiveScope = worktreeId === null ? scope : { ...scope, worktree: worktreeId };
       operation = { ...codeRequest, input: { ...pinned, worktreeId, scope: analysisScope } };
+    }
+
+    let preparedDelivery: PreparedCodeDelivery | undefined;
+    if (operation !== undefined && wantsCodeDelivery(operation)) {
+      const check = validateCodeDelivery(operation);
+      if (!check.ok) {
+        return { ...status, capability: "code-analysis", state: "unavailable", delivered: false, reason: check.reason };
+      }
+      preparedDelivery = check.prepared;
     }
 
     let liveCapture: CaptureResult | undefined;
@@ -600,7 +1086,14 @@ export function createLiveFactory(options: CreateLiveFactoryOptions): LiveFactor
     }
 
     const manifest = await loadManifest();
+    if (disabledRevocation !== null) {
+      return { ...status, capability: "code-analysis", state: "unavailable", delivered: false, reason: "producer declaration disabled/revoked" };
+    }
     const probes = await Promise.all(ADVERTISED_LANGUAGES.map((language) => probeGrammar(language, manifest, true)));
+    if (disabledRevocation !== null) {
+      grammarHandles.clear();
+      return { ...status, capability: "code-analysis", state: "unavailable", delivered: false, reason: "producer declaration disabled/revoked" };
+    }
     const languages = probes.map(grammarCoverageFor);
     for (const coverage of languages) latestGrammarCoverage.set(coverage.language, coverage);
     const available: CodeAnalysisCapabilityResult = { ...status, capability: "code-analysis", state: "available", delivered: true, languages };
@@ -619,7 +1112,41 @@ export function createLiveFactory(options: CreateLiveFactoryOptions): LiveFactor
     const probe = probes.find(({ language }) => language === input.language)
       ?? await probeGrammar(input.language, manifest, true);
     latestGrammarCoverage.set(input.language, grammarCoverageFor(probe));
-    const analysis = await analyzeCode(input, { extractor, grammar: grammarFor(probe), objects, cache: effectiveCache });
+    let analysis: AnalyzeCodeOutcome;
+    if (preparedDelivery !== undefined) {
+      try {
+        analysis = await analyzeCode(input, { extractor, grammar: grammarFor(probe), objects, cache: effectiveCache });
+      } catch (error) {
+        return {
+          ...status,
+          capability: "code-analysis",
+          state: "unavailable",
+          delivered: false,
+          reason: `code-analysis execution failed: ${safePolicyReason(errorMessage(error))}`,
+        };
+      }
+    } else {
+      analysis = await analyzeCode(input, { extractor, grammar: grammarFor(probe), objects, cache: effectiveCache });
+    }
+    if (disabledRevocation !== null) {
+      grammarHandles.clear();
+      return { ...status, capability: "code-analysis", state: "unavailable", delivered: false, reason: "producer declaration disabled/revoked" };
+    }
+
+    if (preparedDelivery !== undefined) {
+      const delivered = await deliverPreparedCodeBatch(preparedDelivery, input, analysis, probe);
+      if (!delivered.ok) {
+        return { ...status, capability: "code-analysis", state: "unavailable", delivered: false, reason: delivered.reason };
+      }
+      return {
+        ...available,
+        analysis,
+        ...(liveCapture !== undefined ? { capture: liveCapture } : {}),
+        generationId: preparedDelivery.generationId,
+        batches: delivered.batches,
+      };
+    }
+
     return {
       ...available,
       analysis,
@@ -652,7 +1179,26 @@ export function createLiveFactory(options: CreateLiveFactoryOptions): LiveFactor
     },
 
     async loadGrammar(language: string): Promise<GrammarLoadResult> {
+      if (disabledRevocation !== null) {
+        const unavailableResult: GrammarLoadResult = {
+          language,
+          state: "unavailable",
+          reason: "producer declaration disabled/revoked",
+        };
+        latestGrammarCoverage.set(language, grammarCoverageFor(unavailableResult));
+        return unavailableResult;
+      }
       const probe = await probeGrammar(language, await loadManifest(), false);
+      if (disabledRevocation !== null) {
+        grammarHandles.clear();
+        const unavailableResult: GrammarLoadResult = {
+          language,
+          state: "unavailable",
+          reason: "producer declaration disabled/revoked",
+        };
+        latestGrammarCoverage.set(language, grammarCoverageFor(unavailableResult));
+        return unavailableResult;
+      }
       latestGrammarCoverage.set(language, grammarCoverageFor(probe));
       if (probe.state === "unavailable") return probe;
       return { language, state: "available", grammar: probe.grammar, bytesSha256: probe.bytesSha256 };
@@ -660,6 +1206,68 @@ export function createLiveFactory(options: CreateLiveFactoryOptions): LiveFactor
 
     validateBatch(batch: unknown): ValidationResult {
       return validateFactBatch(batch);
+    },
+
+    async disable(disableRequest?: DisableProducerRequest): Promise<DisableProducerResult> {
+      const revocation = disableRequest?.revocation ?? revokeLiveDeclaration(declaration, disableRequest?.reason ?? "policy-withdrawn");
+      const revCheck = validateDeclarationRevocation(revocation);
+      if (!revCheck.ok) {
+        throw new Error(`invalid producer revocation: ${revCheck.errors.join("; ")}`);
+      }
+      if (
+        revocation.declarationId !== declaration.declarationId ||
+        revocation.tenant !== declaration.tenant ||
+        revocation.cloneId !== declaration.cloneId ||
+        revocation.worktreeId !== declaration.worktreeId ||
+        revocation.declarationRevision !== declaration.declarationRevision
+      ) {
+        throw new Error("producer disable revocation does not match factory declaration");
+      }
+      if (disableRequest?.generationId !== undefined && !isStrictGenerationId(disableRequest.generationId)) {
+        throw new Error('producer disable generationId must be a strict fixed-width generation id ("gen:" plus 10 digits)');
+      }
+
+      // Latch fence synchronously BEFORE awaiting shutdown or private purge so no
+      // concurrent capability, grammar load, or sink delivery can slip past disable().
+      disabledRevocation = revocation;
+      grammarHandles.clear();
+
+      if (ports.scheduling !== undefined) {
+        const reconcileStatus = describeCapabilities().find((entry) => entry.capability === "reconciliation")!;
+        const shutdownRes = await runReconciliationCapability(
+          reconcileStatus,
+          localContext,
+          {
+            generationId: disableRequest?.generationId ?? formatProducerGenerationId(9_999_999_999),
+            action: "shutdown",
+          },
+          schedulingController,
+        );
+        if (shutdownRes.state !== "available" || shutdownRes.action !== "shutdown") {
+          throw new Error(
+            `producer disable scheduled shutdown failed: ${shutdownRes.state === "unavailable" ? shutdownRes.reason : "unexpected reconciliation action"}`,
+          );
+        }
+      }
+
+      const targetStore = disableRequest?.store ?? ports.content?.latestSnapshots;
+      let purgeOutcome: UnregisterPurgeOutcome | null = null;
+      if (targetStore !== undefined) {
+        purgeOutcome = await runUnregisterPurge({ revocation, store: targetStore });
+      }
+
+      grammarHandles.clear();
+      return {
+        disabled: true,
+        declarationId: declaration.declarationId,
+        cloneId: declaration.cloneId,
+        worktreeId: declaration.worktreeId,
+        declarationRevision: declaration.declarationRevision,
+        revocation,
+        shutdownCompleted: true,
+        purgeOutcome,
+        preservedCommittedHistory: true,
+      };
     },
   };
 }
@@ -678,8 +1286,20 @@ export {
   deriveCloneIdentity,
   deriveWorktreeIdentity,
   deriveDeclarationIdentity,
+  createLiveDeclaration,
+  reviseLiveDeclaration,
+  revokeLiveDeclaration,
+  isSameClone,
+  classifyLifecycleEvent,
+  type CreateLiveDeclarationInput,
+  type LiveDeclarationPatch,
   type DeclarationIdentityDto,
   type DeriveCloneIdentityInput,
   type DeriveWorktreeIdentityInput,
   type DeriveDeclarationIdentityInput,
 } from "./registration.js";
+export {
+  runUnregisterPurge,
+  type UnregisterPurgeInput,
+  type UnregisterPurgeOutcome,
+} from "./snapshots.js";
