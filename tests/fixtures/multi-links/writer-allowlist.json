@@ -4102,5 +4102,14 @@
     "fingerprint": "eb27441b8f704dbb222e6dae202a773f851c152043a4d6cf8a89585ea7ff7df1",
     "reason": "snapshots/state/results of a scrap run in the user-named output directory, not graph records",
     "count": 1
+  },
+  {
+    "file": "src/model-schemas.ts",
+    "line": 237,
+    "owner": "<module>",
+    "kind": "edge-row-constructor",
+    "fingerprint": "e157a5782563691b040af5616009dd16fedf33f156cf383648ceeef1e63a81cd",
+    "reason": "Validation schema of the relation-type fields (source, target, …), a static field-check table; no edge row and no record write",
+    "count": 1
   }
 ]
