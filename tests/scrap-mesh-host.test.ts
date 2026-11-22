@@ -27,7 +27,7 @@ function twoOut(): { d: string; res: string } {
   return { d, res: join(d, "results.ndjson") };
 }
 
-const lines = (d: string): any[] => readFileSync(join(d, "results.ndjson"), "utf-8").trim().split("\n").map((l) => JSON.parse(l));
+const lines = (d: string): any[] => readFileSync(join(d, "results.ndjson"), "utf-8").trim().split("\n").map((l) => JSON.parse(l)).filter((r) => r.type !== "summary");
 
 // Stub adapter client: answers canned JSON keyed by prompt, with usage, like a
 // seat transport would (the host never sees a real seat here).

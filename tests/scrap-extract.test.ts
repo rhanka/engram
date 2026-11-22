@@ -28,7 +28,7 @@ function twoOut(): any {
   return { d, res: join(d, "results.ndjson") };
 }
 const row = (d: string): any => JSON.parse(readFileSync(join(d, "results.ndjson"), "utf-8").split("\n")[0]);
-const lines = (d: string): any[] => readFileSync(join(d, "results.ndjson"), "utf-8").trim().split("\n").map((l) => JSON.parse(l));
+const lines = (d: string): any[] => readFileSync(join(d, "results.ndjson"), "utf-8").trim().split("\n").map((l) => JSON.parse(l)).filter((r) => r.type !== "summary");
 const run = (t: any, model: string): Promise<void> => runExtract({ out: t.d, mission: join(t.d, "mission.json"), model }, t.client);
 describe("scrap extract", () => {
   it("extracts fields with verified quotes, tokens, and skips failed ids", async () => {
@@ -36,7 +36,7 @@ describe("scrap extract", () => {
     await run(t, "gemini-4-hydrogen");
     expect(row(t.d).fields.street).toEqual({ value: "12 rue des Fleurs", quote: "12 rue des Fleurs", sha256: expect.any(String) });
     expect(row(t.d).tokens).toEqual({ input: 10, output: 5 });
-    expect(readFileSync(join(t.d, "results.ndjson"), "utf-8").trim().split("\n").length).toBe(1);
+    expect(lines(t.d).length).toBe(1);
   });
   it("nulls fields whose quote is not in the snapshot", async () => {
     const t = fakeOut({ street: { value: "12 rue des Fleurs", quote: "12 rue des Fleurs" }, city: { value: "Lyon", quote: "99 imaginary road" } });

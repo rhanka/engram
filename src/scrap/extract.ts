@@ -1,11 +1,12 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createDirectTextJsonClient, directProviderCredentialEnv, parseJsonFromLlmText, type DirectLlmProvider } from "../llm-execution.js";
-import { isSeatAcquisitionError } from "../llm-mesh-bridge.js";
-export interface MissionField { name: string; max_values?: number }
+import { getMeshErrorAttempts, isRoutePlanError, isSeatAcquisitionError } from "../llm-mesh-bridge.js";
+export interface RecordSubField { name: string; instruction?: string }
+export interface MissionField { name: string; kind?: "scalar" | "record"; max_values?: number; fields?: RecordSubField[] }
 export interface PriceTable { source: string; as_of: string; per_million: { input: number; output: number; reasoning?: number } }
 export interface ExtractOptions { out: string; mission: string; model: string; tokenCap?: number; retryFailed?: boolean }
-export interface Mission { fields: (string | MissionField)[]; instruction: string; tokenCap?: number; reasoning_budget_tokens?: number; price_table?: PriceTable }
+export interface Mission { fields: (string | MissionField)[]; instruction: string; tokenCap?: number; reasoning_budget_tokens?: number; price_table?: PriceTable; calls_window_minutes?: number }
 export type ExtractErrorCode = "missing_credentials" | "llm_error" | "parse_error" | "empty_response" | "write_error";
 // Minimal structural client: the real TextJsonGenerationClient satisfies it, and
 // stubs mimic the real client by answering through validateResponse in memory.
@@ -13,17 +14,23 @@ export interface ExtractClient {
   generateJson(input: { schema: string; prompt: string; maxOutputTokens?: number; validateResponse?: (text: string) => void | Promise<void> }): Promise<{ audit?: unknown; text?: unknown }>;
 }
 export interface MeshClientDeps {
-  createMeshClient?: (alias: string) => Promise<{ client: ExtractClient; effort?: string }>;
+  createMeshClient?: (alias: string) => Promise<{ client: ExtractClient; effort?: string; provider?: string; model?: string }>;
+  now?: () => number;
 }
 // Usage errors the CLI maps to exit 2 (bad invocation, unknown model, no
 // credentials, no mesh seat): raised before any provider request is made.
 export function isExtractUsageError(e: unknown): boolean {
-  return /cannot infer provider|missing credentials|unknown mesh alias|no usable mesh seat|no seat executor/.test(String(e));
+  return /cannot infer provider|missing credentials|unknown mesh alias|no usable mesh seat|no seat executor|invalid mission/.test(String(e));
 }
-type FieldSpec = { name: string; maxValues: number };
+type FieldSpec = { name: string; kind: "scalar" | "record"; maxValues: number; subFields?: RecordSubField[] };
 type TokenCounts = { input: number; output: number; reasoning: number; total: number };
+type WindowBucket = { startMs: number; endMs: number; calls: number; byModel: Record<string, number> };
 const textOf = (h: string): string => h.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 const num = (v: unknown): number | undefined => typeof v === "number" && Number.isFinite(v) ? v : undefined;
+const str = (v: unknown): string | undefined => typeof v === "string" && v.trim() ? v.trim() : undefined;
+const quoteOf = (v: unknown): string | null => typeof v === "string" && v.trim() ? v : null;
+const isoZ = (ms: number): string => new Date(ms).toISOString().replace(".000Z", "Z");
+const sortRec = (r: Record<string, number>): Record<string, number> => Object.fromEntries(Object.keys(r).sort().map((k) => [k, r[k]!]));
 const isObj = (v: unknown): v is Record<string, unknown> => Boolean(v && typeof v === "object" && !Array.isArray(v));
 const KNOWN: string[] = ["anthropic", "openai", "gemini", "mistral", "cohere"];
 const GUESS: Record<string, DirectLlmProvider> = { claude: "anthropic", gpt: "openai", o1: "openai", o3: "openai", o4: "openai", gemini: "gemini", mistral: "mistral", ministral: "mistral", codestral: "mistral", cohere: "cohere", command: "cohere" };
@@ -34,16 +41,35 @@ export function providerOf(model: string): { provider: DirectLlmProvider; name: 
   if (g) return { provider: g, name: model };
   throw new Error(`scrap extract: cannot infer provider from model ${JSON.stringify(model)} (use provider:model)`);
 }
-const specsOf = (m: Mission): FieldSpec[] => m.fields.map((f) => typeof f === "string"
-  ? { name: f, maxValues: 1 }
-  : { name: f.name, maxValues: Math.min(5, Math.max(1, num(f.max_values) !== undefined ? Math.floor(f.max_values!) : 1)) });
+const specsOf = (m: Mission): FieldSpec[] => {
+  if (!Array.isArray(m?.fields)) throw new Error("scrap extract: invalid mission (requires fields array)");
+  return m.fields.map((f) => {
+    const name = typeof f === "string" ? str(f) : (isObj(f) ? str(f.name) : undefined);
+    if (!name) throw new Error(`scrap extract: invalid mission field ${JSON.stringify(f)} (requires non-empty name)`);
+    if (typeof f === "string") return { name, kind: "scalar", maxValues: 1 };
+    const mf = f as unknown as MissionField;
+    if (mf.kind !== undefined && mf.kind !== "scalar" && mf.kind !== "record") throw new Error(`scrap extract: invalid mission field kind ${JSON.stringify(mf.kind)} on ${JSON.stringify(name)}`);
+    const maxValues = Math.min(5, Math.max(1, num(mf.max_values) !== undefined ? Math.floor(mf.max_values!) : 1));
+    if (mf.kind !== "record") return { name, kind: "scalar", maxValues };
+    const rawSubs = Array.isArray(mf.fields) ? mf.fields : [];
+    const subFields = rawSubs.filter((sf) => isObj(sf) && Boolean(str(sf.name))).map((sf) => ({ name: sf.name.trim(), ...(str(sf.instruction) ? { instruction: sf.instruction!.trim() } : {}) }));
+    if (rawSubs.length === 0 || subFields.length !== rawSubs.length) throw new Error(`scrap extract: invalid mission record field ${JSON.stringify(name)} (requires non-empty fields)`);
+    return { name, kind: "record", maxValues, subFields };
+  });
+};
 export function buildPrompt(m: Mission, names: string[], text: string): string {
   const specs = specsOf(m);
-  if (!specs.some((f) => f.maxValues > 1)) {
+  if (!specs.some((f) => f.kind === "record" || f.maxValues > 1)) {
     return `${m.instruction}\nFields: ${names.join(", ")}\nReturn a JSON object with one entry per field: {"value": string|null, "quote": string|null} where quote is copied verbatim from the page text below.\n\n${text}`;
   }
-  const list = specs.map((f) => f.maxValues > 1 ? `${f.name} (array of up to ${f.maxValues})` : f.name).join(", ");
-  return `${m.instruction}\nFields: ${list}\nReturn a JSON object with one entry per field: single-value fields as {"value": string|null, "quote": string|null}; multi-value fields as an array of up to max_values objects [{"value": string, "quote": string}] (or [] if none). Every quote must be copied verbatim from the page text below.\n\n${text}`;
+  if (!specs.some((f) => f.kind === "record")) {
+    const list = specs.map((f) => f.maxValues > 1 ? `${f.name} (array of up to ${f.maxValues})` : f.name).join(", ");
+    return `${m.instruction}\nFields: ${list}\nReturn a JSON object with one entry per field: single-value fields as {"value": string|null, "quote": string|null}; multi-value fields as an array of up to max_values objects [{"value": string, "quote": string}] (or [] if none). Every quote must be copied verbatim from the page text below.\n\n${text}`;
+  }
+  const list = specs.map((f) => f.kind === "record"
+    ? `${f.name} (array of up to ${f.maxValues} records with sub-fields: ${f.subFields!.map((sf) => sf.instruction ? `${sf.name} (${sf.instruction})` : sf.name).join("; ")})`
+    : (f.maxValues > 1 ? `${f.name} (array of up to ${f.maxValues})` : f.name)).join(", ");
+  return `${m.instruction}\nFields: ${list}\nReturn a JSON object with one entry per field: single-value fields as {"value": string|null, "quote": string|null}; multi-value scalar fields as an array of up to max_values objects [{"value": string, "quote": string}] (or [] if none); record fields as an array of up to max_values record objects [{<sub_field>: {"value": string|null, "quote": string|null}, ...}] (or [] if none). Every quote must be copied verbatim from the page text below.\n\n${text}`;
 }
 function usageCounts(raw: unknown): TokenCounts | null {
   if (!isObj(raw)) return null;
@@ -97,9 +123,47 @@ export async function runExtract(oc: ExtractOptions, client?: ExtractClient, dep
   const todo = [...latest.values()].filter((s) => s.status === "ok" && (!lastErr.has(s.id) || (oc.retryFailed === true && lastErr.get(s.id) !== null)));
   const pt = validPriceTable(mission.price_table);
   const tot: TokenCounts = { input: 0, output: 0, reasoning: 0, total: 0 };
-  let totApi = 0, apiKnown = pt !== null, okCount = 0, failCount = 0;
-  const logSummary = (): void => console.log(`scrap extract summary: ok=${okCount} failed=${failCount} tokens=in:${tot.input},out:${tot.output},reasoning:${tot.reasoning},total:${tot.total} api_equivalent=${apiKnown ? totApi.toFixed(6) : "unknown"}`);
-  if (todo.length === 0) { logSummary(); return; }
+  const rawWin = num(mission.calls_window_minutes);
+  const winMin = rawWin !== undefined && Math.floor(rawWin) >= 1 ? Math.floor(rawWin) : 60;
+  const winMs = winMin * 60_000, clock = deps?.now ?? Date.now;
+  const windows = new Map<number, WindowBucket>(), callsByModel: Record<string, number> = {};
+  let totApi = 0, apiKnown = pt !== null, okCount = 0, failCount = 0, callsTotal = 0;
+  let lastSeatQuota: Record<string, unknown> | undefined, summarized = false;
+  let defaultProv = pm?.provider ?? "mesh", defaultMod = pm?.name ?? meshAlias!;
+  const recordCall = (src?: unknown, attemptsOnly = false): number => {
+    const a = isObj(src) ? (isObj(src.audit) ? src.audit : src) : undefined;
+    const attempts = getMeshErrorAttempts(src) ?? (Array.isArray(a?.attempts) ? a.attempts : undefined);
+    const items = attempts ?? (attemptsOnly || isRoutePlanError(src) ? [] : [a]);
+    let n = 0;
+    for (const it of items) {
+      if (attempts && !isObj(it)) continue;
+      const o = isObj(it) ? it : undefined, key = `${str(o?.providerId) ?? str(o?.provider) ?? defaultProv}/${str(o?.modelId) ?? str(o?.model) ?? defaultMod}`;
+      const startMs = Math.floor(clock() / winMs) * winMs;
+      let b = windows.get(startMs);
+      if (!b) { b = { startMs, endMs: startMs + winMs, calls: 0, byModel: {} }; windows.set(startMs, b); }
+      b.calls++; b.byModel[key] = (b.byModel[key] ?? 0) + 1; callsByModel[key] = (callsByModel[key] ?? 0) + 1; callsTotal++; n++;
+    }
+    return n;
+  };
+  const finish = (): void => {
+    if (summarized) return;
+    summarized = true;
+    const calls_by_window = [...windows.values()].sort((a, b) => a.startMs - b.startMs).map((b) => ({
+      window_start: isoZ(b.startMs), window_end: isoZ(b.endMs), calls: b.calls, by_model: sortRec(b.byModel),
+    }));
+    const winStr = calls_by_window.map((w) => `${w.window_start}=${w.calls}(${Object.entries(w.by_model).map(([k, v]) => `${k}:${v}`).join(";")})`).join(",");
+    console.log(`scrap extract summary: ok=${okCount} failed=${failCount} tokens=in:${tot.input},out:${tot.output},reasoning:${tot.reasoning},total:${tot.total} api_equivalent=${apiKnown ? totApi.toFixed(6) : "unknown"} calls=${callsTotal}${winStr ? ` windows=${winStr}` : ""}`);
+    if (callsTotal > 0) {
+      const sum = {
+        type: "summary", ok: okCount, failed: failCount, calls_total: callsTotal, calls_window_minutes: winMin,
+        calls_by_window, calls_by_model: sortRec(callsByModel), tokens: { ...tot },
+        cost: { api_equivalent: apiKnown ? Number(totApi.toFixed(9)) : "unknown", seat_quota: lastSeatQuota ?? "unknown" },
+      };
+      try { appendFileSync(resPath, `${JSON.stringify(sum)}\n`, "utf-8"); }
+      catch (e) { console.error(`scrap extract: summary write_error: ${e instanceof Error ? e.message : String(e)}`); }
+    }
+  };
+  if (todo.length === 0) { finish(); return; }
   // Fail fast with exit 2 (via CLI) before any paid request: without this,
   // the real client would throw inside generateJson per id and poison rows.
   // Mesh seats need no API key; the host resolves them from local seats.
@@ -109,6 +173,8 @@ export async function runExtract(oc: ExtractOptions, client?: ExtractClient, dep
     const factory = deps?.createMeshClient ?? (async (alias: string) => (await import("./mesh-host.js")).createScrapMeshClient(alias));
     const meshRes = await factory(meshAlias);
     cli = meshRes.client; effort = meshRes.effort;
+    if (str(meshRes.provider)) defaultProv = meshRes.provider!;
+    if (str(meshRes.model)) defaultMod = meshRes.model!;
   } else {
     const envs = directProviderCredentialEnv(pm!.provider);
     if (!envs.some((e) => process.env[e]?.trim())) throw new Error(`scrap extract: missing credentials for ${pm!.provider} (missing_credentials); set one of ${envs.join(", ")} before any request`);
@@ -146,18 +212,21 @@ export async function runExtract(oc: ExtractOptions, client?: ExtractClient, dep
         // No temp files: the answer comes back through validateResponse in memory.
         res = await cli.generateJson({ schema: "scrap-extract", prompt: curPrompt, maxOutputTokens, validateResponse: (t) => { rawText = t; } });
       } catch (e) {
-        if (isSeatAcquisitionError(e)) throw e;
-        const eu = isObj(e) ? (isObj(e.audit) ? e.audit.usage : e.usage) : undefined;
+        const ea = isObj(e) && isObj(e.audit) ? e.audit : undefined;
+        if (isSeatAcquisitionError(e)) { if (recordCall(e, true) > 0) lastSeatQuota = isObj(ea?.quota) ? ea.quota : undefined; if (callsTotal > 0) finish(); throw e; }
+        const eu = ea ? ea.usage : (isObj(e) ? e.usage : undefined);
         if (eu !== undefined) { recordUsage(eu); mergedUsage = mergeUsage(mergedUsage, eu); }
         const m = e instanceof Error ? e.message : String(e);
         if (/missing.*cred|missing_credentials/i.test(m)) { fail(s, "missing_credentials", m); failed = true; break; }
+        if (recordCall(e) > 0) { const q = isObj(ea?.quota) ? ea.quota : undefined; seatQuota = q; lastSeatQuota = q; }
         if (/empty or filtered response/i.test(m)) { fail(s, "empty_response", m); failed = true; break; }
         if (/not valid JSON/i.test(m) && attempt === 0) { parseErr = m; prevRaw = rawText; continue; }
         fail(s, /not valid JSON/i.test(m) ? "parse_error" : "llm_error", m); failed = true; break;
       }
-      const audit = isObj(res.audit) ? res.audit : undefined;
-      recordUsage(audit?.usage);
-      if (audit) { lastAudit = audit; if (audit.usage !== undefined) mergedUsage = mergeUsage(mergedUsage, audit.usage); if (isObj(audit.quota)) seatQuota = audit.quota; }
+      recordCall(res);
+      const audit = isObj(res.audit) ? res.audit : undefined, q = isObj(audit?.quota) ? audit.quota : undefined;
+      recordUsage(audit?.usage); seatQuota = q; lastSeatQuota = q;
+      if (audit) { lastAudit = audit; if (audit.usage !== undefined) mergedUsage = mergeUsage(mergedUsage, audit.usage); }
       const cand = res.text, text = typeof cand === "string" ? cand : rawText;
       if (text === null || text === undefined || !text.trim()) { fail(s, "empty_response", "LLM returned empty or filtered response"); failed = true; break; }
       let got: unknown;
@@ -170,7 +239,33 @@ export async function runExtract(oc: ExtractOptions, client?: ExtractClient, dep
     const fields: Record<string, unknown> = {};
     for (const f of specs) {
       const raw = gotObj[f.name];
-      if (f.maxValues > 1) {
+      if (f.kind === "record") {
+        const arr = Array.isArray(raw) ? raw : (raw == null ? [] : [raw]);
+        const values: Record<string, unknown>[] = [];
+        let dropped = 0, subDropped = 0;
+        for (const item of arr) {
+          if (item == null) continue;
+          if (!isObj(item)) { dropped++; continue; }
+          const rec: Record<string, unknown> = {};
+          let passed = 0, failedSubs = 0, seenNull = 0;
+          for (const sf of f.subFields!) {
+            const rawSub = item[sf.name];
+            if (rawSub == null || (isObj(rawSub) && "value" in rawSub && rawSub.value == null)) {
+              rec[sf.name] = { value: null, quote: null, sha256: null };
+              if (sf.name in item) seenNull++;
+              continue;
+            }
+            const e = isObj(rawSub) && "value" in rawSub ? rawSub : undefined;
+            const q = quoteOf(e?.quote);
+            const hit = q ? texts.find((t) => t.text.includes(q)) : undefined;
+            if (!e || !q || !hit) { rec[sf.name] = { value: null, quote: null, sha256: null, reason: "unverified_quote" }; failedSubs++; }
+            else { rec[sf.name] = { value: e.value, quote: q, sha256: hit.sha }; passed++; }
+          }
+          if (passed === 0) { if (failedSubs > 0 || (Object.keys(item).length > 0 && seenNull === 0)) dropped++; }
+          else if (values.length < f.maxValues) { values.push(rec); subDropped += failedSubs; }
+        }
+        fields[f.name] = { values, unverified_dropped: dropped, unverified_subfields: subDropped };
+      } else if (f.maxValues > 1) {
         const arr = Array.isArray(raw) ? raw : (raw == null ? [] : [raw]);
         const values: { value: unknown; quote: string; sha256: string }[] = [];
         let dropped = 0;
@@ -178,13 +273,13 @@ export async function runExtract(oc: ExtractOptions, client?: ExtractClient, dep
           if (item == null) continue;
           if (!isObj(item) || !("value" in item)) { dropped++; continue; }
           if (item.value == null) continue;
-          const q = typeof item.quote === "string" && item.quote ? item.quote : null;
+          const q = quoteOf(item.quote);
           const hit = q ? texts.find((t) => t.text.includes(q)) : undefined;
           if (!q || !hit) dropped++; else if (values.length < f.maxValues) values.push({ value: item.value, quote: q, sha256: hit.sha });
         }
         fields[f.name] = { values, unverified_dropped: dropped };
       } else {
-        const e = isObj(raw) ? raw : undefined, q = typeof e?.quote === "string" && e.quote ? e.quote : null;
+        const e = isObj(raw) ? raw : undefined, q = quoteOf(e?.quote);
         const hit = q ? texts.find((t) => t.text.includes(q)) : undefined;
         if (!e || e.value == null) fields[f.name] = { value: null, quote: null, sha256: null };
         else if (!q || !hit) fields[f.name] = { value: null, quote: null, sha256: null, reason: "unverified_quote" };
@@ -202,5 +297,5 @@ export async function runExtract(oc: ExtractOptions, client?: ExtractClient, dep
     try { appendFileSync(resPath, `${JSON.stringify({ id: s.id, url: s.url, fields, ...extra })}\n`, "utf-8"); okCount++; }
     catch (e) { failCount++; console.error(`scrap extract: ${s.id} write_error: cannot append row: ${e instanceof Error ? e.message : String(e)}`); }
   }
-  logSummary();
+  finish();
 }

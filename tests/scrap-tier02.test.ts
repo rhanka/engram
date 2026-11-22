@@ -36,7 +36,7 @@ const okRow = (id: string, shas: string[] = [S1]): Record<string, unknown> => ({
 });
 
 const readRows = (d: string): any[] =>
-  readFileSync(join(d, "results.ndjson"), "utf-8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l));
+  readFileSync(join(d, "results.ndjson"), "utf-8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)).filter((r) => r.type !== "summary");
 
 function stubFacade(completeResult?: unknown): any {
   return {
@@ -583,13 +583,13 @@ describe("scrap tier 0.2", () => {
     try {
       const logsDone = await captureLogs(() => runExtract({ out: dIso, mission: join(dIso, "mission.json"), model: "openai:gpt-5-mini" }));
       expect(logsDone.find((l) => l.includes("scrap extract summary"))).toBe(
-        "scrap extract summary: ok=0 failed=0 tokens=in:0,out:0,reasoning:0,total:0 api_equivalent=0.000000",
+        "scrap extract summary: ok=0 failed=0 tokens=in:0,out:0,reasoning:0,total:0 api_equivalent=0.000000 calls=0",
       );
 
       const dNone = makeDir({ fields: ["company"], instruction: "Extract." }, [{ id: "dns1", url: "http://x/1", status: "dns", pages: [] }]);
       const logsNone = await captureLogs(() => runExtract({ out: dNone, mission: join(dNone, "mission.json"), model: "openai:gpt-5-mini" }));
       expect(logsNone.find((l) => l.includes("scrap extract summary"))).toBe(
-        "scrap extract summary: ok=0 failed=0 tokens=in:0,out:0,reasoning:0,total:0 api_equivalent=unknown",
+        "scrap extract summary: ok=0 failed=0 tokens=in:0,out:0,reasoning:0,total:0 api_equivalent=unknown calls=0",
       );
     } finally {
       if (savedKey !== undefined) process.env.OPENAI_API_KEY = savedKey;
