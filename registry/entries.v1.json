@@ -151,7 +151,7 @@
           "role": "provider",
           "path": "dist/mcp-memory.js",
           "mediaType": "application/javascript",
-          "sha256": "b642873bf23acd9070beebd38c0d94816508c9655cec57648a6962e40f872107"
+          "sha256": "cabcd7bc018f4ede68c7614b7c91e814d2009ec541efbb54d8a98eea7927a3fc"
         },
         {
           "role": "validator",
