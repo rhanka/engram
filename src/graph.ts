@@ -1,5 +1,8 @@
 import Graph from "graphology";
 import { isAbsolute, relative, resolve } from "node:path";
+import { assertionIdentityOf } from "./relation-remap.js";
+
+export { assertionIdentityOf };
 import { enforceMemoryFreshnessForSurface } from "./graph-memory-projection.js";
 import { canonicalBytes } from "./ontology-guardian/canonical.js";
 import { closedTemporalBounds } from "./temporal-interval.js";
@@ -42,14 +45,6 @@ const record = (value: unknown): value is Attributes => value !== null && typeof
 const observationFields = ["source_file", "source_location", "citations", "confidence", "confidence_score", "derivation_method", "evidence_refs", "extractor", "t", "t_end"] as const;
 const derivedFields = new Set<string>([...observationFields, "derivation_methods", "evidence_observations"]);
 const identityFields = new Set(["source", "target", "_src", "_tgt", "relation"]);
-
-export function assertionIdentityOf(source: unknown, target: unknown, attrs: Attributes = {}): { src: string; tgt: string; relation: string } {
-  return {
-    src: String(attrs._src ?? source),
-    tgt: String(attrs._tgt ?? target),
-    relation: typeof attrs.relation === "string" && attrs.relation.length > 0 ? attrs.relation : "related_to",
-  };
-}
 
 export function edgeKey(src: string, tgt: string, relation: string): string {
   return JSON.stringify([src, tgt, relation]);

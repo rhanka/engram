@@ -18,7 +18,7 @@
 
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -2234,3 +2234,183 @@ function resolutionContextOf(
     treeOid: input.treeOid,
   };
 }
+
+describe("L5-P2a closed core of the reused extraction", () => {
+  it("a live extraction through the closed core completes and is served warm from the injected store with no call of a root host default", async () => {
+    // L5-P2a RED (plan/09 L5-P): the test imports the closed core directly,
+    // injects the parser runtime explicitly as the package entry will, and
+    // replaces every other host default by a stub that counts its calls and
+    // throws. It runs the same extraction twice on one injected store and
+    // asserts three things: the first run stores an envelope through the
+    // injected store, the second run is a warm hit served from it, and
+    // every stub has recorded zero call. A stub that only throws still lets
+    // the live path complete (its two cache calls sit in try blocks), so the
+    // zero-call count is required: it proves the live path consults no host
+    // default. It fails on the receiving base: no closed core exists there.
+    const core = await import("../src/extract-core.js");
+    const dir = mkdtempSync(join(tmpdir(), "live-closed-core-"));
+    const file = join(dir, "sample.ts");
+    writeFileSync(file, "export function probe(): string {\n  return \"probe\";\n}\n");
+    const wasm = verifiedSourceGrammar("typescript");
+    const runtime = await import("web-tree-sitter");
+    const previous = core.getExtractCoreHost();
+    const calls: Record<string, number> = {};
+    const counting = (name: string) => (..._args: never[]): never => {
+      calls[name] = (calls[name] ?? 0) + 1;
+      throw new Error(`closed-core test: root host default called: ${name}`);
+    };
+    core.bindExtractCoreHost({
+      parserRuntime: {
+        init: () => runtime.Parser.init(),
+        loadLanguage: (bytes) => runtime.Language.load(bytes),
+        createParser: (language) => {
+          const parser = new runtime.Parser();
+          parser.setLanguage(language as never);
+          return parser;
+        },
+      },
+      resolveModule: counting("resolveModule"),
+      shebangInterpreter: counting("shebangInterpreter"),
+      sanitizeLabel: counting("sanitizeLabel"),
+      fileCacheLoad: counting("fileCacheLoad"),
+      fileCacheSave: counting("fileCacheSave"),
+    });
+    try {
+      const entries = new Map<string, string>();
+      const loads: string[] = [];
+      const stores: string[] = [];
+      const ports = {
+        cacheStore: {
+          authorize(): void {},
+          load(key: string): string | null {
+            loads.push(key);
+            return entries.get(key) ?? null;
+          },
+          store(key: string, value: string): void {
+            stores.push(key);
+            entries.set(key, value);
+          },
+        },
+        grammarWasm: { bytesFor: (language: string) => (language === "typescript" ? wasm : null) },
+        scope: { tenant: "local:owner", clone: "clone:closed-core" },
+        read: { ...fixtureFs, context: { kind: "tree", treeOid: "a".repeat(40) } },
+      };
+      const first = await core.extractWithDiagnostics([file], ports);
+      expect(first.extraction.nodes.length, "closed-core live extraction yields nodes").toBeGreaterThan(0);
+      expect(first.diagnostics, "no diagnostics on valid grammar").toEqual([]);
+      expect(entries.size, "first run stores an envelope through the injected store").toBeGreaterThan(0);
+      // Exact call signature: the first run probes the store (miss) and the
+      // save checks for an existing entry before storing. A loadFromLiveStore
+      // that never consulted the store would show only 1 load here.
+      expect(loads.length, "first run probes the store on load and on save").toBe(2);
+      expect(stores.length, "first run stores one envelope through the injected store").toBe(1);
+      const loadsAfterFirst = loads.length;
+      const storesAfterFirst = stores.length;
+      const second = await core.extractWithDiagnostics([file], ports);
+      expect(second.extraction.nodes, "second run is a warm hit served from the injected store").toEqual(
+        first.extraction.nodes,
+      );
+      // Exact warm-hit signature: the second run consults the store exactly
+      // once (the loadFromLiveStore hit) and never stores again (the
+      // continue skips saveToLiveStore). Deleting the warm-load branch would
+      // cost a second load inside saveToLiveStore; removing the save dedup
+      // would cost a store.
+      expect(loads.length - loadsAfterFirst, "second run is served by one warm store load").toBe(1);
+      expect(
+        stores.length - storesAfterFirst,
+        "second run is a warm hit: the continue skips saveToLiveStore so nothing is stored again",
+      ).toBe(0);
+      expect(calls, "no root host default is consulted on the live path").toEqual({});
+    } finally {
+      core.bindExtractCoreHost(previous);
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("loadFromLiveStore and saveToLiveStore refuse a memory-carrying payload without a freshness decision", async () => {
+    // L5-P2a round-3 R3-m2: the closed core refuses (neither serves nor
+    // stores) a memory-carrying payload when no projection port decides its
+    // freshness. The root wrappers pass their gate explicitly, so this
+    // refusal keeps the closed set free of the projection module.
+    const keys = await import("../src/live-cache-keys.js");
+    const backing = new Map<string, string>();
+    const store = {
+      authorize(): void {},
+      load(key: string): string | null {
+        return backing.get(key) ?? null;
+      },
+      store(key: string, value: string): void {
+        backing.set(key, value);
+      },
+    };
+    const scope = { tenant: "local:owner", clone: "clone:memory-refusal" };
+    const memoryPayload = { nodes: [{ id: "n1", file_type: "memory", label: "m" }], edges: [] };
+    const memoryBind = { scope, kind: "reused-extraction", path: "memory.ts" };
+    const memoryOptions = { liveKey: "memory-key", liveBind: memoryBind };
+    expect(() => keys.saveToLiveStore(store, "memory.ts", memoryPayload, root, memoryOptions)).toThrow(
+      /^PROJECTION_STALE/,
+    );
+    expect(backing.size, "a refused payload is never stored").toBe(0);
+    keys.saveToLiveStore(store, "memory.ts", memoryPayload, root, memoryOptions, () => {});
+    expect(backing.size, "an explicit freshness decision stores the payload").toBe(1);
+    expect(() => keys.loadFromLiveStore(store, "memory.ts", root, memoryOptions)).toThrow(/^PROJECTION_STALE/);
+    const served = keys.loadFromLiveStore(store, "memory.ts", root, memoryOptions, () => {});
+    expect(served, "an explicit freshness decision serves the payload").toEqual(memoryPayload);
+    const plainPayload = { nodes: [{ id: "n1", label: "plain" }], edges: [] };
+    const plainOptions = { liveKey: "plain-key", liveBind: { ...memoryBind, path: "plain.ts" } };
+    keys.saveToLiveStore(store, "plain.ts", plainPayload, root, plainOptions);
+    expect(keys.loadFromLiveStore(store, "plain.ts", root, plainOptions)).toEqual(plainPayload);
+  });
+
+  it("bindExtractCoreHost initializes a replaced parser runtime once", async () => {
+    // F-07: ensureParserInit must run init() once per bound runtime
+    // instance, not once per process. Replacing the runtime after an
+    // earlier caller initialized the previous one must initialize the new
+    // one; otherwise the neutral entry would silently reuse a stale runtime.
+    const core = await import("../src/extract-core.js");
+    const previous = core.getExtractCoreHost();
+    const dir = mkdtempSync(join(tmpdir(), "live-core-runtime-"));
+    const file = join(dir, "sample.ts");
+    writeFileSync(file, "export function probe(): string {\n  return \"probe\";\n}\n");
+    const wasm = verifiedSourceGrammar("typescript");
+    const runtime = await import("web-tree-sitter");
+    const inits = [0, 0];
+    const wrap = (slot: 0 | 1) => ({
+      init: async (): Promise<void> => {
+        inits[slot] += 1;
+        await runtime.Parser.init();
+      },
+      loadLanguage: (bytes: Uint8Array): Promise<unknown> => runtime.Language.load(bytes),
+      createParser: (language: unknown): never => {
+        const parser = new runtime.Parser();
+        parser.setLanguage(language as never);
+        return parser as never;
+      },
+    });
+    const portsFor = () => ({
+      cacheStore: {
+        authorize(): void {},
+        load(): string | null {
+          return null;
+        },
+        store(): void {},
+      },
+      grammarWasm: { bytesFor: (language: string) => (language === "typescript" ? wasm : null) },
+      scope: { tenant: "local:owner", clone: "clone:runtime-rebind" },
+      read: { ...fixtureFs, context: { kind: "tree", treeOid: "a".repeat(40) } },
+    });
+    try {
+      core.bindExtractCoreHost({ parserRuntime: wrap(0) });
+      const first = await core.extractWithDiagnostics([file], portsFor());
+      expect(first.extraction.nodes.length, "extraction completes on the first runtime").toBeGreaterThan(0);
+      expect(inits[0], "the first bound runtime is initialized").toBe(1);
+      core.bindExtractCoreHost({ parserRuntime: wrap(1) });
+      const second = await core.extractWithDiagnostics([file], portsFor());
+      expect(second.extraction.nodes.length, "extraction completes on the replaced runtime").toBeGreaterThan(0);
+      expect(inits[1], "a replaced parser runtime is initialized once").toBe(1);
+    } finally {
+      core.bindExtractCoreHost(previous);
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
