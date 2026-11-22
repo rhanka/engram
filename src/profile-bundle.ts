@@ -13,7 +13,7 @@ import type {
   RegistryRecord,
 } from "./types.js";
 import { toJsonValue, type JsonValue } from "./json-value.js";
-export type { Cardinality, EnumDomain, FieldPair, LogicalType, ModelAttribute, ModelEdge, ModelEndpoints, ModelHeader, ModelRow, Names, Reference, TextDomain } from "./model-schemas.js";
+export type { Cardinality, EnumDomain, FieldPair, LogicalType, ModelAttribute, ModelEdge, ModelEndpoints, ModelHeader, ModelNode, ModelRow, Names, Reference, TextDomain } from "./model-schemas.js";
 
 export const PROFILE_BUNDLE_SCHEMA_V1 = "engram.profile-bundle/v1" as const;
 
@@ -240,7 +240,7 @@ function bundleProfileInternal(
           errors: [{
             severity: "error",
             code: "invalid_profile_syntax",
-            path: "profile",
+            path: typeof (err as { path?: unknown })?.path === "string" ? (err as { path: string }).path : "profile",
             message: err instanceof Error ? err.message : String(err),
           }],
           warnings: [],
@@ -507,7 +507,7 @@ function bundleProfileInternal(
           regErrors.push({ severity: "error", code: "invalid_registry_data", path: basePath, message: "Malformed record fields" });
           continue;
         }
-        const dupKey = `${r.id}\0${r.partition ?? ""}`;
+        const dupKey = normalized.data_model !== undefined ? r.id : `${r.id}\0${r.partition ?? ""}`;
         if (seenKeys.has(dupKey)) {
           regErrors.push({ severity: "error", code: "invalid_registry_data", path: `${basePath}.id`, message: `Duplicate record (${r.id}, ${r.partition ?? ""})` });
         }
