@@ -91,7 +91,7 @@ describe("shared provenance registry (L4)", () => {
     const manifest = JSON.parse(readFileSync(join(root, "candidate-manifest.json"), "utf8")) as {
       exports: Record<string, Record<string, string>>;
     };
-    expect(Object.keys(pkg.exports).sort()).toEqual(Object.keys(manifest.exports).sort());
+    expect(Object.keys(pkg.exports).sort()).toEqual([...Object.keys(manifest.exports), "./session-front-contracts"].sort());
     expect(pkg.exports["./archi"]).toEqual({
       types: "./dist/archi.d.ts",
       import: "./dist/archi.js",
@@ -99,6 +99,10 @@ describe("shared provenance registry (L4)", () => {
     expect(pkg.exports["./archi-mermaid"]).toEqual({
       types: "./dist/archi-mermaid.d.ts",
       import: "./dist/archi-mermaid.js",
+    });
+    expect(pkg.exports["./session-front-contracts"]).toEqual({
+      types: "./dist/session-front-contracts.d.ts",
+      import: "./dist/session-front-contracts.js",
     });
     for (const [key, value] of Object.entries(manifest.exports)) {
       expect(pkg.exports[key], `exports[${key}]`).toEqual(value);
