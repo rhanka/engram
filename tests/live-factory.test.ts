@@ -32,6 +32,7 @@ import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
+import { Language, Parser } from "web-tree-sitter";
 import {
   buildCorpus,
   detectGitCapabilities,
@@ -39,15 +40,27 @@ import {
   LiveGitSandbox,
 } from "./helpers/live-git-fixtures.js";
 import {
+  CAPABILITY_IDS,
+  CONTENT_POLICY_VERSION,
+  CONTENT_UNAVAILABLE,
   CONTRACT_VERSION,
+  COVERAGE_AXES,
+  GENERATION_CONTROL_VERSION,
   POLICY_VERSION,
   PRODUCER_NAME,
+  STORAGE_KERNEL_AUTHORITY,
   describeCapabilities,
   validateFactBatch,
+  validateLocalSnapshot,
   validateRetentionReceipt,
+  validateScopeFencingToken,
+  validateSealedLocalDiff,
+  type BatchDeliveryReceiptDto,
   type FactBatchDto,
   type FactSinkPort,
   type FactSinkReceipt,
+  type GenerationCompletionMessageDto,
+  type GenerationCompletionOutcomeDto,
   type GithubRepositoryDto,
   type HistoryCheckpointDto,
   type HistoryCommitFactDto,
@@ -55,6 +68,9 @@ import {
   type HistoryCompletionState,
   type HistoryPersistencePort,
   type LiveScope,
+  type LocalDiffDto,
+  type LocalDiffEndpointDto,
+  type LocalSnapshotDto,
   type PrObjectJobDto,
   type PrPageDto,
   type PrSyncCursorDto,
@@ -68,11 +84,16 @@ import {
 } from "../engram-live/contracts.js";
 import { decodeFactBatch, encodeFactBatch } from "../engram-live/batch-codec.js";
 import { classifyLiveFactKind } from "../engram-live/facts.js";
-import { formatProducerGenerationId } from "../engram-live/generation.js";
+import {
+  createGenerationCorrelation,
+  formatProducerGenerationId,
+  type GenerationCompletionPort,
+} from "../engram-live/generation.js";
 import {
   createLiveFactory,
   deriveDeclarationIdentity,
   type GitPort,
+  type GrammarRuntimePort,
   type LiveFactoryPorts,
 } from "../engram-live/integration.js";
 import { observeRepository } from "../engram-live/repository.js";
@@ -90,6 +111,33 @@ import type {
   GitProcessPort,
 } from "../engram-live/git-stream.js";
 import type { GitSpawnFn } from "../engram-live/git-executor.js";
+import { scanValuesForLeak, type KeyProviderPort } from "../engram-live/content-policy.js";
+import type {
+  ContentProtectionPort,
+  LatestSnapshotPort,
+  LatestSnapshotQuery,
+  LatestSnapshotScope,
+  PurgePrivateReceipt,
+  ReplaceLatestReceipt,
+  SealedPayload,
+} from "../engram-live/snapshots.js";
+import { analyzeCode, type RetainedObjectsPort } from "../engram-live/code-analysis.js";
+import { buildVerifiedCaptureEvidence } from "../engram-live/factory-local.js";
+import { allCurrent, type SourceVector } from "../engram-live/coverage.js";
+import { Scheduler, scopeIdentity, type SchedulerBudgets, type WorkItem } from "../engram-live/scheduler.js";
+import type { WatchEvent, WatchPort } from "../engram-live/watch.js";
+import type {
+  CollectOptions,
+  DiscoveryLimits,
+  DiscoveryPage,
+  MarkerStore,
+  PublishGenerationReport,
+  PublishGenerationRequest,
+  ReconcileScan,
+  SourceValidationReport,
+  WriterAuthority,
+  WriterRequest,
+} from "../engram-live/reconcile.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const prFixturePath = join(root, "tests", "fixtures", "live-github-pages.json");
@@ -511,7 +559,7 @@ function buildL0Setup(box: LiveGitSandbox) {
   return { format, corpus, repository, declaration, cloneScope, fencingToken, hooksDir };
 }
 
-function makeNoopAuxPorts(): Pick<LiveFactoryPorts, "filesystem" | "clock" | "content" | "cache" | "grammarRuntime"> {
+function makeNoopAuxPorts(): Pick<LiveFactoryPorts, "filesystem" | "clock" | "grammarRuntime"> {
   return {
     filesystem: {
       async readFileBytes(path: string): Promise<Uint8Array> {
@@ -519,8 +567,6 @@ function makeNoopAuxPorts(): Pick<LiveFactoryPorts, "filesystem" | "clock" | "co
       },
     },
     clock: { now: () => FIXTURE_NOW },
-    content: { liveContentSeam: "host-content" },
-    cache: { liveCacheSeam: "host-cache" },
     grammarRuntime: {
       init() {},
       async loadLanguage(): Promise<object> {
@@ -569,19 +615,13 @@ describe("E-ASM2 committed-history capabilities behind the factory", () => {
       },
     });
 
-    // Single source of capability status: 5 capabilities available (4 from E-ASM2 + code-analysis).
+    // Single source of capability status: all 10 capabilities available (E-ASM3).
     expect(factory.describeCapabilities()).toEqual(describeCapabilities());
     const availableIds = factory
       .describeCapabilities()
       .filter((entry) => entry.state === "available")
       .map((entry) => entry.capability);
-    expect(availableIds).toEqual([
-      "refs",
-      "history-dag",
-      "github-pr",
-      "code-analysis",
-      "retention-requests",
-    ]);
+    expect(availableIds).toEqual([...CAPABILITY_IDS]);
 
     // 1. refs capability on real L0 corpus through SafeGitExecutor.
     const refsGenId = formatProducerGenerationId(1);
@@ -1148,8 +1188,6 @@ describe("E-ASM2 committed-history capabilities behind the factory", () => {
         const basePorts = {
           filesystem: { async readFileBytes() { throw new Error("unused"); } },
           clock: { now: () => data.now },
-          content: { liveContentSeam: "host-content" },
-          cache: { liveCacheSeam: "host-cache" },
           grammarRuntime: { init() {}, async loadLanguage() { throw new Error("unused"); }, createParser() { throw new Error("unused"); } },
           factSink: { async deliver(batch) { return { received: true, batchId: batch.batchId }; } },
         };
@@ -1191,16 +1229,20 @@ describe("E-ASM2 committed-history capabilities behind the factory", () => {
     // Ensure built dist/integration.js is fresh for the node ESM child probe.
     const distIntegration = join(root, "engram-live", "dist", "integration.js");
     const distFactoryHistory = join(root, "engram-live", "dist", "factory-history.js");
+    const distFactoryLocal = join(root, "engram-live", "dist", "factory-local.js");
     const srcNewest = Math.max(
       statSync(join(root, "engram-live", "contracts.ts")).mtimeMs,
       statSync(join(root, "engram-live", "integration.ts")).mtimeMs,
       statSync(join(root, "engram-live", "factory-history.ts")).mtimeMs,
+      statSync(join(root, "engram-live", "factory-local.ts")).mtimeMs,
     );
     const needBuild =
       !existsSync(distIntegration) ||
       !existsSync(distFactoryHistory) ||
+      !existsSync(distFactoryLocal) ||
       statSync(distIntegration).mtimeMs < srcNewest ||
-      statSync(distFactoryHistory).mtimeMs < srcNewest;
+      statSync(distFactoryHistory).mtimeMs < srcNewest ||
+      statSync(distFactoryLocal).mtimeMs < srcNewest;
     if (needBuild) {
       const lockPath = join(tmpdir(), "engram-live-build.lock");
       for (let attempt = 0; ; attempt += 1) {
@@ -2139,5 +2181,3001 @@ describe("E-ASM2 committed-history capabilities behind the factory", () => {
         writeFileSync(gitConfigPath, originalConfig);
       }
     }
+  });
+});
+
+// — E-ASM3 helpers (self-contained in the neutral test closure: no root imports).
+
+const encUtf8 = (text: string): Uint8Array => new TextEncoder().encode(text);
+
+function sha256Text(text: string): string {
+  return createHash("sha256").update(text, "utf8").digest("hex");
+}
+
+function collectAllStrings(value: unknown): string[] {
+  const out: string[] = [];
+  const visit = (node: unknown): void => {
+    if (typeof node === "string") {
+      out.push(node);
+    } else if (node instanceof Uint8Array) {
+      out.push(new TextDecoder().decode(node));
+    } else if (Array.isArray(node)) {
+      for (const item of node) visit(item);
+    } else if (node !== null && typeof node === "object") {
+      for (const item of Object.values(node as Record<string, unknown>)) visit(item);
+    }
+  };
+  visit(value);
+  return out;
+}
+
+class FakeLocalProtectionPort implements ContentProtectionPort {
+  readonly calls: Uint8Array[] = [];
+  keyRef = "fake-key:easm3-001";
+  refuseWith?: Error;
+
+  async protect(plaintext: Uint8Array): Promise<SealedPayload> {
+    if (this.refuseWith !== undefined) throw this.refuseWith;
+    this.calls.push(Uint8Array.from(plaintext));
+    const digest = createHash("sha256").update(plaintext).digest("hex");
+    return {
+      state: "sealed",
+      algorithm: "fake-seal/1",
+      keyRef: this.keyRef,
+      ciphertext: encUtf8(`sealed:${digest}:${plaintext.byteLength}`),
+    };
+  }
+}
+
+class FakeLocalKeyProvider implements KeyProviderPort {
+  available = true;
+  keyRef = "fake-key:easm3-001";
+  unavailableReason = "protection key unavailable for scope";
+  refuseWith?: Error;
+
+  async currentKeyRef(): Promise<
+    { readonly state: "available"; readonly keyRef: string } |
+    { readonly state: "unavailable"; readonly reason: string }
+  > {
+    if (this.refuseWith !== undefined) throw this.refuseWith;
+    if (!this.available) return { state: "unavailable", reason: this.unavailableReason };
+    return { state: "available", keyRef: this.keyRef };
+  }
+}
+
+class FakeLatestSnapshotStore implements LatestSnapshotPort {
+  readonly stored: LocalSnapshotDto[] = [];
+  readonly deleted: string[] = [];
+  readonly latest = new Map<string, LocalSnapshotDto>();
+  private readonly knownGenerations = new Set<string>();
+  private readonly blockedGenerations = new Set<string>();
+
+  private targetKey(q: { scope: LiveScope; worktreeId: string; kind: string; diffKind: string }): string {
+    return [q.scope.tenant, q.scope.clone, q.scope.worktree ?? "", q.worktreeId, q.kind, q.diffKind].join("|");
+  }
+
+  async loadLatest(query: LatestSnapshotQuery): Promise<LocalSnapshotDto | null> {
+    if (this.blockedGenerations.has(query.generationId)) {
+      throw new Error("stale generation blocked after purge");
+    }
+    this.knownGenerations.add(query.generationId);
+    return this.latest.get(this.targetKey(query)) ?? null;
+  }
+
+  async replaceLatest(
+    snapshot: LocalSnapshotDto,
+    expectedSupersededId: string | null,
+    generationId: string,
+  ): Promise<ReplaceLatestReceipt> {
+    if (this.blockedGenerations.has(generationId)) {
+      throw new Error("stale generation blocked after purge");
+    }
+    const key = this.targetKey(snapshot);
+    const current = this.latest.get(key) ?? null;
+    if ((current?.snapshotId ?? null) !== expectedSupersededId) {
+      throw new Error("latest replacement conflict: expected predecessor is no longer latest");
+    }
+    const replaced = current !== null && current.snapshotId !== snapshot.snapshotId;
+    if (replaced) {
+      this.deleted.push(current.snapshotId);
+      const idx = this.stored.findIndex((item) => item.snapshotId === current.snapshotId);
+      if (idx >= 0) this.stored.splice(idx, 1);
+    }
+    if (current?.snapshotId !== snapshot.snapshotId) this.stored.push(snapshot);
+    this.latest.set(key, snapshot);
+    return {
+      received: true,
+      retiredPrevious: replaced,
+      revokedDecryptability: true,
+      blockedStaleWork: true,
+    };
+  }
+
+  async purgePrivate(_query: LatestSnapshotScope): Promise<PurgePrivateReceipt> {
+    for (const g of this.knownGenerations) this.blockedGenerations.add(g);
+    this.knownGenerations.clear();
+    this.latest.clear();
+    this.stored.length = 0;
+    return { purgedPrivate: true, blockedOldWork: true, revokedDecryptability: true };
+  }
+}
+
+class FakePrivateFencedSink implements FactSinkPort {
+  readonly deliveries: RecordedDelivery[] = [];
+  private readonly highestGenByTarget = new Map<string, string>();
+  refuseWith?: Error;
+  validateToken?: (token: ScopeFencingTokenDto) => boolean;
+
+  async deliver(batch: FactBatchDto, fencingToken: ScopeFencingTokenDto): Promise<FactSinkReceipt> {
+    if (this.refuseWith !== undefined) throw this.refuseWith;
+    if (this.validateToken && !this.validateToken(fencingToken)) {
+      throw new Error("FENCING_REJECTED: revoked or invalid token");
+    }
+    const checked = validateFactBatch(batch);
+    if (!checked.ok) {
+      throw new Error(`sink rejected invalid batch: ${checked.errors.join("; ")}`);
+    }
+    const localDiff = batch.facts.find((fact) => classifyLiveFactKind(fact) === "local-diff") as LocalDiffDto | undefined;
+    const localSnap = batch.facts.find((fact) => classifyLiveFactKind(fact) === "local-snapshot") as LocalSnapshotDto | undefined;
+    if (localDiff !== undefined) {
+      const target = [
+        batch.scope.tenant,
+        batch.scope.clone,
+        batch.scope.worktree ?? "",
+        localDiff.worktreeId,
+        localSnap?.kind ?? (localDiff.kind === "unstaged" ? "working-tree" : "index"),
+        localDiff.kind,
+      ].join("|");
+      const prev = this.highestGenByTarget.get(target);
+      if (prev !== undefined && batch.generationId <= prev) {
+        throw new Error(`stale generation ${batch.generationId} <= ${prev} for target ${target}`);
+      }
+      this.highestGenByTarget.set(target, batch.generationId);
+    }
+    const receipt: FactSinkReceipt = {
+      received: true,
+      batchId: batch.batchId,
+      receiptId: `rcpt:priv:${String(this.deliveries.length + 1).padStart(6, "0")}`,
+      retiredSuperseded: true,
+      revokedDecryptability: true,
+    };
+    this.deliveries.push({ batch, fencingToken, receipt });
+    return receipt;
+  }
+}
+
+interface TestFakeClock {
+  now(): number;
+  advance(ms: number): void;
+  schedule(ms: number, callback: () => void): () => void;
+}
+
+function makeFakeScheduleClock(startAt = FIXTURE_NOW): TestFakeClock {
+  let t = startAt;
+  const timers = new Set<{ at: number; callback: () => void }>();
+  return {
+    now: () => t,
+    advance: (ms: number) => {
+      t += ms;
+      for (const timer of [...timers]) {
+        if (timer.at <= t) {
+          timers.delete(timer);
+          timer.callback();
+        }
+      }
+    },
+    schedule: (ms: number, callback: () => void) => {
+      const entry = { at: t + ms, callback };
+      timers.add(entry);
+      return () => {
+        timers.delete(entry);
+      };
+    },
+  };
+}
+
+class TestWatchPort implements WatchPort {
+  starts = 0;
+  stops = 0;
+  private listener: ((event: WatchEvent) => void) | undefined;
+  private readyResolve: (() => void) | undefined;
+  private readyPromise: Promise<void> | undefined;
+  autoReady = true;
+
+  constructor(private readonly clock: TestFakeClock) {}
+
+  async start(): Promise<void> {
+    this.starts += 1;
+    if (this.autoReady) return;
+    this.readyPromise ??= new Promise<void>((resolve) => {
+      this.readyResolve = resolve;
+    });
+    return this.readyPromise;
+  }
+
+  releaseReady(): void {
+    this.readyResolve?.();
+  }
+
+  async stop(): Promise<void> {
+    this.stops += 1;
+  }
+
+  onSignal(listener: (event: WatchEvent) => void): () => void {
+    this.listener = listener;
+    return () => {
+      if (this.listener === listener) this.listener = undefined;
+    };
+  }
+
+  emit(kind: WatchEvent["kind"], paths: readonly string[] = []): void {
+    this.listener?.({ kind, paths, at: this.clock.now() });
+  }
+}
+
+class TestWriterAuthority implements WriterAuthority {
+  currentEpoch = 1;
+  allowAcquire = true;
+  allowRenew = true;
+  readonly acquiredTokens: ScopeFencingTokenDto[] = [];
+  readonly releasedTokens: string[] = [];
+  readonly revokedTokenIds = new Set<string>();
+  private mintSeq = 0;
+  private activeToken: ScopeFencingTokenDto | undefined;
+
+  constructor(
+    private readonly clock: TestFakeClock,
+    private readonly expectedScope: LiveScope,
+    private readonly expectedRevision: number,
+    private readonly getIncarnation: () => string,
+  ) {}
+
+  async acquire(request: WriterRequest): Promise<ScopeFencingTokenDto | undefined> {
+    if (!this.allowAcquire) return undefined;
+    if (request.declarationRevision !== this.expectedRevision) return undefined;
+    if (request.projectionIncarnation !== this.getIncarnation()) return undefined;
+    if (this.activeToken !== undefined) {
+      this.revokedTokenIds.add(this.activeToken.tokenId);
+    }
+    this.currentEpoch = Math.max(this.currentEpoch + 1, request.minEpoch);
+    const issuedAt = this.clock.now();
+    const token: ScopeFencingTokenDto = {
+      tokenId: `tok:sched:${++this.mintSeq}`,
+      scope: { ...this.expectedScope },
+      epoch: this.currentEpoch,
+      epochId: `epoch:${this.currentEpoch}`,
+      declarationRevision: request.declarationRevision,
+      projectionIncarnation: request.projectionIncarnation,
+      issuedAt,
+      expiresAt: issuedAt + 60_000,
+    };
+    this.activeToken = token;
+    this.acquiredTokens.push(token);
+    return token;
+  }
+
+  async renew(token: ScopeFencingTokenDto): Promise<ScopeFencingTokenDto | undefined> {
+    if (!this.allowRenew || !this.validate(token)) return undefined;
+    const issuedAt = this.clock.now();
+    const renewed: ScopeFencingTokenDto = {
+      ...token,
+      tokenId: `tok:sched:${++this.mintSeq}`,
+      issuedAt,
+      expiresAt: issuedAt + 60_000,
+    };
+    this.revokedTokenIds.add(token.tokenId);
+    this.activeToken = renewed;
+    this.acquiredTokens.push(renewed);
+    return renewed;
+  }
+
+  validate(token: ScopeFencingTokenDto): boolean {
+    if (!token || this.revokedTokenIds.has(token.tokenId)) return false;
+    if (this.activeToken !== undefined && token.tokenId !== this.activeToken.tokenId) return false;
+    if (token.epoch < this.currentEpoch) return false;
+    return validateScopeFencingToken(token, this.expectedScope, this.getIncarnation(), this.clock.now()).ok;
+  }
+
+  revoke(token: ScopeFencingTokenDto): void {
+    this.revokedTokenIds.add(token.tokenId);
+    if (this.activeToken?.tokenId === token.tokenId) this.activeToken = undefined;
+  }
+
+  async release(token: ScopeFencingTokenDto): Promise<void> {
+    this.revokedTokenIds.add(token.tokenId);
+    if (this.activeToken?.tokenId === token.tokenId) this.activeToken = undefined;
+    this.releasedTokens.push(token.tokenId);
+  }
+}
+
+class TestSchedulingWorld {
+  incarnationId = "inc:sched-001";
+  readonly sourceFiles = new Map<string, string>();
+  readonly projectedFiles = new Map<string, string>();
+  readonly refs = new Map<string, string>([["refs/heads/main", "a".repeat(40)]]);
+  readonly markers = new Map<string, string>();
+  readonly publishedGenerations = new Set<string>();
+  readonly progress = new Map<string, { attempts: number; receiptId?: string; digest: string; scopeId: string }>();
+  readonly parked: { id: string; reason: string; attempts: number }[] = [];
+  collectCalls = 0;
+  publishCalls = 0;
+  fullScans = 0;
+  onDuringCollect?: (options: CollectOptions) => void;
+  onDuringPublish?: (options: CollectOptions) => void;
+
+  constructor(
+    private readonly clock: TestFakeClock,
+    readonly authority: TestWriterAuthority,
+  ) {}
+
+  private assertValid(token: ScopeFencingTokenDto, op: string): void {
+    if (!this.authority.validate(token)) {
+      throw new Error(`FENCING_REJECTED:${op}`);
+    }
+  }
+
+  sourceVector(): SourceVector {
+    const entries = [...this.sourceFiles.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    const refs = [...this.refs.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    return {
+      refsFingerprint: sha256Text(JSON.stringify(refs)),
+      headOid: this.refs.get("refs/heads/main") ?? "0".repeat(40),
+      indexFingerprint: sha256Text(JSON.stringify(entries.map(([p]) => p))),
+      pathMembershipFingerprint: sha256Text(JSON.stringify(entries.map(([p]) => p))),
+      contentFingerprint: sha256Text(JSON.stringify(entries)),
+      configAttributesFingerprint: sha256Text("config:v1"),
+      lockStateValid: true,
+    };
+  }
+
+  dataMatchesSource(): boolean {
+    if (this.sourceFiles.size !== this.projectedFiles.size) return false;
+    for (const [k, v] of this.sourceFiles) {
+      if (this.projectedFiles.get(k) !== v) return false;
+    }
+    return true;
+  }
+
+  markerStore(): MarkerStore {
+    return {
+      get: (key) => this.markers.get(key),
+      set: (key, value, token) => {
+        this.assertValid(token, "marker.set");
+        this.markers.set(key, value);
+      },
+      delete: (key, token) => {
+        this.assertValid(token, "marker.delete");
+        this.markers.delete(key);
+      },
+      incarnation: () => this.incarnationId,
+      hasGeneration: (inc, genId) => inc === this.incarnationId && this.publishedGenerations.has(genId),
+    };
+  }
+
+  scan(): ReconcileScan {
+    return {
+      discoverPage: async (cursor: string | undefined, limits: DiscoveryLimits, options: CollectOptions): Promise<DiscoveryPage> => {
+        this.assertValid(options.fencingToken, "discoverPage");
+        options.resources.check();
+        if (cursor === undefined) this.fullScans += 1;
+        const keys = [...this.sourceFiles.keys()].sort();
+        const start = cursor === undefined ? 0 : Number(cursor);
+        const slice = keys.slice(start, start + limits.maxCount);
+        const next = start + slice.length;
+        const done = next >= keys.length;
+        return {
+          entries: slice.map((path) => {
+            const content = this.sourceFiles.get(path)!;
+            return {
+              path,
+              statSize: Buffer.byteLength(content, "utf8"),
+              contentFingerprint: sha256Text(content),
+            };
+          }),
+          deletedPaths: done ? [...this.projectedFiles.keys()].filter((p) => !this.sourceFiles.has(p)).slice(0, Math.max(0, limits.maxCount - slice.length)) : [],
+          nextCursor: done ? undefined : String(next),
+          done,
+          complete: true,
+        };
+      },
+      collectPaths: async (paths: readonly string[], options: CollectOptions) => {
+        this.assertValid(options.fencingToken, "collectPaths");
+        options.resources.check();
+        this.collectCalls += 1;
+        this.onDuringCollect?.(options);
+        this.assertValid(options.fencingToken, "collectPaths.after");
+        options.resources.check();
+        for (const p of paths) {
+          const val = this.sourceFiles.get(p);
+          if (val !== undefined) this.projectedFiles.set(p, val);
+          else this.projectedFiles.delete(p);
+        }
+        for (const d of options.deletedPaths) this.projectedFiles.delete(d);
+        return { collected: [...paths], complete: true, receiptId: `collect:${this.collectCalls}` };
+      },
+      repairRelations: async (_paths: readonly string[], _deletedPaths: readonly string[], options: CollectOptions) => {
+        this.assertValid(options.fencingToken, "repairRelations");
+        options.resources.check();
+        return { complete: true, receiptId: `repair:${this.collectCalls}` };
+      },
+      validateSource: async (_expected: SourceVector, options: CollectOptions): Promise<SourceValidationReport> => {
+        this.assertValid(options.fencingToken, "validateSource");
+        options.resources.check();
+        const axes: Record<string, { readonly complete: boolean }> = {};
+        for (const axis of COVERAGE_AXES) axes[axis] = { complete: true };
+        return {
+          valid: true,
+          projectionMatches: this.dataMatchesSource(),
+          sourceVector: this.sourceVector(),
+          validatedAt: this.clock.now(),
+          axes,
+        };
+      },
+      publishGeneration: async (request: PublishGenerationRequest, options: CollectOptions): Promise<PublishGenerationReport> => {
+        this.assertValid(options.fencingToken, "publishGeneration");
+        options.resources.check();
+        this.onDuringPublish?.(options);
+        this.assertValid(options.fencingToken, "publishGeneration.after");
+        options.resources.check();
+        if (request.expectedIncarnation !== this.incarnationId) {
+          throw new Error("incarnation mismatch");
+        }
+        this.publishCalls += 1;
+        this.publishedGenerations.add(request.generationId);
+        return {
+          published: true,
+          generationId: request.generationId,
+          incarnation: this.incarnationId,
+          receiptId: `pub:${this.publishCalls}`,
+        };
+      },
+      currentSourceVector: () => this.sourceVector(),
+      pathFingerprint: (path: string) => {
+        const val = this.sourceFiles.get(path);
+        return val === undefined ? "absent" : sha256Text(val);
+      },
+    };
+  }
+
+  pollRefs = async (options: CollectOptions) => {
+    this.assertValid(options.fencingToken, "pollRefs");
+    options.resources.check();
+    return [...this.refs.entries()].map(([ref, oid]) => ({ ref, oid }));
+  };
+
+  durability() {
+    return {
+      sleep: (ms: number, signal: AbortSignal) =>
+        new Promise<void>((resolve, reject) => {
+          if (signal.aborted) {
+            reject(new Error("aborted"));
+            return;
+          }
+          const cancel = this.clock.schedule(ms, () => resolve());
+          signal.addEventListener("abort", () => {
+            cancel();
+            reject(new Error("aborted"));
+          }, { once: true });
+        }),
+      park: (item: WorkItem, reason: string, attempts: number) => {
+        this.assertValid(item.fencingToken, "park");
+        this.parked.push({ id: item.id, reason, attempts });
+      },
+      readProgress: (item: WorkItem) => {
+        this.assertValid(item.fencingToken, "readProgress");
+        return this.progress.get(item.id);
+      },
+      writeProgress: (item: WorkItem, prog: { readonly attempts: number; readonly receiptId?: string }) => {
+        this.assertValid(item.fencingToken, "writeProgress");
+        this.progress.set(item.id, {
+          attempts: prog.attempts,
+          receiptId: prog.receiptId,
+          digest: item.idempotencyDigest,
+          scopeId: item.scopeId,
+        });
+      },
+      backlogSize: () => this.parked.length,
+    };
+  }
+}
+
+function makeSourceGrammarRuntime(): {
+  readonly grammarRuntime: GrammarRuntimePort;
+  readonly filesystem: LiveFactoryPorts["filesystem"];
+} {
+  const manifestPath = join(root, "engram-live", "grammar-manifest.json");
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
+    languages: Record<string, { file: string; sourcePath: string }>;
+  };
+  const fileToSource = new Map<string, string>();
+  for (const entry of Object.values(manifest.languages)) {
+    fileToSource.set(entry.file, join(root, entry.sourcePath));
+  }
+  return {
+    grammarRuntime: {
+      init: () => Parser.init(),
+      loadLanguage: (wasm: Uint8Array) => Language.load(wasm),
+      createParser(grammar: object) {
+        const parser = new Parser();
+        parser.setLanguage(grammar as InstanceType<typeof Language>);
+        return parser;
+      },
+    },
+    filesystem: {
+      async readFileBytes(path: string): Promise<Uint8Array> {
+        if (path.endsWith("grammar-manifest.json")) {
+          return new Uint8Array(readFileSync(manifestPath));
+        }
+        const fileName = path.split("/").pop() ?? "";
+        const sourcePath = fileToSource.get(fileName);
+        if (sourcePath !== undefined) {
+          return new Uint8Array(readFileSync(sourcePath));
+        }
+        throw new Error(`ENOENT: unexpected grammar filesystem read: ${path}`);
+      },
+    },
+  };
+}
+
+describe("E-ASM3 local-state, scheduling and capture-stability capabilities behind the factory", () => {
+  it("index-snapshot working-tree and diffs execute through the factory with fake protection ports and deliver fenced private batches", async () => {
+    const box = createSandbox();
+    const plain = box.init(join(box.root, "local-worktree"));
+    writeFileSync(join(plain, "src-app.ts"), "export function greet() { return 'v1'; }\n");
+    writeFileSync(join(plain, "keep.ts"), "export const stable = 1;\n");
+    box.git(plain, ["add", "--", "src-app.ts", "keep.ts"]);
+    box.git(plain, ["commit", "-q", "-m", "base"]);
+
+    // Stage a real edit and add a protected .env file + an unstaged working-tree edit.
+    const stagedCode = "export function greet() { return 'v2-staged-private-hunk'; }\n";
+    writeFileSync(join(plain, "src-app.ts"), stagedCode);
+    box.git(plain, ["add", "--", "src-app.ts"]);
+    writeFileSync(join(plain, "src-app.ts"), "export function greet() { return 'v3-unstaged-private-hunk'; }\n");
+    writeFileSync(join(plain, ".env"), "SECRET_API_KEY=ghp_synthetic0123456789abcdefghijEASM3\n");
+
+    const digestBefore = inventoryDigest({ root: plain });
+    const commonDir = realpathSync(join(plain, ".git"));
+    const mainGitDir = box.git(plain, ["rev-parse", "--absolute-git-dir"], undefined, "oracle").toString().trim();
+    const hooksDir = join(box.root, "disabled-hooks");
+    const repository = observeRepository({
+      hostScope: "host:easm3-local",
+      commonDirRealpath: commonDir,
+      commonDirProjectFingerprint: "ws:easm3-local",
+      oidAlgorithm: "sha1",
+      worktrees: [
+        {
+          worktreePath: plain,
+          gitDir: mainGitDir,
+          worktreeFingerprint: "wtfp:easm3-main",
+          head: { kind: "branch", refName: "refs/heads/main" },
+        },
+      ],
+    });
+    const mainWt = repository.worktrees[0]!.identity;
+    const declId = deriveDeclarationIdentity({
+      hostScope: "host:easm3-local",
+      clone: repository.clone,
+      worktree: mainWt,
+    });
+    const declaration: WorkspaceDeclarationDto = {
+      tenant: "local:easm3-owner",
+      principal: "local:easm3-principal",
+      hostFingerprint: "hostfp:easm3",
+      identityUncertainty: [],
+      declarationId: declId.declarationId,
+      cloneId: repository.clone.cloneId,
+      worktreeId: mainWt.worktreeId,
+      authorizedRoots: [plain],
+      liveCapability: "live",
+      policyVersion: POLICY_VERSION,
+      declarationRevision: 1,
+    };
+    const privateScope: LiveScope = {
+      tenant: declaration.tenant,
+      clone: declaration.cloneId,
+      worktree: declaration.worktreeId,
+    };
+    const worktreeToken: ScopeFencingTokenDto = {
+      tokenId: "tok:easm3-wt-001",
+      scope: privateScope,
+      epoch: 1,
+      epochId: "epoch:wt-001",
+      declarationRevision: declaration.declarationRevision,
+      projectionIncarnation: "inc:easm3-001",
+      issuedAt: FIXTURE_NOW - 10_000,
+      expiresAt: FIXTURE_NOW + 60_000,
+    };
+
+    const protection = new FakeLocalProtectionPort();
+    const keyProvider = new FakeLocalKeyProvider();
+    const latestStore = new FakeLatestSnapshotStore();
+    const sink = new FakePrivateFencedSink();
+
+    const syntheticSecret = "ghp_synthetic0123456789abcdefghijEASM3";
+    const privateAllowedLine = "+export const privateMarker = 'PRIVATE_ALLOWED_HUNK_PLAIN_EASM3';";
+
+    const factory = createLiveFactory({
+      declaration,
+      ports: {
+        ...makeNoopAuxPorts(),
+        git: { gitPath: box.trace.executable, disabledHooksDir: hooksDir },
+        content: { protection, keyProvider, latestSnapshots: latestStore },
+        factSink: sink,
+      } as unknown as LiveFactoryPorts,
+    });
+
+    // 1. All 10 capabilities reported available by single source of truth.
+    expect(factory.describeCapabilities()).toEqual(describeCapabilities());
+    expect(factory.describeCapabilities()).toHaveLength(10);
+    expect(factory.describeCapabilities().filter((c) => c.state === "available").map((c) => c.capability)).toEqual([
+      ...CAPABILITY_IDS,
+    ]);
+
+    // 2. index-snapshot executes L4a + L4b and delivers a fenced private sealed batch.
+    const indexRes = await factory.runCapability("index-snapshot", {
+      cwd: plain,
+      generationId: formatProducerGenerationId(1),
+      fencingToken: worktreeToken,
+      expectedIncarnation: worktreeToken.projectionIncarnation,
+      hunkDrafts: [
+        {
+          path: encUtf8("src-app.ts"),
+          startBefore: 1,
+          countBefore: 1,
+          startAfter: 1,
+          countAfter: 1,
+          lines: [privateAllowedLine],
+        },
+        {
+          path: encUtf8("src-app.ts"),
+          startBefore: 2,
+          countBefore: 1,
+          startAfter: 2,
+          countAfter: 1,
+          lines: [`+const secret = "${syntheticSecret}";`],
+        },
+      ],
+    } as never) as unknown as Record<string, unknown>;
+    expect(indexRes.state, JSON.stringify(indexRes)).toBe("available");
+    expect(indexRes.delivered).toBe(true);
+    expect((indexRes.capture as { stable: boolean }).stable).toBe(true);
+    const indexDiff = indexRes.diff as LocalDiffDto;
+    expect(indexDiff.kind).toBe("staged");
+    expect(indexDiff.base.label).toBe("HEAD");
+    expect(indexDiff.tip.label).toBe("index");
+    expect(validateSealedLocalDiff(indexDiff).ok).toBe(true);
+    const indexSnap = indexRes.snapshot as LocalSnapshotDto;
+    expect(indexSnap.kind).toBe("index");
+    expect(indexSnap.sealed.state).toBe("sealed");
+    expect(validateLocalSnapshot(indexSnap).ok).toBe(true);
+    expect(protection.calls.length).toBeGreaterThanOrEqual(2);
+    expect(sink.deliveries).toHaveLength(1);
+    expect(sink.deliveries[0]!.fencingToken).toEqual(worktreeToken);
+    expect(sink.deliveries[0]!.batch.policyVersion).toBe(CONTENT_POLICY_VERSION);
+    expect(sink.deliveries[0]!.batch.facts.map((f) => classifyLiveFactKind(f))).toEqual([
+      "local-diff",
+      "local-snapshot",
+      "local-coverage",
+    ]);
+
+    // 3. working-tree executes L4a + L4b and delivers a distinct unstaged fenced private batch.
+    const wtRes = await factory.runCapability("working-tree", {
+      cwd: plain,
+      generationId: formatProducerGenerationId(2),
+      fencingToken: worktreeToken,
+      expectedIncarnation: worktreeToken.projectionIncarnation,
+    } as never) as unknown as Record<string, unknown>;
+    expect(wtRes.state, JSON.stringify(wtRes)).toBe("available");
+    expect(wtRes.delivered).toBe(true);
+    expect((wtRes.capture as { stable: boolean }).stable).toBe(true);
+    const wtDiff = wtRes.diff as LocalDiffDto;
+    expect(wtDiff.kind).toBe("unstaged");
+    expect(wtDiff.base.label).toBe("index");
+    expect(wtDiff.tip.label).toBe("worktree");
+    const envFile = wtDiff.files.find((f) => f.exclusion === "protected");
+    expect(envFile).toBeDefined();
+    expect(new TextDecoder().decode(envFile!.path)).toMatch(/^withheld-path:[0-9a-f]{64}$/);
+    expect((wtRes.snapshot as LocalSnapshotDto).kind).toBe("working-tree");
+    expect((wtRes.snapshot as LocalSnapshotDto).sealed.state).toBe("sealed");
+    expect(sink.deliveries).toHaveLength(2);
+    expect(sink.deliveries[1]!.fencingToken).toEqual(worktreeToken);
+
+    // 4. diffs executes staged, unstaged and conflict diffs with separate conflict stages 1/2/3.
+    const idxEndpoint: LocalDiffEndpointDto = { label: "index", oid: "b".repeat(40) };
+    const conflictEntries = [
+      { path: encUtf8("src/clash.ts"), mode: "100644", oid: "1".repeat(40), stage: 1, kind: "file" as const, size: 64, isBinary: false },
+      { path: encUtf8("src/clash.ts"), mode: "100644", oid: "2".repeat(40), stage: 2, kind: "file" as const, size: 64, isBinary: false },
+      { path: encUtf8("src/clash.ts"), mode: "100644", oid: "3".repeat(40), stage: 3, kind: "file" as const, size: 64, isBinary: false },
+    ];
+    const diffRes = await factory.runCapability("diffs", {
+      kind: "conflict",
+      base: idxEndpoint,
+      tip: idxEndpoint,
+      baseEntries: conflictEntries,
+      tipEntries: conflictEntries,
+      conflictStages: [
+        { path: encUtf8("src/clash.ts"), baseOid: "1".repeat(40), oursOid: "2".repeat(40), theirsOid: "3".repeat(40) },
+      ],
+      hunkDrafts: [
+        {
+          path: encUtf8("src/clash.ts"),
+          startBefore: 1,
+          countBefore: 1,
+          startAfter: 1,
+          countAfter: 1,
+          lines: [privateAllowedLine],
+        },
+      ],
+      generationId: formatProducerGenerationId(3),
+      fencingToken: worktreeToken,
+      expectedIncarnation: worktreeToken.projectionIncarnation,
+    } as never) as unknown as Record<string, unknown>;
+    expect(diffRes.state, JSON.stringify(diffRes)).toBe("available");
+    expect(diffRes.delivered).toBe(true);
+    const conflictDiff = diffRes.diff as LocalDiffDto;
+    expect(conflictDiff.kind).toBe("conflict");
+    expect(conflictDiff.files[0]?.stageOids).toEqual({
+      "1": "1".repeat(40),
+      "2": "2".repeat(40),
+      "3": "3".repeat(40),
+    });
+    expect(sink.deliveries).toHaveLength(3);
+
+    // 5. Missing key provider drives explicit metadata-only downgrade with ZERO protect calls.
+    const protectCallsBeforeNoKey = protection.calls.length;
+    keyProvider.available = false;
+    const noKeyRes = await factory.runCapability("diffs", {
+      kind: "unstaged",
+      base: idxEndpoint,
+      tip: { label: "worktree", oid: null },
+      baseEntries: [],
+      tipEntries: [
+        { path: encUtf8("src/local.ts"), mode: "100644", oid: "d".repeat(40), stage: 0, kind: "file" as const, size: 48, isBinary: false },
+      ],
+      hunkDrafts: [
+        {
+          path: encUtf8("src/local.ts"),
+          startBefore: 1,
+          countBefore: 0,
+          startAfter: 1,
+          countAfter: 1,
+          lines: [privateAllowedLine],
+        },
+      ],
+      generationId: formatProducerGenerationId(4),
+      fencingToken: worktreeToken,
+    } as never) as unknown as Record<string, unknown>;
+    expect(noKeyRes.state, JSON.stringify(noKeyRes)).toBe("available");
+    expect(protection.calls.length).toBe(protectCallsBeforeNoKey);
+    expect((noKeyRes.snapshot as LocalSnapshotDto).sealed).toEqual({
+      state: "metadata-only",
+      reason: "metadata:no-key",
+    });
+    expect((noKeyRes.coverage as { reason: string; cause?: string }).reason).toContain(CONTENT_UNAVAILABLE);
+    expect((noKeyRes.coverage as { cause?: string }).cause).toBe("missing-key");
+    keyProvider.available = true;
+
+    // 6. Clone-scoped token (missing worktree) or missing content port fails closed with 0 new deliveries.
+    const deliveriesBeforeRefusals = sink.deliveries.length;
+    const cloneOnlyToken: ScopeFencingTokenDto = {
+      ...worktreeToken,
+      scope: { tenant: declaration.tenant, clone: declaration.cloneId },
+    };
+    const badTokenRes = await factory.runCapability("working-tree", {
+      cwd: plain,
+      generationId: formatProducerGenerationId(5),
+      fencingToken: cloneOnlyToken,
+    } as never);
+    expect(badTokenRes).toMatchObject({ capability: "working-tree", state: "unavailable", delivered: false });
+    expect(badTokenRes.reason).toMatch(/worktree|fencing/i);
+
+    const noContentFactory = createLiveFactory({
+      declaration,
+      ports: {
+        ...makeNoopAuxPorts(),
+        git: { gitPath: box.trace.executable, disabledHooksDir: hooksDir },
+        factSink: sink,
+      } as unknown as LiveFactoryPorts,
+    });
+    const noContentRes = await noContentFactory.runCapability("index-snapshot", {
+      cwd: plain,
+      generationId: formatProducerGenerationId(6),
+      fencingToken: worktreeToken,
+    } as never);
+    expect(noContentRes).toMatchObject({ capability: "index-snapshot", state: "unavailable", delivered: false });
+    expect(noContentRes.reason).toMatch(/content|snapshot|protection/i);
+    expect(sink.deliveries).toHaveLength(deliveriesBeforeRefusals);
+
+    // 7. Zero plaintext private content or secrets anywhere in batches, store, results or diagnostics.
+    const allEmittedText = collectAllStrings([
+      sink.deliveries.map((d) => d.batch),
+      latestStore.stored,
+      indexRes,
+      wtRes,
+      diffRes,
+      noKeyRes,
+    ]);
+    const leaks = scanValuesForLeak(allEmittedText, [
+      syntheticSecret,
+      privateAllowedLine,
+      "PRIVATE_ALLOWED_HUNK_PLAIN_EASM3",
+      "v2-staged-private-hunk",
+      "v3-unstaged-private-hunk",
+      ".env",
+    ]);
+    expect(leaks).toEqual([]);
+
+    // 8. Canonical codec round-trip on every delivered private batch and worktree immutability.
+    for (const delivery of sink.deliveries) {
+      const encoded = encodeFactBatch(delivery.batch);
+      const decoded = decodeFactBatch(encoded.bytes);
+      expect(decoded.batchDigest).toBe(delivery.batch.batchDigest);
+    }
+    expect(inventoryDigest({ root: plain })).toBe(digestBefore);
+  });
+
+  it("reconciliation and publication run the scheduler under injected watch and clock ports and stop on a revoked token", async () => {
+    const box = createSandbox();
+    const { declaration } = buildL0Setup(box);
+    const worktreeScope: LiveScope = {
+      tenant: declaration.tenant,
+      clone: declaration.cloneId,
+      worktree: declaration.worktreeId,
+    };
+
+    const clock = makeFakeScheduleClock(FIXTURE_NOW);
+    const watch = new TestWatchPort(clock);
+    const authority = new TestWriterAuthority(clock, worktreeScope, declaration.declarationRevision, () => world.incarnationId);
+    const world = new TestSchedulingWorld(clock, authority);
+    world.sourceFiles.set("src/a.ts", "export const a = 1;\n");
+    world.sourceFiles.set("src/b.ts", "export const b = 2;\n");
+
+    const sink = new FakePrivateFencedSink();
+    sink.validateToken = (token) => authority.validate(token);
+
+    const completionCalls: GenerationCompletionMessageDto[] = [];
+    const generationCompletion: GenerationCompletionPort = {
+      async complete(message: GenerationCompletionMessageDto, fencingToken: ScopeFencingTokenDto): Promise<GenerationCompletionOutcomeDto> {
+        if (!authority.validate(fencingToken)) {
+          throw new Error("FENCING_REJECTED: revoked token at completion port");
+        }
+        completionCalls.push(message);
+        return {
+          controlVersion: GENERATION_CONTROL_VERSION,
+          kind: "generation-completion-outcome",
+          authority: STORAGE_KERNEL_AUTHORITY,
+          status: "published",
+          published: true,
+          producerGenerationId: message.producerGenerationId,
+          completionMessageDigest: message.messageDigest,
+          view: message.view,
+          scope: message.scope,
+          storageGenerationId: `sgen:${String(completionCalls.length).padStart(6, "0")}`,
+          storeIncarnation: world.incarnationId,
+          pointerVersion: completionCalls.length,
+          publicationReceiptId: `pubrcpt:${String(completionCalls.length).padStart(6, "0")}`,
+          publishedAt: clock.now(),
+        };
+      },
+    };
+
+    const factory = createLiveFactory({
+      declaration,
+      ports: {
+        ...makeNoopAuxPorts(),
+        clock,
+        watch,
+        scheduling: {
+          writer: authority,
+          markerStore: world.markerStore(),
+          scan: world.scan(),
+          pollRefs: world.pollRefs,
+          durability: world.durability(),
+        },
+        generationCompletion,
+        factSink: sink,
+      } as unknown as LiveFactoryPorts,
+    });
+
+    // 1. Watch-before-scan: before watch is ready (bootstrapWatch: false), scan is refused.
+    watch.autoReady = false;
+    const unreadyRes = await factory.runCapability("reconciliation", {
+      generationId: formatProducerGenerationId(1),
+      action: "round",
+      bootstrapWatch: false,
+    } as never);
+    expect(unreadyRes).toMatchObject({ capability: "reconciliation", state: "unavailable", delivered: false });
+    expect(unreadyRes.reason).toMatch(/watch|ready/i);
+    expect(world.fullScans).toBe(0);
+    expect(sink.deliveries).toHaveLength(0);
+
+    // 2. Watch becomes ready -> reconciliation runs through Scheduler and converges.
+    watch.autoReady = true;
+    const recRes = await factory.runCapability("reconciliation", {
+      generationId: formatProducerGenerationId(2),
+      action: "converge",
+    } as never) as unknown as Record<string, unknown>;
+    expect(recRes.state, JSON.stringify(recRes)).toBe("available");
+    expect(recRes.delivered).toBe(true);
+    expect(recRes.converged).toBe(true);
+    expect(recRes.phase).toBe("current");
+    expect(allCurrent(recRes.coverage as Parameters<typeof allCurrent>[0])).toBe(true);
+    expect(world.dataMatchesSource()).toBe(true);
+    expect(watch.starts).toBe(1);
+    expect((recRes.ledger as { workReservedBytes: number }).workReservedBytes).toBe(0);
+    expect(sink.deliveries.length).toBeGreaterThanOrEqual(1);
+    expect(sink.deliveries.at(-1)!.batch.facts.some((f) => classifyLiveFactKind(f) === "progress")).toBe(true);
+    expect(sink.deliveries.at(-1)!.batch.facts.some((f) => classifyLiveFactKind(f) === "coverage")).toBe(true);
+
+    // 3. Scheduler runs independently of client lifetime: edit + clock advance converges on periodic timer.
+    world.sourceFiles.set("src/c.ts", "export const c = 3;\n");
+    watch.emit("change", ["src/c.ts"]);
+    clock.advance(10_000);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(world.dataMatchesSource()).toBe(true);
+
+    // 4. Publication executes through the shared Scheduler (L6b + L3a-E2 completion) with active token.
+    const activeToken = authority.acquiredTokens.at(-1)!;
+    const pubGenId = formatProducerGenerationId(3);
+    const correlation = createGenerationCorrelation({
+      producerGenerationId: pubGenId,
+      policyVersion: CONTENT_POLICY_VERSION,
+      view: "private",
+      scope: worktreeScope,
+      authorizingDeclaration: {
+        declarationId: declaration.declarationId,
+        cloneId: declaration.cloneId,
+        worktreeId: declaration.worktreeId,
+        declarationRevision: declaration.declarationRevision,
+      },
+      sourceBoundary: {
+        view: "private",
+        oidAlgorithm: "sha1",
+        observedAt: clock.now(),
+        worktreeId: declaration.worktreeId,
+        headCommit: { algorithm: "sha1", oid: "a".repeat(40) },
+        captureStable: true,
+        snapshotIds: [`lsnap:${"c".repeat(64)}`],
+        configAttributesFingerprint: sha256Text("config:v1"),
+        contentFingerprintMode: "none",
+      },
+    });
+    const fakeReceipt: BatchDeliveryReceiptDto = {
+      controlVersion: GENERATION_CONTROL_VERSION,
+      kind: "batch-receipt",
+      received: true,
+      published: false,
+      completeBatch: true,
+      producerGenerationId: pubGenId,
+      batchId: "batch:priv-pub:000001",
+      batchDigest: "d".repeat(64),
+      receiptId: "rcpt:staged-000001",
+      byteLength: 512,
+      finalBatch: true,
+      receivedAt: clock.now(),
+    };
+    const pubRes = await factory.runCapability("publication", {
+      generationId: pubGenId,
+      fencingToken: activeToken,
+      expectedIncarnation: world.incarnationId,
+      completion: {
+        correlation,
+        receipts: [fakeReceipt],
+        input: {
+          completionState: "complete",
+          coverage: [{ axis: "working-tree", state: "current", reason: "verified", pendingCount: 0, complete: true }],
+          exclusions: [],
+          errors: [],
+          remainingWork: 0,
+          completedAt: clock.now(),
+        },
+      },
+    } as never) as unknown as Record<string, unknown>;
+    expect(pubRes.state, JSON.stringify(pubRes)).toBe("available");
+    expect(pubRes.delivered).toBe(true);
+    expect(pubRes.published).toBe(true);
+    expect((pubRes.completionOutcome as GenerationCompletionOutcomeDto).status).toBe("published");
+    expect(completionCalls).toHaveLength(1);
+
+    // 5. Revoked token stops publication immediately with ZERO publishGeneration / completion / sink calls.
+    const publishesBeforeRevoke = world.publishCalls;
+    const completionsBeforeRevoke = completionCalls.length;
+    const deliveriesBeforeRevoke = sink.deliveries.length;
+    authority.revoke(activeToken);
+    const revokedPubRes = await factory.runCapability("publication", {
+      generationId: formatProducerGenerationId(4),
+      fencingToken: activeToken,
+      expectedIncarnation: world.incarnationId,
+      completion: {
+        correlation: createGenerationCorrelation({
+          producerGenerationId: formatProducerGenerationId(4),
+          policyVersion: correlation.policyVersion,
+          view: correlation.view,
+          scope: correlation.scope,
+          authorizingDeclaration: correlation.authorizingDeclaration,
+          sourceBoundary: correlation.sourceBoundary,
+        }),
+        receipts: [{ ...fakeReceipt, producerGenerationId: formatProducerGenerationId(4) }],
+        input: {
+          completionState: "complete",
+          coverage: [{ axis: "working-tree", state: "current", reason: "verified", pendingCount: 0, complete: true }],
+          exclusions: [],
+          errors: [],
+          remainingWork: 0,
+          completedAt: clock.now(),
+        },
+      },
+    } as never);
+    expect(revokedPubRes).toMatchObject({ capability: "publication", state: "unavailable", delivered: false });
+    expect(revokedPubRes.reason).toMatch(/revoked|fenced|token/i);
+    expect(world.publishCalls).toBe(publishesBeforeRevoke);
+    expect(completionCalls).toHaveLength(completionsBeforeRevoke);
+    expect(sink.deliveries).toHaveLength(deliveriesBeforeRevoke);
+
+    // 6. Token revoked MID-reconciliation halts immediately, publishes nothing and delivers 0 batches.
+    world.sourceFiles.set("src/d.ts", "export const d = 4;\n");
+    watch.emit("change", ["src/d.ts"]);
+    const publishesBeforeMidRevoke = world.publishCalls;
+    const deliveriesBeforeMidRevoke = sink.deliveries.length;
+    world.onDuringCollect = (opts) => {
+      authority.allowAcquire = false;
+      authority.revoke(opts.fencingToken);
+    };
+    const midRevokedRec = await factory.runCapability("reconciliation", {
+      generationId: formatProducerGenerationId(5),
+      action: "converge",
+    } as never);
+    world.onDuringCollect = undefined;
+    expect(midRevokedRec).toMatchObject({ capability: "reconciliation", state: "unavailable", delivered: false });
+    expect(midRevokedRec.reason).toMatch(/revoked|fenced|writer/i);
+    expect(world.publishCalls).toBe(publishesBeforeMidRevoke);
+    expect(sink.deliveries).toHaveLength(deliveriesBeforeMidRevoke);
+
+    // 7. Concurrent multi-scope scheduling shares one host-owned Scheduler within budgets.
+    const sharedBudgets: SchedulerBudgets = {
+      maxPendingPaths: 64,
+      maxPendingBytes: 16 * 1024 * 1024,
+      maxConcurrency: 4,
+      maxActiveOperationsPerScope: 1,
+      maxRetries: 2,
+      retryBaseMs: 50,
+      maxBackoffMs: 30_000,
+      maxFailedKept: 8,
+      maxConsumers: 32,
+      maxFileSizeBytes: 1024 * 1024,
+      maxPathBytes: 1024,
+      readMarginBytes: 64,
+      maxDiscoveryBytes: 8 * 1024,
+      maxBatchBytes: 1024 * 1024,
+      maxGitChildren: 4,
+      attemptDeadlineMs: 30_000,
+      cancellationDeadlineMs: 10,
+      interactiveQuantum: 3,
+      backfillQuantum: 1,
+      backfillReserveBytes: 4 * 1024 * 1024,
+      durableBacklogQuota: 100_000,
+    };
+    const sharedClock = makeFakeScheduleClock(FIXTURE_NOW);
+    const scopeA: LiveScope = { tenant: declaration.tenant, clone: declaration.cloneId, worktree: "wt:shared-a" };
+    const scopeB: LiveScope = { tenant: declaration.tenant, clone: declaration.cloneId, worktree: "wt:shared-b" };
+    const authA = new TestWriterAuthority(sharedClock, scopeA, 1, () => worldA.incarnationId);
+    const authB = new TestWriterAuthority(sharedClock, scopeB, 1, () => worldB.incarnationId);
+    const worldA = new TestSchedulingWorld(sharedClock, authA);
+    const worldB = new TestSchedulingWorld(sharedClock, authB);
+    worldA.sourceFiles.set("a.ts", "export const a = 1;\n");
+    worldB.sourceFiles.set("b.ts", "export const b = 2;\n");
+    const sharedProgress = new Map<string, { attempts: number; receiptId?: string; digest: string; scopeId: string }>();
+    const sharedScheduler = new Scheduler(
+      {
+        clock: sharedClock,
+        sink: { deliver: async () => ({ ok: false, retryable: false }) },
+        validateToken: (t) => authA.validate(t) || authB.validate(t),
+        sleep: worldA.durability().sleep,
+        park: () => {},
+        readProgress: (item) => sharedProgress.get(item.id),
+        writeProgress: (item, p) => {
+          sharedProgress.set(item.id, { ...p, digest: item.idempotencyDigest, scopeId: item.scopeId });
+        },
+        backlogSize: () => 0,
+      },
+      sharedBudgets,
+    );
+    const sharedSink = new FakePrivateFencedSink();
+    const factoryA = createLiveFactory({
+      declaration: { ...declaration, worktreeId: "wt:shared-a" },
+      ports: {
+        ...makeNoopAuxPorts(),
+        clock: sharedClock,
+        watch: new TestWatchPort(sharedClock),
+        scheduling: {
+          scheduler: sharedScheduler,
+          writer: authA,
+          markerStore: worldA.markerStore(),
+          scan: worldA.scan(),
+          pollRefs: worldA.pollRefs,
+        },
+        factSink: sharedSink,
+      } as unknown as LiveFactoryPorts,
+    });
+    const factoryB = createLiveFactory({
+      declaration: { ...declaration, worktreeId: "wt:shared-b" },
+      ports: {
+        ...makeNoopAuxPorts(),
+        clock: sharedClock,
+        watch: new TestWatchPort(sharedClock),
+        scheduling: {
+          scheduler: sharedScheduler,
+          writer: authB,
+          markerStore: worldB.markerStore(),
+          scan: worldB.scan(),
+          pollRefs: worldB.pollRefs,
+        },
+        factSink: sharedSink,
+      } as unknown as LiveFactoryPorts,
+    });
+    const [resA, resB] = await Promise.all([
+      factoryA.runCapability("reconciliation", { generationId: formatProducerGenerationId(10), action: "converge" } as never),
+      factoryB.runCapability("reconciliation", { generationId: formatProducerGenerationId(11), action: "converge" } as never),
+    ]);
+    expect(resA).toMatchObject({ capability: "reconciliation", state: "available", delivered: true, converged: true });
+    expect(resB).toMatchObject({ capability: "reconciliation", state: "available", delivered: true, converged: true });
+    expect(sharedScheduler.ledgerSnapshot().workReservedBytes).toBe(0);
+    expect(sharedScheduler.lastStats()?.maxObservedConcurrency ?? 0).toBeLessThanOrEqual(sharedBudgets.maxConcurrency);
+
+    // Clean shutdown releases all leases and resident reservations.
+    await factory.runCapability("reconciliation", { generationId: formatProducerGenerationId(6), action: "shutdown" } as never);
+    await factoryA.runCapability("reconciliation", { generationId: formatProducerGenerationId(12), action: "shutdown" } as never);
+    await factoryB.runCapability("reconciliation", { generationId: formatProducerGenerationId(13), action: "shutdown" } as never);
+    expect(sharedScheduler.ledgerSnapshot().workReservedBytes).toBe(0);
+    expect(sharedScheduler.ledgerSnapshot().activeOperations).toBe(0);
+  });
+
+  it("a stable verified capture lets a local analysis reach complete and an unstable capture stays below complete", async () => {
+    const box = createSandbox();
+    const repo = box.init(join(box.root, "local-analysis-repo"));
+    writeFileSync(join(repo, "local.ts"), "export function initial() { return 1; }\n");
+    box.git(repo, ["add", "--", "local.ts"]);
+    box.git(repo, ["commit", "-q", "-m", "initial"]);
+
+    const uncommittedCode = "export function localProbe() { return 42; }\n";
+    writeFileSync(join(repo, "local.ts"), uncommittedCode);
+    const digestBefore = inventoryDigest({ root: repo });
+
+    const commonDir = realpathSync(join(repo, ".git"));
+    const mainGitDir = box.git(repo, ["rev-parse", "--absolute-git-dir"], undefined, "oracle").toString().trim();
+    const hooksDir = join(box.root, "disabled-hooks");
+    const repository = observeRepository({
+      hostScope: "host:easm3-analysis",
+      commonDirRealpath: commonDir,
+      commonDirProjectFingerprint: "ws:easm3-analysis",
+      oidAlgorithm: "sha1",
+      worktrees: [
+        {
+          worktreePath: repo,
+          gitDir: mainGitDir,
+          worktreeFingerprint: "wtfp:easm3-analysis",
+          head: { kind: "branch", refName: "refs/heads/main" },
+        },
+      ],
+    });
+    const mainWt = repository.worktrees[0]!.identity;
+    const declId = deriveDeclarationIdentity({
+      hostScope: "host:easm3-analysis",
+      clone: repository.clone,
+      worktree: mainWt,
+    });
+    const declaration: WorkspaceDeclarationDto = {
+      tenant: "local:easm3-analysis",
+      principal: "local:easm3-principal",
+      hostFingerprint: "hostfp:easm3-analysis",
+      identityUncertainty: [],
+      declarationId: declId.declarationId,
+      cloneId: repository.clone.cloneId,
+      worktreeId: mainWt.worktreeId,
+      authorizedRoots: [repo],
+      liveCapability: "live",
+      policyVersion: POLICY_VERSION,
+      declarationRevision: 1,
+    };
+    const privateScope: LiveScope = {
+      tenant: declaration.tenant,
+      clone: declaration.cloneId,
+      worktree: declaration.worktreeId,
+    };
+    const worktreeToken: ScopeFencingTokenDto = {
+      tokenId: "tok:easm3-ana-001",
+      scope: privateScope,
+      epoch: 1,
+      epochId: "epoch:ana-001",
+      declarationRevision: 1,
+      projectionIncarnation: "inc:ana-001",
+      issuedAt: FIXTURE_NOW - 10_000,
+      expiresAt: FIXTURE_NOW + 60_000,
+    };
+
+    const { grammarRuntime, filesystem } = makeSourceGrammarRuntime();
+    const protection = new FakeLocalProtectionPort();
+    const latestStore = new FakeLatestSnapshotStore();
+    const sink = new FakePrivateFencedSink();
+
+    const factory = createLiveFactory({
+      declaration,
+      ports: {
+        git: { gitPath: box.trace.executable, disabledHooksDir: hooksDir },
+        filesystem,
+        clock: { now: () => FIXTURE_NOW },
+        content: { protection, latestSnapshots: latestStore },
+        factSink: sink,
+        grammarRuntime,
+      } as unknown as LiveFactoryPorts,
+    });
+
+    const noopObjects: RetainedObjectsPort = {
+      async loadObject() { return null; },
+      async loadBlob() { return null; },
+    };
+    const configHash = sha256Text("tsconfig:v1");
+    const dependencyHash = sha256Text("deps:v1");
+
+    // 1. Run working-tree capture to obtain snapshotId and verified capture evidence.
+    const wtRes = await factory.runCapability("working-tree", {
+      cwd: repo,
+      generationId: formatProducerGenerationId(1),
+      fencingToken: worktreeToken,
+    } as never) as unknown as Record<string, unknown>;
+    expect(wtRes.state, JSON.stringify(wtRes)).toBe("available");
+    const snapshotId = (wtRes.snapshot as LocalSnapshotDto).snapshotId;
+    const verifiedCaptures = wtRes.verifiedCaptures as Record<string, Record<string, unknown>>;
+    expect(verifiedCaptures["local.ts"]).toBeDefined();
+
+    // 2. Stable live capture wired through factory lets local analysis reach complete!
+    const liveStable = await factory.runCapability("code-analysis", {
+      input: {
+        scope: privateScope,
+        language: "typescript",
+        path: "local.ts",
+        content: uncommittedCode,
+        treeOid: null,
+        snapshotId,
+        snapshotKind: "working-tree",
+        worktreeId: declaration.worktreeId,
+        configHash,
+        dependencyHash,
+        historicalBounds: null,
+      },
+      objects: noopObjects,
+      capture: { cwd: repo, snapshotKind: "working-tree" },
+    } as never) as unknown as Record<string, unknown>;
+    expect(liveStable.state, JSON.stringify(liveStable)).toBe("available");
+    expect((liveStable.capture as { stable: boolean }).stable).toBe(true);
+    expect(liveStable.analysis).toMatchObject({
+      state: "complete",
+      cacheMode: "no-cache",
+      coverage: { axis: "ast", language: "typescript", state: "current" },
+      declarationInventory: { kind: "verified-declaration-inventory" },
+    });
+    expect((liveStable.analysis as { symbols: { name: string }[] }).symbols).toContainEqual(
+      expect.objectContaining({ name: "localProbe" }),
+    );
+
+    // 3. Verified capture evidence returned from working-tree also reaches complete.
+    const fromEvidence = await factory.runCapability("code-analysis", {
+      input: {
+        scope: privateScope,
+        language: "typescript",
+        path: "local.ts",
+        content: uncommittedCode,
+        treeOid: null,
+        snapshotId,
+        snapshotKind: "working-tree",
+        worktreeId: declaration.worktreeId,
+        configHash,
+        dependencyHash,
+        historicalBounds: null,
+        verifiedCapture: verifiedCaptures["local.ts"],
+      },
+      objects: noopObjects,
+    } as never) as unknown as Record<string, unknown>;
+    expect(fromEvidence.analysis).toMatchObject({
+      state: "complete",
+      declarationInventory: { kind: "verified-declaration-inventory" },
+    });
+
+    // 4. Unstable capture (file mutates on every attempt) stays below complete (partial + unstable-capture).
+    let mutationCounter = 0;
+    const liveUnstable = await factory.runCapability("code-analysis", {
+      input: {
+        scope: privateScope,
+        language: "typescript",
+        path: "local.ts",
+        content: uncommittedCode,
+        treeOid: null,
+        snapshotId,
+        snapshotKind: "working-tree",
+        worktreeId: declaration.worktreeId,
+        configHash,
+        dependencyHash,
+        historicalBounds: null,
+      },
+      objects: noopObjects,
+      capture: {
+        cwd: repo,
+        snapshotKind: "working-tree",
+        maxAttempts: 2,
+        hooks: {
+          betweenInventoryAndContent: () => {
+            mutationCounter += 1;
+            writeFileSync(join(repo, "local.ts"), `export function localProbe() { return ${42 + mutationCounter}; }\n`);
+          },
+        },
+      },
+    } as never) as unknown as Record<string, unknown>;
+    // Restore file before further assertions.
+    writeFileSync(join(repo, "local.ts"), uncommittedCode);
+    expect(liveUnstable.state).toBe("available");
+    expect((liveUnstable.capture as { stable: boolean }).stable).toBe(false);
+    expect(liveUnstable.analysis).toMatchObject({
+      state: "partial",
+      coverage: { state: "partial", reason: expect.stringMatching(/^unstable-capture:/) },
+    });
+    expect((liveUnstable.analysis as { declarationInventory?: unknown }).declarationInventory).toBeUndefined();
+
+    // 5. Evidence whose content fingerprint (or any bound field) differs stays below complete!
+    const validEv = verifiedCaptures["local.ts"]!;
+    const mismatches: Array<{ readonly label: string; readonly ev: unknown; readonly content?: string }> = [
+      { label: "absent verifiedCapture (default preserved)", ev: undefined },
+      { label: "different contentFingerprint", ev: { ...validEv, contentFingerprint: sha256Text("different bytes\n") } },
+      { label: "modified analysed bytes against old evidence", ev: validEv, content: "export function localProbe() { return 999; }\n" },
+      { label: "different path", ev: { ...validEv, path: "other.ts" } },
+      { label: "different snapshotId", ev: { ...validEv, snapshotId: `lsnap:${"f".repeat(64)}` } },
+      { label: "different worktreeId", ev: { ...validEv, worktreeId: "wt:other" } },
+      { label: "different scope tenant", ev: { ...validEv, scope: { tenant: "local:other", clone: declaration.cloneId } } },
+      { label: "different scope clone", ev: { ...validEv, scope: { tenant: declaration.tenant, clone: "clone:other" } } },
+      { label: "bare stable flag without evidence fields", ev: { stable: true } },
+      { label: "stable false", ev: { ...validEv, stable: false } },
+      { label: "unknown extra key", ev: { ...validEv, extra: "forged" } },
+    ];
+    for (const testCase of mismatches) {
+      const res = await factory.runCapability("code-analysis", {
+        input: {
+          scope: privateScope,
+          language: "typescript",
+          path: "local.ts",
+          content: testCase.content ?? uncommittedCode,
+          treeOid: null,
+          snapshotId,
+          snapshotKind: "working-tree",
+          worktreeId: declaration.worktreeId,
+          configHash,
+          dependencyHash,
+          historicalBounds: null,
+          ...(testCase.ev !== undefined ? { verifiedCapture: testCase.ev } : {}),
+        },
+        objects: noopObjects,
+      } as never) as unknown as Record<string, unknown>;
+      expect(res.analysis, `mismatch case: ${testCase.label}`).toMatchObject({
+        state: "partial",
+        coverage: { state: "partial", reason: expect.stringMatching(/^unstable-capture:/) },
+      });
+      expect(
+        (res.analysis as { declarationInventory?: unknown }).declarationInventory,
+        `no inventory receipt for mismatch: ${testCase.label}`,
+      ).toBeUndefined();
+    }
+
+    // Live capture whose disk bytes differ from input.content also stays below complete.
+    const liveMismatch = await factory.runCapability("code-analysis", {
+      input: {
+        scope: privateScope,
+        language: "typescript",
+        path: "local.ts",
+        content: "export function tampered() { return 0; }\n",
+        treeOid: null,
+        snapshotId,
+        snapshotKind: "working-tree",
+        worktreeId: declaration.worktreeId,
+        configHash,
+        dependencyHash,
+        historicalBounds: null,
+      },
+      objects: noopObjects,
+      capture: { cwd: repo, snapshotKind: "working-tree" },
+    } as never) as unknown as Record<string, unknown>;
+    expect(liveMismatch.analysis).toMatchObject({
+      state: "partial",
+      coverage: { state: "partial", reason: expect.stringMatching(/^unstable-capture:/) },
+    });
+    expect(inventoryDigest({ root: repo })).toBe(digestBefore);
+  });
+
+  // — Review round 1 regressions (REVIEW-lot-E-ASM3.md: F-01 through F-06).
+
+  it("F-01: publication fails closed before lease acquisition, generation publication or completion on mismatched correlation or stale incarnation", async () => {
+    const box = createSandbox();
+    const { declaration } = buildL0Setup(box);
+    const worktreeScope: LiveScope = {
+      tenant: declaration.tenant,
+      clone: declaration.cloneId,
+      worktree: declaration.worktreeId,
+    };
+    const cloneScope: LiveScope = {
+      tenant: declaration.tenant,
+      clone: declaration.cloneId,
+    };
+
+    const clock = makeFakeScheduleClock(FIXTURE_NOW);
+    const watch = new TestWatchPort(clock);
+    const authority = new TestWriterAuthority(clock, worktreeScope, declaration.declarationRevision, () => world.incarnationId);
+    const world = new TestSchedulingWorld(clock, authority);
+    world.sourceFiles.set("src/a.ts", "export const a = 1;\n");
+    world.projectedFiles.set("src/a.ts", "export const a = 1;\n");
+    world.markers.set("live-checkpoint", "ckpt:ready");
+
+    const sink = new FakePrivateFencedSink();
+    const completionCalls: GenerationCompletionMessageDto[] = [];
+    const generationCompletion: GenerationCompletionPort = {
+      async complete(message: GenerationCompletionMessageDto): Promise<GenerationCompletionOutcomeDto> {
+        completionCalls.push(message);
+        return {
+          controlVersion: GENERATION_CONTROL_VERSION,
+          kind: "generation-completion-outcome",
+          authority: STORAGE_KERNEL_AUTHORITY,
+          status: "published",
+          published: true,
+          producerGenerationId: message.producerGenerationId,
+          completionMessageDigest: message.messageDigest,
+          view: message.view,
+          scope: message.scope,
+          storageGenerationId: `sgen:${String(completionCalls.length).padStart(6, "0")}`,
+          storeIncarnation: world.incarnationId,
+          pointerVersion: completionCalls.length,
+          publicationReceiptId: `pubrcpt:${String(completionCalls.length).padStart(6, "0")}`,
+          publishedAt: clock.now(),
+        };
+      },
+    };
+
+    // Permissive writer wrapper for private-view cross-declaration subtest: accepts foreign tokens so
+    // only factory-local's declaration binding check can reject mismatched scope/authorizingDeclaration.
+    let acceptForeignTokenId: string | undefined;
+    const writerWithForeignToggle: WriterAuthority = {
+      acquire: (req) => authority.acquire(req),
+      renew: (tok) => authority.renew(tok),
+      validate: (tok) => (acceptForeignTokenId !== undefined && tok.tokenId === acceptForeignTokenId) || authority.validate(tok),
+      revoke: (tok) => authority.revoke(tok),
+      release: (tok) => authority.release(tok),
+    };
+
+    const factory = createLiveFactory({
+      declaration,
+      ports: {
+        ...makeNoopAuxPorts(),
+        clock,
+        watch,
+        scheduling: {
+          writer: writerWithForeignToggle,
+          markerStore: world.markerStore(),
+          scan: world.scan(),
+          pollRefs: world.pollRefs,
+          durability: world.durability(),
+        },
+        generationCompletion,
+        factSink: sink,
+      } as unknown as LiveFactoryPorts,
+    });
+
+    const makeReceipt = (genId: string): BatchDeliveryReceiptDto => ({
+      controlVersion: GENERATION_CONTROL_VERSION,
+      kind: "batch-receipt",
+      received: true,
+      published: false,
+      completeBatch: true,
+      producerGenerationId: genId,
+      batchId: "batch:f01:000001",
+      batchDigest: "d".repeat(64),
+      receiptId: "rcpt:f01-000001",
+      byteLength: 256,
+      finalBatch: true,
+      receivedAt: clock.now(),
+    });
+    const makeCompletionInput = () => ({
+      completionState: "complete" as const,
+      coverage: [{ axis: "working-tree" as const, state: "current" as const, reason: "verified", pendingCount: 0, complete: true }],
+      exclusions: [],
+      errors: [],
+      remainingWork: 0,
+      completedAt: clock.now(),
+    });
+
+    // 1a. Committed-view completion with foreign cloneId/declarationId/worktreeId: zero acquire, publish or complete calls.
+    const foreignCloneId = "clone:foreign999";
+    const foreignDeclId = "decl:foreign999";
+    const foreignWorktreeId = "wt:foreign999";
+    const genForeignCommitted = formatProducerGenerationId(101);
+    const foreignCommittedCorr = createGenerationCorrelation({
+      producerGenerationId: genForeignCommitted,
+      policyVersion: POLICY_VERSION,
+      view: "committed",
+      scope: { tenant: declaration.tenant, clone: foreignCloneId },
+      authorizingDeclaration: {
+        declarationId: foreignDeclId,
+        cloneId: foreignCloneId,
+        worktreeId: foreignWorktreeId,
+        declarationRevision: declaration.declarationRevision,
+      },
+      sourceBoundary: {
+        view: "committed",
+        oidAlgorithm: "sha1",
+        observedAt: clock.now(),
+        refsFingerprint: sha256Text("refs:foreign"),
+        headCommit: { algorithm: "sha1", oid: "a".repeat(40) },
+        rootOids: [{ algorithm: "sha1", oid: "a".repeat(40) }],
+        configAttributesFingerprint: sha256Text("cfg:foreign"),
+        completeHistoryFrontier: true,
+      },
+    });
+    const foreignCommittedToken: ScopeFencingTokenDto = {
+      tokenId: "tok:f01-foreign-committed",
+      scope: { tenant: declaration.tenant, clone: foreignCloneId },
+      epoch: 1,
+      epochId: "epoch:foreign-1",
+      declarationRevision: declaration.declarationRevision,
+      projectionIncarnation: world.incarnationId,
+      issuedAt: clock.now() - 1_000,
+      expiresAt: clock.now() + 60_000,
+    };
+    const resForeignCommitted = await factory.runCapability("publication", {
+      generationId: genForeignCommitted,
+      fencingToken: foreignCommittedToken,
+      expectedIncarnation: world.incarnationId,
+      completion: {
+        correlation: foreignCommittedCorr,
+        receipts: [makeReceipt(genForeignCommitted)],
+        input: makeCompletionInput(),
+      },
+    } as never);
+    expect(resForeignCommitted).toMatchObject({ capability: "publication", state: "unavailable", delivered: false });
+    expect(authority.acquiredTokens).toHaveLength(0);
+    expect(world.publishCalls).toBe(0);
+    expect(completionCalls).toHaveLength(0);
+    expect(sink.deliveries).toHaveLength(0);
+
+    // 1b. Committed-view completion sharing cloneId/tenant but with mismatched authorizingDeclaration.declarationId / worktreeId / declarationRevision.
+    for (const badDecl of [
+      { ...declaration, declarationId: foreignDeclId },
+      { ...declaration, worktreeId: foreignWorktreeId },
+      { ...declaration, declarationRevision: declaration.declarationRevision + 1 },
+    ]) {
+      const genBadDecl = formatProducerGenerationId(102 + badDecl.declarationRevision);
+      const badDeclCorr = createGenerationCorrelation({
+        producerGenerationId: genBadDecl,
+        policyVersion: POLICY_VERSION,
+        view: "committed",
+        scope: cloneScope,
+        authorizingDeclaration: {
+          declarationId: badDecl.declarationId,
+          cloneId: badDecl.cloneId,
+          worktreeId: badDecl.worktreeId,
+          declarationRevision: badDecl.declarationRevision,
+        },
+        sourceBoundary: {
+          view: "committed",
+          oidAlgorithm: "sha1",
+          observedAt: clock.now(),
+          refsFingerprint: sha256Text("refs:bad-decl"),
+          headCommit: { algorithm: "sha1", oid: "a".repeat(40) },
+          rootOids: [{ algorithm: "sha1", oid: "a".repeat(40) }],
+          configAttributesFingerprint: sha256Text("cfg:bad-decl"),
+          completeHistoryFrontier: true,
+        },
+      });
+      const tokForBadDecl: ScopeFencingTokenDto = {
+        tokenId: `tok:f01-bad-decl-${genBadDecl}`,
+        scope: cloneScope,
+        epoch: 1,
+        epochId: "epoch:bad-decl",
+        declarationRevision: badDecl.declarationRevision,
+        projectionIncarnation: world.incarnationId,
+        issuedAt: clock.now() - 1_000,
+        expiresAt: clock.now() + 60_000,
+      };
+      const resBadDecl = await factory.runCapability("publication", {
+        generationId: genBadDecl,
+        fencingToken: tokForBadDecl,
+        expectedIncarnation: world.incarnationId,
+        completion: {
+          correlation: badDeclCorr,
+          receipts: [makeReceipt(genBadDecl)],
+          input: makeCompletionInput(),
+        },
+      } as never);
+      expect(resBadDecl).toMatchObject({ capability: "publication", state: "unavailable", delivered: false });
+      expect(authority.acquiredTokens).toHaveLength(0);
+      expect(world.publishCalls).toBe(0);
+      expect(completionCalls).toHaveLength(0);
+      expect(sink.deliveries).toHaveLength(0);
+    }
+
+    // 1c. Private-view completion sharing cloneId with mismatched tenant or worktreeId (even if writer accepts the token): fail closed before side effects.
+    const genForeignPriv = formatProducerGenerationId(106);
+    const foreignPrivScope: LiveScope = {
+      tenant: "local:other-tenant",
+      clone: declaration.cloneId,
+      worktree: foreignWorktreeId,
+    };
+    const foreignPrivCorr = createGenerationCorrelation({
+      producerGenerationId: genForeignPriv,
+      policyVersion: CONTENT_POLICY_VERSION,
+      view: "private",
+      scope: foreignPrivScope,
+      authorizingDeclaration: {
+        declarationId: declaration.declarationId,
+        cloneId: declaration.cloneId,
+        worktreeId: foreignWorktreeId,
+        declarationRevision: declaration.declarationRevision,
+      },
+      sourceBoundary: {
+        view: "private",
+        oidAlgorithm: "sha1",
+        observedAt: clock.now(),
+        worktreeId: foreignWorktreeId,
+        headCommit: { algorithm: "sha1", oid: "a".repeat(40) },
+        captureStable: true,
+        snapshotIds: [`lsnap:${"c".repeat(64)}`],
+        configAttributesFingerprint: sha256Text("cfg:priv-foreign"),
+        contentFingerprintMode: "none",
+      },
+    });
+    const foreignPrivToken: ScopeFencingTokenDto = {
+      tokenId: "tok:f01-foreign-private",
+      scope: foreignPrivScope,
+      epoch: 1,
+      epochId: "epoch:priv-foreign",
+      declarationRevision: declaration.declarationRevision,
+      projectionIncarnation: world.incarnationId,
+      issuedAt: clock.now() - 1_000,
+      expiresAt: clock.now() + 60_000,
+    };
+    acceptForeignTokenId = foreignPrivToken.tokenId;
+    const resForeignPriv = await factory.runCapability("publication", {
+      generationId: genForeignPriv,
+      fencingToken: foreignPrivToken,
+      expectedIncarnation: world.incarnationId,
+      completion: {
+        correlation: foreignPrivCorr,
+        receipts: [makeReceipt(genForeignPriv)],
+        input: makeCompletionInput(),
+      },
+    } as never);
+    acceptForeignTokenId = undefined;
+    expect(resForeignPriv).toMatchObject({ capability: "publication", state: "unavailable", delivered: false });
+    expect(world.publishCalls).toBe(0);
+    expect(completionCalls).toHaveLength(0);
+    expect(sink.deliveries).toHaveLength(0);
+
+    // 2. Omitted expectedIncarnation with stale fencingToken.projectionIncarnation !== markerStore.incarnation():
+    //    must reject BEFORE acquiring a lease, publishing a generation, or calling completionPort.complete.
+    const genStaleInc = formatProducerGenerationId(107);
+    const matchingCommittedCorr = createGenerationCorrelation({
+      producerGenerationId: genStaleInc,
+      policyVersion: POLICY_VERSION,
+      view: "committed",
+      scope: cloneScope,
+      authorizingDeclaration: {
+        declarationId: declaration.declarationId,
+        cloneId: declaration.cloneId,
+        worktreeId: declaration.worktreeId,
+        declarationRevision: declaration.declarationRevision,
+      },
+      sourceBoundary: {
+        view: "committed",
+        oidAlgorithm: "sha1",
+        observedAt: clock.now(),
+        refsFingerprint: sha256Text("refs:stale-inc"),
+        headCommit: { algorithm: "sha1", oid: "a".repeat(40) },
+        rootOids: [{ algorithm: "sha1", oid: "a".repeat(40) }],
+        configAttributesFingerprint: sha256Text("cfg:stale-inc"),
+        completeHistoryFrontier: true,
+      },
+    });
+    const staleIncarnationToken: ScopeFencingTokenDto = {
+      tokenId: "tok:f01-stale-inc",
+      scope: cloneScope,
+      epoch: 1,
+      epochId: "epoch:stale-inc",
+      declarationRevision: declaration.declarationRevision,
+      projectionIncarnation: "inc:stale-old-000",
+      issuedAt: clock.now() - 1_000,
+      expiresAt: clock.now() + 60_000,
+    };
+    const resStaleInc = await factory.runCapability("publication", {
+      generationId: genStaleInc,
+      fencingToken: staleIncarnationToken,
+      // expectedIncarnation intentionally omitted!
+      completion: {
+        correlation: matchingCommittedCorr,
+        receipts: [makeReceipt(genStaleInc)],
+        input: makeCompletionInput(),
+      },
+    } as never);
+    expect(resStaleInc).toMatchObject({ capability: "publication", state: "unavailable", delivered: false });
+    expect(resStaleInc.reason).toMatch(/incarnation|fencing/i);
+    expect(authority.acquiredTokens).toHaveLength(0);
+    expect(world.publishCalls).toBe(0);
+    expect(completionCalls).toHaveLength(0);
+    expect(sink.deliveries).toHaveLength(0);
+  });
+
+  it("F-02: committed-view publication waits for active worktree work before acquiring a lease and releases its lease in finally", async () => {
+    const box = createSandbox();
+    const { declaration } = buildL0Setup(box);
+    const worktreeScope: LiveScope = {
+      tenant: declaration.tenant,
+      clone: declaration.cloneId,
+      worktree: declaration.worktreeId,
+    };
+    const cloneScope: LiveScope = {
+      tenant: declaration.tenant,
+      clone: declaration.cloneId,
+    };
+
+    const clock = makeFakeScheduleClock(FIXTURE_NOW);
+    const watch = new TestWatchPort(clock);
+    const authority = new TestWriterAuthority(clock, worktreeScope, declaration.declarationRevision, () => world.incarnationId);
+    const world = new TestSchedulingWorld(clock, authority);
+    world.sourceFiles.set("src/a.ts", "export const a = 1;\n");
+    world.projectedFiles.set("src/a.ts", "export const a = 1;\n");
+    world.markers.set("live-checkpoint", "ckpt:f02");
+
+    const sharedBudgets: SchedulerBudgets = {
+      maxPendingPaths: 64,
+      maxPendingBytes: 16 * 1024 * 1024,
+      maxConcurrency: 4,
+      maxActiveOperationsPerScope: 1,
+      maxRetries: 2,
+      retryBaseMs: 50,
+      maxBackoffMs: 30_000,
+      maxFailedKept: 8,
+      maxConsumers: 32,
+      maxFileSizeBytes: 1024 * 1024,
+      maxPathBytes: 1024,
+      readMarginBytes: 64,
+      maxDiscoveryBytes: 8 * 1024,
+      maxBatchBytes: 1024 * 1024,
+      maxGitChildren: 4,
+      attemptDeadlineMs: 30_000,
+      cancellationDeadlineMs: 10,
+      interactiveQuantum: 3,
+      backfillQuantum: 1,
+      backfillReserveBytes: 4 * 1024 * 1024,
+      durableBacklogQuota: 100_000,
+    };
+    const sharedScheduler = new Scheduler(
+      {
+        clock,
+        sink: { deliver: async () => ({ ok: false, retryable: false }) },
+        validateToken: (t) => authority.validate(t),
+        sleep: world.durability().sleep,
+        park: world.durability().park,
+        readProgress: world.durability().readProgress,
+        writeProgress: world.durability().writeProgress,
+        backlogSize: world.durability().backlogSize,
+      },
+      sharedBudgets,
+    );
+
+    const sink = new FakePrivateFencedSink();
+    let rejectNextCompletion = false;
+    const generationCompletion: GenerationCompletionPort = {
+      async complete(message: GenerationCompletionMessageDto): Promise<GenerationCompletionOutcomeDto> {
+        if (rejectNextCompletion) {
+          return {
+            controlVersion: GENERATION_CONTROL_VERSION,
+            kind: "generation-completion-outcome",
+            authority: STORAGE_KERNEL_AUTHORITY,
+            status: "rejected",
+            published: false,
+            producerGenerationId: message.producerGenerationId,
+            completionMessageDigest: message.messageDigest,
+            view: message.view,
+            scope: message.scope,
+            rejectionCode: "incomplete-batches",
+            reason: "forced rejection to verify lease release",
+            rejectedAt: clock.now(),
+          };
+        }
+        return {
+          controlVersion: GENERATION_CONTROL_VERSION,
+          kind: "generation-completion-outcome",
+          authority: STORAGE_KERNEL_AUTHORITY,
+          status: "published",
+          published: true,
+          producerGenerationId: message.producerGenerationId,
+          completionMessageDigest: message.messageDigest,
+          view: message.view,
+          scope: message.scope,
+          storageGenerationId: "sgen:000001",
+          storeIncarnation: world.incarnationId,
+          pointerVersion: 1,
+          publicationReceiptId: "pubrcpt:000001",
+          publishedAt: clock.now(),
+        };
+      },
+    };
+
+    const factory = createLiveFactory({
+      declaration,
+      ports: {
+        ...makeNoopAuxPorts(),
+        clock,
+        watch,
+        scheduling: {
+          scheduler: sharedScheduler,
+          writer: authority,
+          markerStore: world.markerStore(),
+          scan: world.scan(),
+          pollRefs: world.pollRefs,
+        },
+        generationCompletion,
+        factSink: sink,
+      } as unknown as LiveFactoryPorts,
+    });
+
+    // Acquire an active worktree token and launch an in-flight scheduled work item on the same scope.
+    const existingWtToken = (await authority.acquire({
+      scope: worktreeScope,
+      minEpoch: 1,
+      declarationRevision: declaration.declarationRevision,
+      projectionIncarnation: world.incarnationId,
+    }))!;
+    expect(authority.acquiredTokens).toHaveLength(1);
+
+    let releaseInFlight!: () => void;
+    const inFlightGate = new Promise<void>((resolve) => {
+      releaseInFlight = resolve;
+    });
+    let workerStartedResolve!: () => void;
+    const workerStarted = new Promise<void>((resolve) => {
+      workerStartedResolve = resolve;
+    });
+
+    const activeWorkItem: WorkItem = {
+      id: "wt-op:active-001",
+      scopeId: scopeIdentity(existingWtToken),
+      priority: "interactive",
+      bytes: 16_384,
+      fencingToken: existingWtToken,
+      idempotencyDigest: sha256Text("wt-op:active-001"),
+    };
+    const inFlightPromise = sharedScheduler.execute(activeWorkItem, async (permit) => {
+      workerStartedResolve();
+      await inFlightGate;
+      permit.check();
+      return { ok: true, receiptId: "wt-rcpt:001" };
+    });
+    await workerStarted;
+
+    const makeCommittedPubReq = (seq: number) => {
+      const genId = formatProducerGenerationId(seq);
+      const correlation = createGenerationCorrelation({
+        producerGenerationId: genId,
+        policyVersion: POLICY_VERSION,
+        view: "committed",
+        scope: cloneScope,
+        authorizingDeclaration: {
+          declarationId: declaration.declarationId,
+          cloneId: declaration.cloneId,
+          worktreeId: declaration.worktreeId,
+          declarationRevision: declaration.declarationRevision,
+        },
+        sourceBoundary: {
+          view: "committed",
+          oidAlgorithm: "sha1",
+          observedAt: clock.now(),
+          refsFingerprint: sha256Text(`refs:f02-${seq}`),
+          headCommit: { algorithm: "sha1", oid: "a".repeat(40) },
+          rootOids: [{ algorithm: "sha1", oid: "a".repeat(40) }],
+          configAttributesFingerprint: sha256Text("cfg:f02"),
+          completeHistoryFrontier: true,
+        },
+      });
+      const cloneToken: ScopeFencingTokenDto = {
+        tokenId: `tok:f02-clone-${seq}`,
+        scope: cloneScope,
+        epoch: 1,
+        epochId: `epoch:f02-${seq}`,
+        declarationRevision: declaration.declarationRevision,
+        projectionIncarnation: world.incarnationId,
+        issuedAt: clock.now() - 1_000,
+        expiresAt: clock.now() + 60_000,
+      };
+      return {
+        generationId: genId,
+        fencingToken: cloneToken,
+        expectedIncarnation: world.incarnationId,
+        completion: {
+          correlation,
+          receipts: [
+            {
+              controlVersion: GENERATION_CONTROL_VERSION,
+              kind: "batch-receipt" as const,
+              received: true as const,
+              published: false as const,
+              completeBatch: true as const,
+              producerGenerationId: genId,
+              batchId: `batch:f02:${String(seq).padStart(6, "0")}`,
+              batchDigest: "e".repeat(64),
+              receiptId: `rcpt:f02-${seq}`,
+              byteLength: 256,
+              finalBatch: true,
+              receivedAt: clock.now(),
+            },
+          ],
+          input: {
+            completionState: "complete" as const,
+            coverage: [{ axis: "refs" as const, state: "current" as const, reason: "verified", pendingCount: 0, complete: true }],
+            exclusions: [],
+            errors: [],
+            remainingWork: 0,
+            completedAt: clock.now(),
+          },
+        },
+      };
+    };
+
+    // Start committed-view publication while the worktree task is active.
+    const pubPromise = factory.runCapability("publication", makeCommittedPubReq(201) as never);
+    // Give microtasks/event loop a tick so any premature acquire() would have already fired.
+    await new Promise((resolve) => setTimeout(resolve, 15));
+
+    // Active worktree token MUST NOT be prematurely revoked while its scheduler task is still running!
+    expect(authority.validate(existingWtToken)).toBe(true);
+    expect(authority.acquiredTokens).toHaveLength(1);
+
+    // Let the active worktree task finish cleanly; both operations must succeed.
+    releaseInFlight();
+    const [inFlightRes, pubRes] = await Promise.all([inFlightPromise, pubPromise]);
+    expect(inFlightRes).toEqual({ ok: true, receiptId: "wt-rcpt:001" });
+    expect(pubRes).toMatchObject({ capability: "publication", state: "available", delivered: true, published: true });
+
+    // Committed-view worktree lease MUST be released after publication completes (no leaked lease).
+    expect(authority.acquiredTokens).toHaveLength(2);
+    const firstLease = authority.acquiredTokens[1]!;
+    expect(authority.releasedTokens).toContain(firstLease.tokenId);
+    expect(authority.validate(firstLease)).toBe(false);
+
+    // Lease MUST ALSO be released in finally when completion is rejected.
+    rejectNextCompletion = true;
+    const failedPubRes = await factory.runCapability("publication", makeCommittedPubReq(202) as never);
+    expect(failedPubRes).toMatchObject({ capability: "publication", state: "unavailable", delivered: false });
+    expect(authority.acquiredTokens).toHaveLength(3);
+    const secondLease = authority.acquiredTokens[2]!;
+    expect(authority.releasedTokens).toContain(secondLease.tokenId);
+    expect(authority.validate(secondLease)).toBe(false);
+  });
+
+  it("F-03: buildVerifiedCaptureEvidence and result.verifiedCaptures exclude content-policy protected paths beyond .env/.pem/.key", async () => {
+    const box = createSandbox();
+    const repo = box.init(join(box.root, "f03-protected-paths"));
+    mkdirSync(join(repo, "secrets"), { recursive: true });
+    mkdirSync(join(repo, "nested", "credentials"), { recursive: true });
+    writeFileSync(join(repo, "ok.ts"), "export const ok = 1;\n");
+    writeFileSync(join(repo, "credentials.json"), '{"client":"test"}\n');
+    writeFileSync(join(repo, "id_rsa"), "placeholder-key-file-body\n");
+    writeFileSync(join(repo, "service-account.json"), '{"type":"svc"}\n');
+    writeFileSync(join(repo, "secrets", "token.txt"), "non-matching-placeholder\n");
+    writeFileSync(join(repo, "nested", "credentials", "app.ts"), "export const x = 2;\n");
+    box.git(repo, ["add", "--", "ok.ts", "credentials.json", "id_rsa", "service-account.json", "secrets/token.txt", "nested/credentials/app.ts"]);
+    box.git(repo, ["commit", "-q", "-m", "initial"]);
+
+    const commonDir = realpathSync(join(repo, ".git"));
+    const mainGitDir = box.git(repo, ["rev-parse", "--absolute-git-dir"], undefined, "oracle").toString().trim();
+    const hooksDir = join(box.root, "disabled-hooks");
+    const repository = observeRepository({
+      hostScope: "host:f03",
+      commonDirRealpath: commonDir,
+      commonDirProjectFingerprint: "ws:f03",
+      oidAlgorithm: "sha1",
+      worktrees: [
+        {
+          worktreePath: repo,
+          gitDir: mainGitDir,
+          worktreeFingerprint: "wtfp:f03",
+          head: { kind: "branch", refName: "refs/heads/main" },
+        },
+      ],
+    });
+    const mainWt = repository.worktrees[0]!.identity;
+    const declId = deriveDeclarationIdentity({ hostScope: "host:f03", clone: repository.clone, worktree: mainWt });
+    const declaration: WorkspaceDeclarationDto = {
+      tenant: "local:f03",
+      principal: "local:f03-principal",
+      hostFingerprint: "hostfp:f03",
+      identityUncertainty: [],
+      declarationId: declId.declarationId,
+      cloneId: repository.clone.cloneId,
+      worktreeId: mainWt.worktreeId,
+      authorizedRoots: [repo],
+      liveCapability: "live",
+      policyVersion: POLICY_VERSION,
+      declarationRevision: 1,
+    };
+    const privateScope: LiveScope = { tenant: declaration.tenant, clone: declaration.cloneId, worktree: declaration.worktreeId };
+    const worktreeToken: ScopeFencingTokenDto = {
+      tokenId: "tok:f03-001",
+      scope: privateScope,
+      epoch: 1,
+      epochId: "epoch:f03",
+      declarationRevision: 1,
+      projectionIncarnation: "inc:f03",
+      issuedAt: FIXTURE_NOW - 10_000,
+      expiresAt: FIXTURE_NOW + 60_000,
+    };
+    const factory = createLiveFactory({
+      declaration,
+      ports: {
+        ...makeNoopAuxPorts(),
+        git: { gitPath: box.trace.executable, disabledHooksDir: hooksDir },
+        content: { protection: new FakeLocalProtectionPort(), latestSnapshots: new FakeLatestSnapshotStore() },
+        factSink: new FakePrivateFencedSink(),
+      } as unknown as LiveFactoryPorts,
+    });
+
+    const protectedPaths = [
+      "credentials.json",
+      "id_rsa",
+      "service-account.json",
+      "secrets/token.txt",
+      "nested/credentials/app.ts",
+    ];
+
+    const wtRes = await factory.runCapability("working-tree", {
+      cwd: repo,
+      generationId: formatProducerGenerationId(1),
+      fencingToken: worktreeToken,
+    } as never) as unknown as Record<string, unknown>;
+    expect(wtRes.state, JSON.stringify(wtRes)).toBe("available");
+    const wtVerified = wtRes.verifiedCaptures as Record<string, unknown>;
+    expect(wtVerified["ok.ts"]).toBeDefined();
+    for (const p of protectedPaths) {
+      expect(wtVerified[p], `working-tree verifiedCaptures must exclude ${p}`).toBeUndefined();
+    }
+
+    const idxRes = await factory.runCapability("index-snapshot", {
+      cwd: repo,
+      generationId: formatProducerGenerationId(2),
+      fencingToken: worktreeToken,
+    } as never) as unknown as Record<string, unknown>;
+    expect(idxRes.state, JSON.stringify(idxRes)).toBe("available");
+    const idxVerified = idxRes.verifiedCaptures as Record<string, unknown>;
+    expect(idxVerified["ok.ts"]).toBeDefined();
+    for (const p of protectedPaths) {
+      expect(idxVerified[p], `index-snapshot verifiedCaptures must exclude ${p}`).toBeUndefined();
+    }
+    const emittedProtectedStrings = collectAllStrings([
+      wtRes.verifiedCaptures,
+      wtRes.capture,
+      idxRes.verifiedCaptures,
+      idxRes.capture,
+    ]);
+    expect(scanValuesForLeak(emittedProtectedStrings, protectedPaths)).toEqual([]);
+
+    // Direct buildVerifiedCaptureEvidence must also refuse content-policy protected paths.
+    const syntheticCapture = {
+      stable: true as const,
+      attempts: 1,
+      root: repo,
+      objectFormat: "sha1",
+      headOid: "a".repeat(40),
+      indexDigest: "b".repeat(64),
+      attrFingerprint: "c".repeat(64),
+      entries: [],
+      files: [
+        {
+          path: Buffer.from("credentials.json", "utf8"),
+          status: "present" as const,
+          kind: "file" as const,
+          fingerprint: "d".repeat(64),
+          size: 16,
+          blobVerified: true,
+        },
+      ],
+    };
+    const directEv = buildVerifiedCaptureEvidence({
+      scope: { tenant: declaration.tenant, clone: declaration.cloneId },
+      worktreeId: declaration.worktreeId,
+      snapshotId: `lsnap:${"e".repeat(64)}`,
+      path: "credentials.json",
+      capture: syntheticCapture,
+      snapshotKind: "working-tree",
+    });
+    expect(directEv).toBeUndefined();
+  });
+
+  it("F-04: index-snapshot, working-tree and diffs fail closed when plaintextPayload is not Uint8Array or null", async () => {
+    const box = createSandbox();
+    const repo = box.init(join(box.root, "f04-payload-guard"));
+    writeFileSync(join(repo, "app.ts"), "export const v = 1;\n");
+    box.git(repo, ["add", "--", "app.ts"]);
+    box.git(repo, ["commit", "-q", "-m", "init"]);
+
+    const commonDir = realpathSync(join(repo, ".git"));
+    const mainGitDir = box.git(repo, ["rev-parse", "--absolute-git-dir"], undefined, "oracle").toString().trim();
+    const hooksDir = join(box.root, "disabled-hooks");
+    const repository = observeRepository({
+      hostScope: "host:f04",
+      commonDirRealpath: commonDir,
+      commonDirProjectFingerprint: "ws:f04",
+      oidAlgorithm: "sha1",
+      worktrees: [
+        {
+          worktreePath: repo,
+          gitDir: mainGitDir,
+          worktreeFingerprint: "wtfp:f04",
+          head: { kind: "branch", refName: "refs/heads/main" },
+        },
+      ],
+    });
+    const mainWt = repository.worktrees[0]!.identity;
+    const declId = deriveDeclarationIdentity({ hostScope: "host:f04", clone: repository.clone, worktree: mainWt });
+    const declaration: WorkspaceDeclarationDto = {
+      tenant: "local:f04",
+      principal: "local:f04-principal",
+      hostFingerprint: "hostfp:f04",
+      identityUncertainty: [],
+      declarationId: declId.declarationId,
+      cloneId: repository.clone.cloneId,
+      worktreeId: mainWt.worktreeId,
+      authorizedRoots: [repo],
+      liveCapability: "live",
+      policyVersion: POLICY_VERSION,
+      declarationRevision: 1,
+    };
+    const privateScope: LiveScope = { tenant: declaration.tenant, clone: declaration.cloneId, worktree: declaration.worktreeId };
+    const worktreeToken: ScopeFencingTokenDto = {
+      tokenId: "tok:f04-001",
+      scope: privateScope,
+      epoch: 1,
+      epochId: "epoch:f04",
+      declarationRevision: 1,
+      projectionIncarnation: "inc:f04",
+      issuedAt: FIXTURE_NOW - 10_000,
+      expiresAt: FIXTURE_NOW + 60_000,
+    };
+    const protection = new FakeLocalProtectionPort();
+    const latestStore = new FakeLatestSnapshotStore();
+    const sink = new FakePrivateFencedSink();
+    const factory = createLiveFactory({
+      declaration,
+      ports: {
+        ...makeNoopAuxPorts(),
+        git: { gitPath: box.trace.executable, disabledHooksDir: hooksDir },
+        content: { protection, latestSnapshots: latestStore },
+        factSink: sink,
+      } as unknown as LiveFactoryPorts,
+    });
+
+    const badPayloads: unknown[] = ["secret", 42, [1, 2, 3], { bytes: true }];
+    let seq = 1;
+    for (const badPayload of badPayloads) {
+      const idxRes = await factory.runCapability("index-snapshot", {
+        cwd: repo,
+        generationId: formatProducerGenerationId(seq++),
+        fencingToken: worktreeToken,
+        plaintextPayload: badPayload,
+      } as never);
+      expect(idxRes).toMatchObject({ capability: "index-snapshot", state: "unavailable", delivered: false });
+      expect(idxRes.reason).toMatch(/plaintextPayload|Uint8Array/i);
+
+      const wtRes = await factory.runCapability("working-tree", {
+        cwd: repo,
+        generationId: formatProducerGenerationId(seq++),
+        fencingToken: worktreeToken,
+        plaintextPayload: badPayload,
+      } as never);
+      expect(wtRes).toMatchObject({ capability: "working-tree", state: "unavailable", delivered: false });
+      expect(wtRes.reason).toMatch(/plaintextPayload|Uint8Array/i);
+
+      const diffRes = await factory.runCapability("diffs", {
+        kind: "staged",
+        base: { label: "HEAD", oid: "1".repeat(40) },
+        tip: { label: "index", oid: "2".repeat(40) },
+        baseEntries: [],
+        tipEntries: [],
+        generationId: formatProducerGenerationId(seq++),
+        fencingToken: worktreeToken,
+        plaintextPayload: badPayload,
+      } as never);
+      expect(diffRes).toMatchObject({ capability: "diffs", state: "unavailable", delivered: false });
+      expect(diffRes.reason).toMatch(/plaintextPayload|Uint8Array/i);
+    }
+
+    expect(protection.calls).toHaveLength(0);
+    expect(latestStore.stored).toHaveLength(0);
+    expect(latestStore.latest.size).toBe(0);
+    expect(sink.deliveries).toHaveLength(0);
+
+    // Positive control: explicit null and Uint8Array payloads still succeed.
+    const okNullRes = await factory.runCapability("diffs", {
+      kind: "staged",
+      base: { label: "HEAD", oid: "1".repeat(40) },
+      tip: { label: "index", oid: "2".repeat(40) },
+      baseEntries: [],
+      tipEntries: [],
+      generationId: formatProducerGenerationId(seq++),
+      fencingToken: worktreeToken,
+      plaintextPayload: null,
+    } as never);
+    expect(okNullRes).toMatchObject({ capability: "diffs", state: "available", delivered: true });
+
+    const okBytesRes = await factory.runCapability("working-tree", {
+      cwd: repo,
+      generationId: formatProducerGenerationId(seq++),
+      fencingToken: worktreeToken,
+      plaintextPayload: new Uint8Array([1, 2, 3]),
+    } as never);
+    expect(okBytesRes).toMatchObject({ capability: "working-tree", state: "available", delivered: true });
+  });
+
+  it("F-05: index-snapshot populates indexBlobFingerprints only from staged index entries, excluding git rm --cached files", async () => {
+    const box = createSandbox();
+    const repo = box.init(join(box.root, "f05-rm-cached"));
+    const keptBody = "export const kept = 1;\n";
+    const removedBody = "export const removedFromIndex = 2;\n";
+    const modifiedStagedBody = "export const modified = 99;\n";
+    writeFileSync(join(repo, "kept.ts"), keptBody);
+    writeFileSync(join(repo, "unstaged-removed.ts"), removedBody);
+    writeFileSync(join(repo, "modified.ts"), "export const modified = 1;\n");
+    box.git(repo, ["add", "--", "kept.ts", "unstaged-removed.ts", "modified.ts"]);
+    box.git(repo, ["commit", "-q", "-m", "initial"]);
+
+    // Unstage unstaged-removed.ts (still in HEAD AND still present untracked on disk), stage modified.ts.
+    box.git(repo, ["rm", "--cached", "--", "unstaged-removed.ts"]);
+    writeFileSync(join(repo, "modified.ts"), modifiedStagedBody);
+    box.git(repo, ["add", "--", "modified.ts"]);
+
+    const commonDir = realpathSync(join(repo, ".git"));
+    const mainGitDir = box.git(repo, ["rev-parse", "--absolute-git-dir"], undefined, "oracle").toString().trim();
+    const hooksDir = join(box.root, "disabled-hooks");
+    const repository = observeRepository({
+      hostScope: "host:f05",
+      commonDirRealpath: commonDir,
+      commonDirProjectFingerprint: "ws:f05",
+      oidAlgorithm: "sha1",
+      worktrees: [
+        {
+          worktreePath: repo,
+          gitDir: mainGitDir,
+          worktreeFingerprint: "wtfp:f05",
+          head: { kind: "branch", refName: "refs/heads/main" },
+        },
+      ],
+    });
+    const mainWt = repository.worktrees[0]!.identity;
+    const declId = deriveDeclarationIdentity({ hostScope: "host:f05", clone: repository.clone, worktree: mainWt });
+    const declaration: WorkspaceDeclarationDto = {
+      tenant: "local:f05",
+      principal: "local:f05-principal",
+      hostFingerprint: "hostfp:f05",
+      identityUncertainty: [],
+      declarationId: declId.declarationId,
+      cloneId: repository.clone.cloneId,
+      worktreeId: mainWt.worktreeId,
+      authorizedRoots: [repo],
+      liveCapability: "live",
+      policyVersion: POLICY_VERSION,
+      declarationRevision: 1,
+    };
+    const privateScope: LiveScope = { tenant: declaration.tenant, clone: declaration.cloneId, worktree: declaration.worktreeId };
+    const worktreeToken: ScopeFencingTokenDto = {
+      tokenId: "tok:f05-001",
+      scope: privateScope,
+      epoch: 1,
+      epochId: "epoch:f05",
+      declarationRevision: 1,
+      projectionIncarnation: "inc:f05",
+      issuedAt: FIXTURE_NOW - 10_000,
+      expiresAt: FIXTURE_NOW + 60_000,
+    };
+    const factory = createLiveFactory({
+      declaration,
+      ports: {
+        ...makeNoopAuxPorts(),
+        git: { gitPath: box.trace.executable, disabledHooksDir: hooksDir },
+        content: { protection: new FakeLocalProtectionPort(), latestSnapshots: new FakeLatestSnapshotStore() },
+        factSink: new FakePrivateFencedSink(),
+      } as unknown as LiveFactoryPorts,
+    });
+
+    const idxRes = await factory.runCapability("index-snapshot", {
+      cwd: repo,
+      generationId: formatProducerGenerationId(1),
+      fencingToken: worktreeToken,
+    } as never) as unknown as Record<string, unknown>;
+    expect(idxRes.state, JSON.stringify(idxRes)).toBe("available");
+    const verified = idxRes.verifiedCaptures as Record<string, { contentFingerprint: string; snapshotKind?: string }>;
+    expect(verified["unstaged-removed.ts"]).toBeUndefined();
+    expect(verified["kept.ts"]).toMatchObject({
+      snapshotKind: "index",
+      contentFingerprint: sha256Text(keptBody),
+    });
+    expect(verified["modified.ts"]).toMatchObject({
+      snapshotKind: "index",
+      contentFingerprint: sha256Text(modifiedStagedBody),
+    });
+  });
+
+  it("F-06: direct analyzeCode rejects verifiedCapture when input.scope.worktree mismatches verifiedCapture.worktreeId", async () => {
+    const content = "export function directCheck() { return 7; }\n";
+    const contentFingerprint = sha256Text(content);
+    const snapshotId = `lsnap:${"a".repeat(64)}`;
+    const configHash = sha256Text("cfg:f06");
+    const dependencyHash = sha256Text("deps:f06");
+
+    const minimalWasm = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
+    const minimalWasmDigest = createHash("sha256").update(minimalWasm).digest("hex");
+
+    const ports = {
+      grammar: {
+        status: () => ({
+          state: "available" as const,
+          version: "0.1.0",
+          bytes: minimalWasm,
+          digest: minimalWasmDigest,
+          abi: "14",
+          grammarId: "tree-sitter-typescript@0.1.0",
+        }),
+        load: () => ({ stubGrammar: true }),
+      },
+      objects: {
+        async loadObject() { return null; },
+        async loadBlob() { return null; },
+      },
+      extractor: {
+        parse: () => ({
+          symbols: [
+            {
+              slot: "fn:directCheck",
+              name: "directCheck",
+              kind: "function",
+              bodyHash: sha256Text("body:directCheck"),
+              startLine: 1,
+              endLine: 1,
+            },
+          ],
+          calls: [],
+          inheritances: [],
+          topologyHash: sha256Text("topo:f06"),
+          syntax: {
+            rootSpansBytes: true,
+            hasError: false,
+            hasMissing: false,
+            walkComplete: true,
+          },
+        }),
+      },
+    };
+
+    const verifiedCapture = {
+      stable: true as const,
+      scope: { tenant: "local:f06", clone: "clone:f06" },
+      worktreeId: "wt:evidence-a",
+      snapshotId,
+      path: "src/direct.ts",
+      contentFingerprint,
+      indexDigest: "b".repeat(64),
+      attrFingerprint: "c".repeat(64),
+      attempts: 1,
+      snapshotKind: "working-tree" as const,
+    };
+
+    // Mismatched input.scope.worktree must stay partial / unstable-capture even when input.worktreeId === ev.worktreeId.
+    const mismatched = await analyzeCode(
+      {
+        scope: { tenant: "local:f06", clone: "clone:f06", worktree: "wt:other-scope" },
+        language: "typescript",
+        path: "src/direct.ts",
+        content,
+        treeOid: null,
+        snapshotId,
+        snapshotKind: "working-tree",
+        worktreeId: "wt:evidence-a",
+        configHash,
+        dependencyHash,
+        historicalBounds: null,
+        verifiedCapture,
+      },
+      ports,
+    );
+    expect(mismatched.state).toBe("partial");
+    expect(mismatched.coverage.reason).toMatch(/^unstable-capture:/);
+    expect(mismatched.declarationInventory).toBeUndefined();
+
+    // Positive control: matching input.scope.worktree reaches complete.
+    const matched = await analyzeCode(
+      {
+        scope: { tenant: "local:f06", clone: "clone:f06", worktree: "wt:evidence-a" },
+        language: "typescript",
+        path: "src/direct.ts",
+        content,
+        treeOid: null,
+        snapshotId,
+        snapshotKind: "working-tree",
+        worktreeId: "wt:evidence-a",
+        configHash,
+        dependencyHash,
+        historicalBounds: null,
+        verifiedCapture,
+      },
+      ports,
+    );
+    expect(matched.state).toBe("complete");
+    expect(matched.declarationInventory).toBeDefined();
+  });
+
+  // — Review round 2 regressions (REVIEW-lot-E-ASM3-r2.md: F-R2-01 and F-R2-02).
+
+  it("F-R2-01: worktree publication and reconciliation guard committedLeaseHeld without an unconditional microtask yield", async () => {
+    const box = createSandbox();
+    const { declaration } = buildL0Setup(box);
+    const worktreeScope: LiveScope = {
+      tenant: declaration.tenant,
+      clone: declaration.cloneId,
+      worktree: declaration.worktreeId,
+    };
+    const cloneScope: LiveScope = {
+      tenant: declaration.tenant,
+      clone: declaration.cloneId,
+    };
+
+    const clock = makeFakeScheduleClock(FIXTURE_NOW);
+    const watch = new TestWatchPort(clock);
+    const authority = new TestWriterAuthority(clock, worktreeScope, declaration.declarationRevision, () => world.incarnationId);
+    const world = new TestSchedulingWorld(clock, authority);
+    world.sourceFiles.set("src/a.ts", "export const a = 1;\n");
+    world.projectedFiles.set("src/a.ts", "export const a = 1;\n");
+    world.markers.set("live-checkpoint", "ckpt:r2-01");
+
+    let committedLeaseActive = false;
+    let committedAcquiring = false;
+    const committedLeaseIds = new Set<string>();
+    const overlapEvents: string[] = [];
+
+    const trackedWriter: WriterAuthority = {
+      async acquire(req) {
+        const tok = await authority.acquire(req);
+        if (tok && committedAcquiring) {
+          committedLeaseActive = true;
+          committedLeaseIds.add(tok.tokenId);
+        }
+        return tok;
+      },
+      renew: (tok) => authority.renew(tok),
+      validate: (tok) => authority.validate(tok),
+      revoke: (tok) => authority.revoke(tok),
+      async release(tok) {
+        if (committedLeaseIds.has(tok.tokenId)) {
+          committedLeaseActive = false;
+        }
+        await authority.release(tok);
+      },
+    };
+
+    const sharedBudgets: SchedulerBudgets = {
+      maxPendingPaths: 64,
+      maxPendingBytes: 16 * 1024 * 1024,
+      maxConcurrency: 4,
+      maxActiveOperationsPerScope: 1,
+      maxRetries: 2,
+      retryBaseMs: 50,
+      maxBackoffMs: 30_000,
+      maxFailedKept: 8,
+      maxConsumers: 32,
+      maxFileSizeBytes: 1024 * 1024,
+      maxPathBytes: 1024,
+      readMarginBytes: 64,
+      maxDiscoveryBytes: 8 * 1024,
+      maxBatchBytes: 1024 * 1024,
+      maxGitChildren: 4,
+      attemptDeadlineMs: 30_000,
+      cancellationDeadlineMs: 10,
+      interactiveQuantum: 3,
+      backfillQuantum: 1,
+      backfillReserveBytes: 4 * 1024 * 1024,
+      durableBacklogQuota: 100_000,
+    };
+    const sharedScheduler = new Scheduler(
+      {
+        clock,
+        sink: { deliver: async () => ({ ok: false, retryable: false }) },
+        validateToken: (t) => authority.validate(t),
+        sleep: world.durability().sleep,
+        park: world.durability().park,
+        readProgress: world.durability().readProgress,
+        writeProgress: world.durability().writeProgress,
+        backlogSize: world.durability().backlogSize,
+      },
+      sharedBudgets,
+    );
+
+    let onQuiesceScope: (() => void) | undefined;
+    const origQuiesce = sharedScheduler.quiesceScope.bind(sharedScheduler);
+    sharedScheduler.quiesceScope = (scopeId: string) => {
+      const p = origQuiesce(scopeId);
+      const hook = onQuiesceScope;
+      if (hook) {
+        onQuiesceScope = undefined;
+        hook();
+      }
+      return p;
+    };
+
+    world.onDuringPublish = (opts) => {
+      if (committedLeaseActive && !committedLeaseIds.has(opts.fencingToken.tokenId)) {
+        overlapEvents.push(`worktree-publish-overlapped-committed-lease:${opts.fencingToken.tokenId}`);
+      }
+    };
+    world.onDuringCollect = (opts) => {
+      if (committedLeaseActive && !committedLeaseIds.has(opts.fencingToken.tokenId)) {
+        overlapEvents.push(`reconcile-collect-overlapped-committed-lease:${opts.fencingToken.tokenId}`);
+      }
+    };
+
+    let pauseCompletionGate: Promise<void> | undefined;
+    let onCompletionEntered: (() => void) | undefined;
+    let completionSeq = 0;
+    const generationCompletion: GenerationCompletionPort = {
+      async complete(message: GenerationCompletionMessageDto): Promise<GenerationCompletionOutcomeDto> {
+        completionSeq += 1;
+        onCompletionEntered?.();
+        if (pauseCompletionGate) {
+          await pauseCompletionGate;
+        }
+        return {
+          controlVersion: GENERATION_CONTROL_VERSION,
+          kind: "generation-completion-outcome",
+          authority: STORAGE_KERNEL_AUTHORITY,
+          status: "published",
+          published: true,
+          producerGenerationId: message.producerGenerationId,
+          completionMessageDigest: message.messageDigest,
+          view: message.view,
+          scope: message.scope,
+          storageGenerationId: `sgen:${String(completionSeq).padStart(6, "0")}`,
+          storeIncarnation: world.incarnationId,
+          pointerVersion: completionSeq,
+          publicationReceiptId: `pubrcpt:${String(completionSeq).padStart(6, "0")}`,
+          publishedAt: clock.now(),
+        };
+      },
+    };
+
+    const sink = new FakePrivateFencedSink();
+    const factory = createLiveFactory({
+      declaration,
+      ports: {
+        ...makeNoopAuxPorts(),
+        clock,
+        watch,
+        scheduling: {
+          scheduler: sharedScheduler,
+          writer: trackedWriter,
+          markerStore: world.markerStore(),
+          scan: world.scan(),
+          pollRefs: world.pollRefs,
+        },
+        generationCompletion,
+        factSink: sink,
+      } as unknown as LiveFactoryPorts,
+    });
+
+    const makeCommittedPubReq = (seq: number) => {
+      const genId = formatProducerGenerationId(seq);
+      const correlation = createGenerationCorrelation({
+        producerGenerationId: genId,
+        policyVersion: POLICY_VERSION,
+        view: "committed",
+        scope: cloneScope,
+        authorizingDeclaration: {
+          declarationId: declaration.declarationId,
+          cloneId: declaration.cloneId,
+          worktreeId: declaration.worktreeId,
+          declarationRevision: declaration.declarationRevision,
+        },
+        sourceBoundary: {
+          view: "committed",
+          oidAlgorithm: "sha1",
+          observedAt: clock.now(),
+          refsFingerprint: sha256Text(`refs:r2-01-${seq}`),
+          headCommit: { algorithm: "sha1", oid: "a".repeat(40) },
+          rootOids: [{ algorithm: "sha1", oid: "a".repeat(40) }],
+          configAttributesFingerprint: sha256Text("cfg:r2-01"),
+          completeHistoryFrontier: true,
+        },
+      });
+      const cloneToken: ScopeFencingTokenDto = {
+        tokenId: `tok:r2-01-clone-${seq}`,
+        scope: cloneScope,
+        epoch: 1,
+        epochId: `epoch:r2-01-${seq}`,
+        declarationRevision: declaration.declarationRevision,
+        projectionIncarnation: world.incarnationId,
+        issuedAt: clock.now() - 1_000,
+        expiresAt: clock.now() + 60_000,
+      };
+      return {
+        generationId: genId,
+        fencingToken: cloneToken,
+        expectedIncarnation: world.incarnationId,
+        requireWatchReady: false,
+        completion: {
+          correlation,
+          receipts: [
+            {
+              controlVersion: GENERATION_CONTROL_VERSION,
+              kind: "batch-receipt" as const,
+              received: true as const,
+              published: false as const,
+              completeBatch: true as const,
+              producerGenerationId: genId,
+              batchId: `batch:r201:${String(seq).padStart(6, "0")}`,
+              batchDigest: "e".repeat(64),
+              receiptId: `rcpt:r201-${seq}`,
+              byteLength: 256,
+              finalBatch: true,
+              receivedAt: clock.now(),
+            },
+          ],
+          input: {
+            completionState: "complete" as const,
+            coverage: [{ axis: "refs" as const, state: "current" as const, reason: "verified", pendingCount: 0, complete: true }],
+            exclusions: [],
+            errors: [],
+            remainingWork: 0,
+            completedAt: clock.now(),
+          },
+        },
+      };
+    };
+
+    // Part (a): Worktree runPublication arriving in the exact microtask before committed-view
+    // resumes from waitForScopeQuiescence must synchronously increment activeWorktreeOps so
+    // committed-view waits instead of revoking/overlapping the worktree publication.
+    const wtToken = (await authority.acquire({
+      scope: worktreeScope,
+      minEpoch: 1,
+      declarationRevision: declaration.declarationRevision,
+      projectionIncarnation: world.incarnationId,
+    }))!;
+    let wtPubPromise!: Promise<unknown>;
+    onQuiesceScope = () => {
+      queueMicrotask(() => {
+        queueMicrotask(() => {
+          wtPubPromise = factory.runCapability("publication", {
+            generationId: formatProducerGenerationId(301),
+            fencingToken: wtToken,
+            expectedIncarnation: world.incarnationId,
+            checkpoint: "ckpt:r2-01",
+            sourceVector: world.sourceVector(),
+            requireWatchReady: false,
+          } as never);
+        });
+      });
+    };
+    committedAcquiring = true;
+    const committedRes1 = await factory.runCapability("publication", makeCommittedPubReq(302) as never);
+    committedAcquiring = false;
+    const wtPubRes = await wtPubPromise;
+    expect(wtPubRes).toMatchObject({ capability: "publication", state: "available", delivered: true, published: true });
+    expect(committedRes1).toMatchObject({ capability: "publication", state: "available", delivered: true, published: true });
+    expect(overlapEvents).toEqual([]);
+    expect(committedLeaseActive).toBe(false);
+
+    // Part (b): runReconciliation arriving after ensureWatchReady in the exact microtask before
+    // committed-view resumes from waitForScopeQuiescence must synchronously increment activeWorktreeOps.
+    const bootRes = await factory.runCapability("reconciliation", {
+      generationId: formatProducerGenerationId(303),
+      action: "bootstrap",
+    } as never);
+    expect(bootRes).toMatchObject({ capability: "reconciliation", state: "available", delivered: true });
+
+    world.sourceFiles.set("src/b.ts", "export const b = 2;\n");
+    let recPromise!: Promise<unknown>;
+    onQuiesceScope = () => {
+      queueMicrotask(() => {
+        recPromise = factory.runCapability("reconciliation", {
+          generationId: formatProducerGenerationId(304),
+          action: "round",
+        } as never);
+      });
+    };
+    committedAcquiring = true;
+    const committedRes2 = await factory.runCapability("publication", makeCommittedPubReq(305) as never);
+    committedAcquiring = false;
+    const recRes = await recPromise;
+    expect(recRes).toMatchObject({ capability: "reconciliation", state: "available", delivered: true });
+    expect(committedRes2).toMatchObject({ capability: "publication", state: "available", delivered: true, published: true });
+    expect(overlapEvents).toEqual([]);
+    expect(committedLeaseActive).toBe(false);
+
+    // Part (c): While committedLeaseHeld is true, queued reconciliation waits until all
+    // committed leases release and re-checks the flag after wakeup with zero overlap.
+    let releasePause!: () => void;
+    pauseCompletionGate = new Promise<void>((resolve) => {
+      releasePause = resolve;
+    });
+    let enteredResolve!: () => void;
+    const enteredPromise = new Promise<void>((resolve) => {
+      enteredResolve = resolve;
+    });
+    onCompletionEntered = () => {
+      onCompletionEntered = undefined;
+      enteredResolve();
+    };
+
+    world.sourceFiles.set("src/c.ts", "export const c = 3;\n");
+    const collectCallsBeforePause = world.collectCalls;
+    committedAcquiring = true;
+    const committedAPromise = factory.runCapability("publication", makeCommittedPubReq(306) as never);
+    await enteredPromise;
+    expect(committedLeaseActive).toBe(true);
+
+    const queuedRecPromise = factory.runCapability("reconciliation", {
+      generationId: formatProducerGenerationId(307),
+      action: "round",
+    } as never);
+    const committedBPromise = factory.runCapability("publication", makeCommittedPubReq(308) as never);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(world.collectCalls).toBe(collectCallsBeforePause);
+
+    pauseCompletionGate = undefined;
+    releasePause();
+    const [resA, resB, resQueuedRec] = await Promise.all([committedAPromise, committedBPromise, queuedRecPromise]);
+    committedAcquiring = false;
+    expect(resA).toMatchObject({ capability: "publication", state: "available", delivered: true, published: true });
+    expect(resB).toMatchObject({ capability: "publication", state: "available", delivered: true, published: true });
+    expect(resQueuedRec).toMatchObject({ capability: "reconciliation", state: "available", delivered: true });
+    expect(overlapEvents).toEqual([]);
+    expect(committedLeaseActive).toBe(false);
+  });
+
+  it("F-R2-02: publication validates and builds GenerationCompletionMessageDto before lease acquisition or scan publishGeneration", async () => {
+    const box = createSandbox();
+    const { declaration } = buildL0Setup(box);
+    const worktreeScope: LiveScope = {
+      tenant: declaration.tenant,
+      clone: declaration.cloneId,
+      worktree: declaration.worktreeId,
+    };
+    const cloneScope: LiveScope = {
+      tenant: declaration.tenant,
+      clone: declaration.cloneId,
+    };
+
+    const clock = makeFakeScheduleClock(FIXTURE_NOW);
+    const watch = new TestWatchPort(clock);
+    const authority = new TestWriterAuthority(clock, worktreeScope, declaration.declarationRevision, () => world.incarnationId);
+    const world = new TestSchedulingWorld(clock, authority);
+    world.sourceFiles.set("src/a.ts", "export const a = 1;\n");
+    world.projectedFiles.set("src/a.ts", "export const a = 1;\n");
+    world.markers.set("live-checkpoint", "ckpt:r2-02");
+
+    const sink = new FakePrivateFencedSink();
+    const completionCalls: GenerationCompletionMessageDto[] = [];
+    const generationCompletion: GenerationCompletionPort = {
+      async complete(message: GenerationCompletionMessageDto): Promise<GenerationCompletionOutcomeDto> {
+        completionCalls.push(message);
+        return {
+          controlVersion: GENERATION_CONTROL_VERSION,
+          kind: "generation-completion-outcome",
+          authority: STORAGE_KERNEL_AUTHORITY,
+          status: "published",
+          published: true,
+          producerGenerationId: message.producerGenerationId,
+          completionMessageDigest: message.messageDigest,
+          view: message.view,
+          scope: message.scope,
+          storageGenerationId: `sgen:${String(completionCalls.length).padStart(6, "0")}`,
+          storeIncarnation: world.incarnationId,
+          pointerVersion: completionCalls.length,
+          publicationReceiptId: `pubrcpt:${String(completionCalls.length).padStart(6, "0")}`,
+          publishedAt: clock.now(),
+        };
+      },
+    };
+
+    const factory = createLiveFactory({
+      declaration,
+      ports: {
+        ...makeNoopAuxPorts(),
+        clock,
+        watch,
+        scheduling: {
+          writer: authority,
+          markerStore: world.markerStore(),
+          scan: world.scan(),
+          pollRefs: world.pollRefs,
+          durability: world.durability(),
+        },
+        generationCompletion,
+        factSink: sink,
+      } as unknown as LiveFactoryPorts,
+    });
+
+    const wtToken = (await authority.acquire({
+      scope: worktreeScope,
+      minEpoch: 1,
+      declarationRevision: declaration.declarationRevision,
+      projectionIncarnation: world.incarnationId,
+    }))!;
+    const acquiredBeforeTests = authority.acquiredTokens.length;
+
+    const makePrivateCorr = (genId: string) =>
+      createGenerationCorrelation({
+        producerGenerationId: genId,
+        policyVersion: CONTENT_POLICY_VERSION,
+        view: "private",
+        scope: worktreeScope,
+        authorizingDeclaration: {
+          declarationId: declaration.declarationId,
+          cloneId: declaration.cloneId,
+          worktreeId: declaration.worktreeId,
+          declarationRevision: declaration.declarationRevision,
+        },
+        sourceBoundary: {
+          view: "private",
+          oidAlgorithm: "sha1",
+          observedAt: clock.now(),
+          worktreeId: declaration.worktreeId,
+          headCommit: { algorithm: "sha1", oid: "a".repeat(40) },
+          captureStable: true,
+          snapshotIds: [`lsnap:${"c".repeat(64)}`],
+          configAttributesFingerprint: sha256Text("cfg:r2-02-priv"),
+          contentFingerprintMode: "none",
+        },
+      });
+
+    const makeCommittedCorr = (genId: string) =>
+      createGenerationCorrelation({
+        producerGenerationId: genId,
+        policyVersion: POLICY_VERSION,
+        view: "committed",
+        scope: cloneScope,
+        authorizingDeclaration: {
+          declarationId: declaration.declarationId,
+          cloneId: declaration.cloneId,
+          worktreeId: declaration.worktreeId,
+          declarationRevision: declaration.declarationRevision,
+        },
+        sourceBoundary: {
+          view: "committed",
+          oidAlgorithm: "sha1",
+          observedAt: clock.now(),
+          refsFingerprint: sha256Text(`refs:r2-02-${genId}`),
+          headCommit: { algorithm: "sha1", oid: "a".repeat(40) },
+          rootOids: [{ algorithm: "sha1", oid: "a".repeat(40) }],
+          configAttributesFingerprint: sha256Text("cfg:r2-02-comm"),
+          completeHistoryFrontier: true,
+        },
+      });
+
+    const makeReceipt = (genId: string, batchId = "batch:r202:000001", digest = "d".repeat(64)): BatchDeliveryReceiptDto => ({
+      controlVersion: GENERATION_CONTROL_VERSION,
+      kind: "batch-receipt",
+      received: true,
+      published: false,
+      completeBatch: true,
+      producerGenerationId: genId,
+      batchId,
+      batchDigest: digest,
+      receiptId: `rcpt:${batchId}`,
+      byteLength: 256,
+      finalBatch: true,
+      receivedAt: clock.now(),
+    });
+
+    const validInput = () => ({
+      completionState: "complete" as const,
+      coverage: [{ axis: "working-tree" as const, state: "current" as const, reason: "verified", pendingCount: 0, complete: true }],
+      exclusions: [],
+      errors: [],
+      remainingWork: 0,
+      completedAt: clock.now(),
+    });
+
+    // Combined scan + completion mode (private view): malformed completion.input / completion.receipts
+    // MUST fail closed BEFORE scheduling.scan.publishGeneration runs.
+    const badCombinedPrivateCases: Array<{ readonly label: string; readonly receipts: unknown; readonly input: unknown }> = [
+      { label: "null input", receipts: [makeReceipt(formatProducerGenerationId(401))], input: null },
+      { label: "invalid completionState", receipts: [makeReceipt(formatProducerGenerationId(402))], input: { ...validInput(), completionState: "invalid-state" } },
+      { label: "negative remainingWork", receipts: [makeReceipt(formatProducerGenerationId(403))], input: { ...validInput(), remainingWork: -1 } },
+      { label: "disallowed extra key", receipts: [makeReceipt(formatProducerGenerationId(404))], input: { ...validInput(), storageGenerationId: "sgen:forged" } },
+      { label: "non-array receipts", receipts: "not-an-array", input: validInput() },
+      { label: "receipt for wrong generationId", receipts: [makeReceipt(formatProducerGenerationId(999))], input: validInput() },
+      {
+        label: "conflicting duplicate batch receipts",
+        receipts: [
+          makeReceipt(formatProducerGenerationId(407), "batch:r202:dup001", "a".repeat(64)),
+          makeReceipt(formatProducerGenerationId(407), "batch:r202:dup001", "b".repeat(64)),
+        ],
+        input: validInput(),
+      },
+    ];
+
+    for (let i = 0; i < badCombinedPrivateCases.length; i += 1) {
+      const genId = formatProducerGenerationId(401 + i);
+      const c = badCombinedPrivateCases[i]!;
+      const res = await factory.runCapability("publication", {
+        generationId: genId,
+        fencingToken: wtToken,
+        expectedIncarnation: world.incarnationId,
+        checkpoint: "ckpt:r2-02",
+        sourceVector: world.sourceVector(),
+        completion: {
+          correlation: makePrivateCorr(genId),
+          receipts: c.receipts,
+          input: c.input,
+        },
+      } as never);
+      expect(res, `private combined case "${c.label}"`).toMatchObject({
+        capability: "publication",
+        state: "unavailable",
+        delivered: false,
+      });
+      expect(world.publishCalls, `zero publishGeneration on "${c.label}"`).toBe(0);
+      expect(authority.acquiredTokens.length, `zero extra leases on "${c.label}"`).toBe(acquiredBeforeTests);
+      expect(completionCalls).toHaveLength(0);
+      expect(sink.deliveries).toHaveLength(0);
+    }
+
+    // Combined scan + completion mode (committed view): malformed completion payload MUST fail closed
+    // BEFORE acquiring any worktree scheduling lease or calling publishGeneration.
+    const genBadCommitted = formatProducerGenerationId(420);
+    const cloneToken: ScopeFencingTokenDto = {
+      tokenId: "tok:r2-02-clone",
+      scope: cloneScope,
+      epoch: 1,
+      epochId: "epoch:r2-02",
+      declarationRevision: declaration.declarationRevision,
+      projectionIncarnation: world.incarnationId,
+      issuedAt: clock.now() - 1_000,
+      expiresAt: clock.now() + 60_000,
+    };
+    const badCommittedRes = await factory.runCapability("publication", {
+      generationId: genBadCommitted,
+      fencingToken: cloneToken,
+      expectedIncarnation: world.incarnationId,
+      checkpoint: "ckpt:r2-02",
+      sourceVector: world.sourceVector(),
+      completion: {
+        correlation: makeCommittedCorr(genBadCommitted),
+        receipts: [makeReceipt(genBadCommitted)],
+        input: { ...validInput(), expectedBatchCount: 99 },
+      },
+    } as never);
+    expect(badCommittedRes).toMatchObject({ capability: "publication", state: "unavailable", delivered: false });
+    expect(world.publishCalls).toBe(0);
+    expect(authority.acquiredTokens.length).toBe(acquiredBeforeTests);
+    expect(completionCalls).toHaveLength(0);
+    expect(sink.deliveries).toHaveLength(0);
+
+    // Positive control: valid combined scan + completion succeeds cleanly.
+    const genValid = formatProducerGenerationId(421);
+    const validRes = await factory.runCapability("publication", {
+      generationId: genValid,
+      fencingToken: wtToken,
+      expectedIncarnation: world.incarnationId,
+      checkpoint: "ckpt:r2-02",
+      sourceVector: world.sourceVector(),
+      completion: {
+        correlation: makePrivateCorr(genValid),
+        receipts: [makeReceipt(genValid)],
+        input: validInput(),
+      },
+    } as never);
+    expect(validRes).toMatchObject({ capability: "publication", state: "available", delivered: true, published: true });
+    expect(world.publishCalls).toBe(1);
+    expect(completionCalls).toHaveLength(1);
+    expect(sink.deliveries).toHaveLength(1);
   });
 });

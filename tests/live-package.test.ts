@@ -1288,7 +1288,18 @@ describe("live package", () => {
     const { described, factory, initial, warm, missing, recovered, unsupported } = productionProbe("factory");
     expect(factory).toEqual(described);
     expect(factory.filter((entry: { state: string }) => entry.state === "available").map((entry: { capability: string }) => entry.capability))
-      .toEqual(["refs", "history-dag", "github-pr", "code-analysis", "retention-requests"]);
+      .toEqual([
+        "refs",
+        "history-dag",
+        "github-pr",
+        "index-snapshot",
+        "working-tree",
+        "diffs",
+        "code-analysis",
+        "retention-requests",
+        "reconciliation",
+        "publication",
+      ]);
     expect(initial.analysis).toMatchObject({ state: "complete", cacheHit: false });
     expect(initial.analysis.symbols).toHaveLength(2);
     expect(warm.analysis).toMatchObject({ state: "complete", cacheHit: true });
@@ -1430,8 +1441,19 @@ describe("live package", () => {
     recordPhaseMarker(packed.phaseTrace, "exercise", packed.pythonMarker);
     expectNoPython(packed.phaseTrace);
     const exercise = JSON.parse(exerciseOutput) as ExerciseReport;
-    expect(exercise.capabilityCount).toBeGreaterThan(0);
-    expect(exercise.available).toEqual(["refs", "history-dag", "github-pr", "code-analysis", "retention-requests"]);
+    expect(exercise.capabilityCount).toBe(10);
+    expect(exercise.available).toEqual([
+      "refs",
+      "history-dag",
+      "github-pr",
+      "index-snapshot",
+      "working-tree",
+      "diffs",
+      "code-analysis",
+      "retention-requests",
+      "reconciliation",
+      "publication",
+    ]);
     expect(exercise.reasoned).toBe(true);
     expect(exercise.plannedLots).toBe(true);
     expect(exercise.refs.state).toBe("unavailable");
@@ -1941,8 +1963,9 @@ describe("live package", () => {
       .filter((entry) => entry.isFile() && entry.name.endsWith(".ts") && !entry.name.endsWith(".d.ts"))
       .map((entry) => entry.name.slice(0, -3))
       .sort();
-    expect(neutralSourceModules).toHaveLength(34);
+    expect(neutralSourceModules).toHaveLength(35);
     expect(neutralSourceModules).toContain("factory-history");
+    expect(neutralSourceModules).toContain("factory-local");
     for (const name of EASM1_NEWLY_PACKED_MODULES) {
       expect(neutralSourceModules, `source directory contains ${name}.ts`).toContain(name);
     }
@@ -2044,12 +2067,26 @@ describe("live package", () => {
           '];',
           'import {',
           '  createLiveFactory, composeFactoryGitExecutor, validateHostHooksIsolationDir,',
-          '  type GitPort, type RefsCapabilityRequest, type HistoryDagCapabilityRequest,',
+          '  buildVerifiedCaptureEvidence, captureForLocalCodeAnalysis, createLocalSchedulingController,',
+          '  DEFAULT_FACTORY_SCHEDULER_BUDGETS, DEFAULT_FACTORY_WATCH_BUDGETS, DEFAULT_FACTORY_RECONCILE_BUDGETS,',
+          '  type GitPort, type ContentPort, type CachePort, type SchedulingPort, type VerifiedCaptureEvidenceDto,',
+          '  type RefsCapabilityRequest, type HistoryDagCapabilityRequest,',
           '  type GithubPrCapabilityRequest, type RetentionRequestsCapabilityRequest,',
+          '  type IndexSnapshotCapabilityRequest, type WorkingTreeCapabilityRequest,',
+          '  type DiffsCapabilityRequest, type ReconciliationCapabilityRequest, type PublicationCapabilityRequest,',
           '  type DeliveredBatchSummary, type CapabilityResult,',
           '} from "@sentropic/engram-live/integration";',
-          'export const easm2Integration = [createLiveFactory, composeFactoryGitExecutor, validateHostHooksIsolationDir];',
-          'export type Easm2Types = [GitPort, RefsCapabilityRequest, HistoryDagCapabilityRequest, GithubPrCapabilityRequest, RetentionRequestsCapabilityRequest, DeliveredBatchSummary, CapabilityResult];',
+          'export const easm2Integration = [',
+          '  createLiveFactory, composeFactoryGitExecutor, validateHostHooksIsolationDir,',
+          '  buildVerifiedCaptureEvidence, captureForLocalCodeAnalysis, createLocalSchedulingController,',
+          '  DEFAULT_FACTORY_SCHEDULER_BUDGETS, DEFAULT_FACTORY_WATCH_BUDGETS, DEFAULT_FACTORY_RECONCILE_BUDGETS,',
+          '];',
+          'export type Easm2Types = [',
+          '  GitPort, ContentPort, CachePort, SchedulingPort, VerifiedCaptureEvidenceDto,',
+          '  RefsCapabilityRequest, HistoryDagCapabilityRequest, GithubPrCapabilityRequest, RetentionRequestsCapabilityRequest,',
+          '  IndexSnapshotCapabilityRequest, WorkingTreeCapabilityRequest, DiffsCapabilityRequest,',
+          '  ReconciliationCapabilityRequest, PublicationCapabilityRequest, DeliveredBatchSummary, CapabilityResult,',
+          '];',
           "",
         ].join("\n"),
       );
@@ -2335,9 +2372,7 @@ describe("live package", () => {
             git: { gitPath: data.gitPath, disabledHooksDir: data.hooksDir, process: gitProcessPort },
             filesystem: { async readFileBytes() { throw new Error("unused"); } },
             clock: { now: () => data.now },
-            content: { liveContentSeam: "host-content" },
             factSink,
-            cache: { liveCacheSeam: "host-cache" },
             grammarRuntime: { init() {}, async loadLanguage() { throw new Error("unused"); }, createParser() { throw new Error("unused"); } },
             historyPersistence,
             githubPr,
@@ -2461,8 +2496,13 @@ describe("live package", () => {
         "refs",
         "history-dag",
         "github-pr",
+        "index-snapshot",
+        "working-tree",
+        "diffs",
         "code-analysis",
         "retention-requests",
+        "reconciliation",
+        "publication",
       ]);
       expect(report.refsTracked).toBeGreaterThanOrEqual(4);
       expect(report.refsRoots).toBeGreaterThanOrEqual(2);
@@ -2485,6 +2525,673 @@ describe("live package", () => {
       expect(report.tmpEntries).toEqual([]);
       expect(readdirSync(isolatedTmp)).toEqual([]);
       expect(inventoryDigest(corpus)).toBe(digestBefore);
+    } finally {
+      box.dispose();
+    }
+  });
+
+  it("each of the ten capabilities executes from the installed tarball and none is reported unavailable when its ports are present", () => {
+    // E-ASM3 RED (plan/09 E-ASM3): from the offline installed tarball alone,
+    // with the root checkout and root node_modules denied via Node's permission
+    // model, execute all ten advertised capabilities through
+    // createLiveFactory(...).runCapability(...) with injected host ports and
+    // verify none reports unavailable, zero plaintext leaks, zero Python/network
+    // use, zero OS tmpdir writes, and whole-worktree immutability.
+    const box = new LiveGitSandbox();
+    try {
+      const capabilities = detectGitCapabilities(box);
+      const format = capabilities.objectFormats.includes("sha1") ? ("sha1" as const) : capabilities.objectFormats[0]!;
+      const corpus = buildCorpus(box, format, "files");
+      const digestBefore = inventoryDigest(corpus);
+      const commonDir = realpathSync(join(corpus.repo, ".git"));
+      const mainGitDir = box.git(corpus.repo, ["rev-parse", "--absolute-git-dir"], undefined, "oracle").toString().trim();
+      const detachedGitDir = box.git(corpus.detached, ["rev-parse", "--absolute-git-dir"], undefined, "oracle").toString().trim();
+
+      // Separate benign worktree inside box.root for local index/working-tree/code-analysis
+      // so the L0 tripwire corpus stays 100% untouched.
+      const localRepo = box.init(join(box.root, "local-worktree"));
+      writeFileSync(join(localRepo, "app.ts"), "export function baseFn() { return 1; }\n");
+      box.git(localRepo, ["add", "--", "app.ts"]);
+      box.git(localRepo, ["commit", "-q", "-m", "base"]);
+      writeFileSync(join(localRepo, "app.ts"), "export function stagedFn() { return 2; }\n");
+      box.git(localRepo, ["add", "--", "app.ts"]);
+      const localWorkingCode = "export function workingFn() { return 3; }\n";
+      writeFileSync(join(localRepo, "app.ts"), localWorkingCode);
+      const localDigestBefore = inventoryDigest({ root: localRepo });
+
+      const isolatedTmp = join(box.root, "isolated-os-tmp");
+      mkdirSync(isolatedTmp);
+      const fixtureCopy = join(box.root, "live-github-pages.json");
+      copyFileSync(join(root, "tests", "fixtures", "live-github-pages.json"), fixtureCopy);
+
+      const probe = String.raw`
+        import assert from "node:assert/strict";
+        import { spawn } from "node:child_process";
+        import { createHash } from "node:crypto";
+        import { readdirSync, readFileSync } from "node:fs";
+        import { tmpdir } from "node:os";
+        import { delimiter, dirname, resolve } from "node:path";
+        import runtime from "./host-runtime/web-tree-sitter.cjs";
+        import * as live from "@sentropic/engram-live";
+        import * as contracts from "@sentropic/engram-live/contracts";
+        import * as integration from "@sentropic/engram-live/integration";
+
+        const [rootDir, dataPath] = process.argv.slice(2);
+        assert.throws(() => readFileSync(resolve(rootDir, "package.json")), { code: "ERR_ACCESS_DENIED" });
+        assert.equal(process.permission.has("fs.read", resolve(rootDir, "node_modules")), false);
+        globalThis.fetch = () => assert.fail("offline tarball execution requested network access");
+
+        const data = JSON.parse(readFileSync(dataPath, "utf8"));
+        assert.equal(tmpdir(), data.isolatedTmp, "TMPDIR must point to isolated probe dir");
+
+        const enc = (t) => new TextEncoder().encode(t);
+        const sha256 = (t) => createHash("sha256").update(t, "utf8").digest("hex");
+
+        const described = contracts.describeCapabilities();
+        assert.equal(contracts.CAPABILITY_IDS.length, 10, "capability count must be exactly ten");
+        assert.equal(described.length, 10, "describeCapabilities must describe all ten capabilities");
+        assert.deepEqual(
+          described.filter((c) => c.state === "available").map((c) => c.capability),
+          [...contracts.CAPABILITY_IDS],
+          "all ten capabilities must be reported available in contracts",
+        );
+
+        const repository = live.observeRepository({
+          hostScope: "host:packed-easm3",
+          commonDirRealpath: data.commonDir,
+          commonDirProjectFingerprint: "ws:packed-easm3",
+          oidAlgorithm: data.format,
+          worktrees: [
+            { worktreePath: data.repo, gitDir: data.mainGitDir, worktreeFingerprint: "wtfp:main", head: { kind: "branch", refName: "refs/heads/main" } },
+            { worktreePath: data.detached, gitDir: data.detachedGitDir, worktreeFingerprint: "wtfp:detached", head: { kind: "detached", oid: data.mergeOid } },
+          ],
+        });
+        const mainWt = repository.worktrees[0].identity;
+        const declId = integration.deriveDeclarationIdentity({
+          hostScope: "host:packed-easm3",
+          clone: repository.clone,
+          worktree: mainWt,
+        });
+        const declaration = {
+          tenant: "local:packed-easm3",
+          principal: "local:packed-principal",
+          hostFingerprint: "hostfp:packed-easm3",
+          identityUncertainty: [],
+          declarationId: declId.declarationId,
+          cloneId: repository.clone.cloneId,
+          worktreeId: mainWt.worktreeId,
+          authorizedRoots: [data.corpusRoot, data.localRepo],
+          liveCapability: "live",
+          policyVersion: contracts.POLICY_VERSION,
+          declarationRevision: 1,
+        };
+        const cloneScope = { tenant: declaration.tenant, clone: declaration.cloneId };
+        const worktreeScope = { tenant: declaration.tenant, clone: declaration.cloneId, worktree: declaration.worktreeId };
+        const cloneToken = {
+          tokenId: "tok:packed-clone-001",
+          scope: cloneScope,
+          epoch: 1,
+          epochId: "epoch:packed-001",
+          declarationRevision: declaration.declarationRevision,
+          projectionIncarnation: "inc:packed-easm3-001",
+          issuedAt: data.now - 10_000,
+          expiresAt: data.now + 60_000,
+        };
+        const worktreeToken = {
+          tokenId: "tok:packed-wt-001",
+          scope: worktreeScope,
+          epoch: 1,
+          epochId: "epoch:packed-wt-001",
+          declarationRevision: declaration.declarationRevision,
+          projectionIncarnation: "inc:packed-easm3-001",
+          issuedAt: data.now - 10_000,
+          expiresAt: data.now + 60_000,
+        };
+
+        // Host-injected clock with schedule().
+        let nowMs = data.now;
+        const timers = new Set();
+        const clock = {
+          now: () => nowMs,
+          schedule(ms, cb) {
+            const entry = { at: nowMs + ms, cb };
+            timers.add(entry);
+            return () => timers.delete(entry);
+          },
+        };
+
+        // Host-injected streaming GitProcessPort.
+        const gitProcessPort = {
+          async start(launch) {
+            const child = spawn(data.gitPath, launch.args, {
+              cwd: launch.cwd,
+              env: {
+                PATH: [dirname(data.gitPath), "/usr/bin", "/bin"].join(delimiter),
+                HOME: data.hooksDir,
+                XDG_CONFIG_HOME: data.hooksDir,
+                TMPDIR: data.isolatedTmp,
+                LANG: "C",
+                LC_ALL: "C",
+                TZ: "UTC",
+                GIT_CONFIG_NOSYSTEM: "1",
+                GIT_CONFIG_GLOBAL: "/dev/null",
+                GIT_ATTR_NOSYSTEM: "1",
+                GIT_OPTIONAL_LOCKS: "0",
+                GIT_NO_LAZY_FETCH: "1",
+                GIT_NO_REPLACE_OBJECTS: "1",
+                GIT_TERMINAL_PROMPT: "0",
+              },
+              shell: false,
+              stdio: ["pipe", "pipe", "pipe"],
+            });
+            const stderr = [];
+            child.stderr.on("data", (chunk) => stderr.push(chunk));
+            const exit = new Promise((res, rej) => {
+              child.once("error", rej);
+              child.once("close", (code) => res({ code: code ?? -1, stderr: Buffer.concat(stderr) }));
+            });
+            child.stdin.on("error", () => undefined);
+            const chunks = [];
+            let ended = false;
+            const wakeups = [];
+            child.stdout.pause();
+            child.stdout.on("data", (chunk) => {
+              chunks.push(chunk);
+              child.stdout.pause();
+              for (const wake of wakeups.splice(0)) wake();
+            });
+            const finish = () => { ended = true; for (const wake of wakeups.splice(0)) wake(); };
+            child.stdout.once("end", finish);
+            child.stdout.once("close", finish);
+            child.stdout.once("error", finish);
+            const stdout = (async function* () {
+              for (;;) {
+                while (chunks.length === 0 && !ended) {
+                  child.stdout.resume();
+                  await new Promise((res) => wakeups.push(res));
+                }
+                if (chunks.length === 0) return;
+                yield chunks.shift();
+              }
+            })();
+            return {
+              stdout,
+              stdin: {
+                async write(chunk) {
+                  await new Promise((res, rej) => {
+                    const onErr = (err) => rej(err);
+                    child.stdin.once("error", onErr);
+                    const done = () => { child.stdin.removeListener("error", onErr); res(); };
+                    if (child.stdin.write(chunk)) done();
+                    else child.stdin.once("drain", done);
+                  });
+                },
+                async close() { await new Promise((res) => child.stdin.end(res)); },
+              },
+              exit,
+              async abort() { child.kill("SIGKILL"); await exit.catch(() => undefined); },
+            };
+          },
+        };
+
+        // Host-injected GitHub PR transport & persistence.
+        const rawPrFixture = JSON.parse(readFileSync(data.prFixturePath, "utf8"));
+        const ghRepo = { owner: rawPrFixture.repository.owner, repo: rawPrFixture.repository.repo };
+        const prPages = rawPrFixture.pages.map((page) => ({
+          items: page.items.map((item) => ({
+            repositoryOwner: ghRepo.owner,
+            repositoryRepo: ghRepo.repo,
+            number: item.number,
+            state: item.state,
+            isDraft: item.isDraft,
+            updatedAt: item.updatedAt,
+            headOid: { algorithm: "sha1", oid: item.headOid },
+            headRef: item.headRef,
+            baseOid: { algorithm: "sha1", oid: item.baseOid },
+            baseRef: item.baseRef,
+          })),
+          nextCursor: page.nextCursor,
+          hasMore: page.hasMore,
+          ...(page.endProof !== undefined ? { endProof: page.endProof } : {}),
+        }));
+        let pageIdx = 0;
+        const githubPr = {
+          async fetchPage() {
+            const page = prPages[pageIdx++];
+            if (!page) return { ok: false, kind: "unavailable", message: "no more pages" };
+            return { ok: true, page: { ...page, items: [...page.items] } };
+          },
+        };
+        let prCursor = null;
+        const prObs = new Map();
+        const prJobs = new Map();
+        const prPersistence = {
+          async loadCursor() { return prCursor; },
+          async saveCursor(c) { prCursor = c; },
+          async saveObservation(f) { const k = live.observationIdentityKey(f); if (!prObs.has(k)) prObs.set(k, f); },
+          async listObservations() { return [...prObs.values()]; },
+          async recordObjectJob(j) { prJobs.set(live.objectJobIdentityKey(j), j); },
+          async updateObjectJob(j) { prJobs.set(live.objectJobIdentityKey(j), j); },
+          async listObjectJobs() { return [...prJobs.values()]; },
+        };
+
+        // History persistence & retention ports.
+        const histFacts = new Map();
+        const histCps = new Map();
+        const histRoots = new Map();
+        const historyPersistence = {
+          async loadCompletion(q) {
+            const cps = [...histCps.values()].filter((c) => c.cloneId === q.cloneId && c.algorithm === q.algorithm);
+            return {
+              knownComplete: cps.map((c) => c.oid),
+              checkpoints: cps,
+              retainedRoots: [...histRoots.values()].filter((r) => r.cloneId === q.cloneId && r.algorithm === q.algorithm),
+            };
+          },
+          async persistCommitFact(f) { histFacts.set(f.oid, f); return { received: true }; },
+          async recordCompletion(c) { histCps.set(c.oid, c); return { received: true }; },
+          async recordRetainedRoot(r) { histRoots.set(r.oid, r); return { received: true }; },
+        };
+        const retRcpts = new Map();
+        const retention = {
+          async recordRequest(req) {
+            retRcpts.set(req.oid, {
+              scope: req.scope,
+              algorithm: req.algorithm,
+              oid: req.oid,
+              receivedAt: nowMs + 50,
+              backupRef: "backup:" + sha256(req.oid).slice(0, 16),
+            });
+            return { received: true };
+          },
+          async recordReceipt(r) { retRcpts.set(r.oid, r); return { received: true }; },
+          async loadReceipts(q) {
+            return {
+              receipts: [...retRcpts.values()].filter((r) => r.scope.tenant === q.scope.tenant && r.scope.clone === q.scope.clone && r.algorithm === q.algorithm),
+            };
+          },
+        };
+
+        // L4b content protection, key provider and latest-only store.
+        const protection = {
+          async protect(plaintext) {
+            return {
+              state: "sealed",
+              algorithm: "fake-seal/1",
+              keyRef: "packed-key-001",
+              ciphertext: enc("sealed:" + sha256(new TextDecoder().decode(plaintext))),
+            };
+          },
+        };
+        const keyProvider = {
+          async currentKeyRef() { return { state: "available", keyRef: "packed-key-001" }; },
+        };
+        const latestMap = new Map();
+        const latestSnapshots = {
+          async loadLatest(q) {
+            return latestMap.get([q.scope.tenant, q.scope.clone, q.scope.worktree ?? "", q.worktreeId, q.kind, q.diffKind].join("|")) ?? null;
+          },
+          async replaceLatest(snap, expectedSupersededId) {
+            const key = [snap.scope.tenant, snap.scope.clone, snap.scope.worktree ?? "", snap.worktreeId, snap.kind, snap.diffKind].join("|");
+            const prev = latestMap.get(key) ?? null;
+            if ((prev?.snapshotId ?? null) !== expectedSupersededId) throw new Error("conflict");
+            latestMap.set(key, snap);
+            return { received: true, retiredPrevious: prev !== null, revokedDecryptability: true, blockedStaleWork: true };
+          },
+          async purgePrivate() {
+            latestMap.clear();
+            return { purgedPrivate: true, blockedOldWork: true, revokedDecryptability: true };
+          },
+        };
+
+        // L5 analysis cache + grammar runtime + filesystem.
+        const cacheEntries = new Map();
+        const cachePort = {
+          authorize() {},
+          async load(k) { return cacheEntries.get(k) ?? null; },
+          async store(k, v) { cacheEntries.set(k, v); },
+        };
+        const grammarRuntime = {
+          init: () => runtime.Parser.init(),
+          loadLanguage: (bytes) => runtime.Language.load(bytes),
+          createParser(grammar) {
+            const parser = new runtime.Parser();
+            parser.setLanguage(grammar);
+            return parser;
+          },
+        };
+
+        // L6b watch, writer authority, marker store, scan, durability.
+        let watchListener;
+        const watchPort = {
+          async start() {},
+          async stop() {},
+          onSignal(listener) { watchListener = listener; return () => { watchListener = undefined; }; },
+        };
+        const incarnationId = "inc:packed-easm3-001";
+        let schedEpoch = 1;
+        let activeSchedToken;
+        const revokedIds = new Set();
+        const writer = {
+          async acquire(req) {
+            schedEpoch = Math.max(schedEpoch + 1, req.minEpoch);
+            activeSchedToken = {
+              tokenId: "tok:packed-sched:" + schedEpoch,
+              scope: worktreeScope,
+              epoch: schedEpoch,
+              epochId: "epoch:" + schedEpoch,
+              declarationRevision: req.declarationRevision,
+              projectionIncarnation: req.projectionIncarnation,
+              issuedAt: nowMs,
+              expiresAt: nowMs + 60_000,
+            };
+            return activeSchedToken;
+          },
+          async renew(tok) { return tok; },
+          validate(tok) { return !!tok && !revokedIds.has(tok.tokenId) && tok.projectionIncarnation === incarnationId && nowMs < tok.expiresAt; },
+          revoke(tok) { revokedIds.add(tok.tokenId); },
+          async release(tok) { revokedIds.add(tok.tokenId); },
+        };
+        const srcFiles = new Map([["app.ts", data.localWorkingCode]]);
+        const projFiles = new Map();
+        const markers = new Map();
+        const pubGens = new Set();
+        const progMap = new Map();
+        const vector = () => ({
+          refsFingerprint: sha256("refs:main"),
+          headOid: "a".repeat(40),
+          indexFingerprint: sha256("idx:app.ts"),
+          pathMembershipFingerprint: sha256("paths:app.ts"),
+          contentFingerprint: sha256(data.localWorkingCode),
+          configAttributesFingerprint: sha256("cfg:1"),
+          lockStateValid: true,
+        });
+        const markerStore = {
+          get: (k) => markers.get(k),
+          set: (k, v) => { markers.set(k, v); },
+          delete: (k) => { markers.delete(k); },
+          incarnation: () => incarnationId,
+          hasGeneration: (inc, g) => inc === incarnationId && pubGens.has(g),
+        };
+        const scan = {
+          async discoverPage(cursor) {
+            if (cursor !== undefined) return { entries: [], deletedPaths: [], nextCursor: undefined, done: true, complete: true };
+            return {
+              entries: [{ path: "app.ts", statSize: Buffer.byteLength(data.localWorkingCode), contentFingerprint: sha256(data.localWorkingCode) }],
+              deletedPaths: [],
+              nextCursor: undefined,
+              done: true,
+              complete: true,
+            };
+          },
+          async collectPaths(paths) {
+            for (const p of paths) projFiles.set(p, srcFiles.get(p));
+            return { collected: [...paths], complete: true, receiptId: "collect:1" };
+          },
+          async repairRelations() { return { complete: true, receiptId: "repair:1" }; },
+          async validateSource() {
+            const axes = {};
+            for (const a of contracts.COVERAGE_AXES) axes[a] = { complete: true };
+            return { valid: true, projectionMatches: projFiles.get("app.ts") === data.localWorkingCode, sourceVector: vector(), validatedAt: nowMs, axes };
+          },
+          async publishGeneration(req) {
+            pubGens.add(req.generationId);
+            return { published: true, generationId: req.generationId, incarnation: incarnationId, receiptId: "pub:1" };
+          },
+          currentSourceVector: vector,
+          pathFingerprint: (p) => sha256(srcFiles.get(p) ?? ""),
+        };
+        const durability = {
+          sleep: (ms) => new Promise((r) => clock.schedule(ms, r)),
+          park() {},
+          readProgress: (item) => progMap.get(item.id),
+          writeProgress: (item, p) => progMap.set(item.id, { ...p, digest: item.idempotencyDigest, scopeId: item.scopeId }),
+          backlogSize: () => 0,
+        };
+
+        const deliveries = [];
+        const factSink = {
+          async deliver(batch) {
+            assert.deepEqual(contracts.validateFactBatch(batch), { ok: true, errors: [] });
+            const encoded = live.encodeFactBatch(batch);
+            const decoded = live.decodeFactBatch(encoded.bytes);
+            assert.equal(decoded.batchDigest, batch.batchDigest);
+            deliveries.push({ batchId: batch.batchId, generationId: batch.generationId, facts: batch.facts.length });
+            return { received: true, batchId: batch.batchId, receiptId: "rcpt:" + deliveries.length, retiredSuperseded: true, revokedDecryptability: true };
+          },
+        };
+
+        const factory = integration.createLiveFactory({
+          declaration,
+          ports: {
+            git: { gitPath: data.gitPath, disabledHooksDir: data.hooksDir, process: gitProcessPort },
+            filesystem: { async readFileBytes(p) { return new Uint8Array(readFileSync(p)); } },
+            clock,
+            content: { protection, keyProvider, latestSnapshots },
+            factSink,
+            cache: cachePort,
+            grammarRuntime,
+            historyPersistence,
+            githubPr,
+            prPersistence,
+            retention,
+            watch: watchPort,
+            scheduling: {
+              writer,
+              markerStore,
+              scan,
+              pollRefs: async () => [{ ref: "refs/heads/main", oid: "a".repeat(40) }],
+              durability,
+            },
+          },
+        });
+
+        const results = {};
+        const record = (cap, res) => {
+          assert.equal(res.capability, cap);
+          assert.equal(res.state, "available", cap + " must be available, got: " + JSON.stringify(res));
+          assert.equal(res.delivered, true, cap + " must report delivered: true");
+          results[cap] = { state: res.state, delivered: res.delivered };
+        };
+
+        // 1. refs
+        record("refs", await factory.runCapability("refs", {
+          cwd: data.repo,
+          defaultBranch: "refs/heads/main",
+          generationId: live.formatProducerGenerationId(1),
+          fencingToken: cloneToken,
+        }));
+        // 2. history-dag
+        const histRes = await factory.runCapability("history-dag", {
+          cwd: data.repo,
+          repository,
+          defaultBranch: "refs/heads/main",
+          generationId: live.formatProducerGenerationId(2),
+          fencingToken: cloneToken,
+        });
+        record("history-dag", histRes);
+        // 3. github-pr
+        record("github-pr", await factory.runCapability("github-pr", {
+          repository: ghRepo,
+          sweepKind: "full",
+          generationId: live.formatProducerGenerationId(3),
+          fencingToken: cloneToken,
+        }));
+        // 4. retention-requests
+        record("retention-requests", await factory.runCapability("retention-requests", {
+          roots: histRes.outcome.roots,
+          generationId: live.formatProducerGenerationId(4),
+          fencingToken: cloneToken,
+        }));
+        // 5. index-snapshot
+        record("index-snapshot", await factory.runCapability("index-snapshot", {
+          cwd: data.localRepo,
+          generationId: live.formatProducerGenerationId(5),
+          fencingToken: worktreeToken,
+        }));
+        // 6. working-tree
+        const wtRes = await factory.runCapability("working-tree", {
+          cwd: data.localRepo,
+          generationId: live.formatProducerGenerationId(6),
+          fencingToken: worktreeToken,
+        });
+        record("working-tree", wtRes);
+        // 7. diffs
+        record("diffs", await factory.runCapability("diffs", {
+          kind: "staged",
+          base: { label: "HEAD", oid: "1".repeat(40) },
+          tip: { label: "index", oid: "2".repeat(40) },
+          baseEntries: [{ path: enc("app.ts"), mode: "100644", oid: "3".repeat(40), stage: 0, kind: "file", size: 32, isBinary: false }],
+          tipEntries: [{ path: enc("app.ts"), mode: "100644", oid: "4".repeat(40), stage: 0, kind: "file", size: 36, isBinary: false }],
+          generationId: live.formatProducerGenerationId(7),
+          fencingToken: worktreeToken,
+        }));
+        // 8. code-analysis (local stable verified capture reaching complete!)
+        const codeRes = await factory.runCapability("code-analysis", {
+          input: {
+            scope: worktreeScope,
+            language: "typescript",
+            path: "app.ts",
+            content: data.localWorkingCode,
+            treeOid: null,
+            snapshotId: wtRes.snapshot.snapshotId,
+            snapshotKind: "working-tree",
+            worktreeId: declaration.worktreeId,
+            configHash: sha256("tsconfig:v1"),
+            dependencyHash: sha256("deps:v1"),
+            historicalBounds: null,
+          },
+          objects: { async loadObject() { return null; }, async loadBlob() { return null; } },
+          capture: { cwd: data.localRepo, snapshotKind: "working-tree" },
+        });
+        record("code-analysis", codeRes);
+        assert.equal(codeRes.analysis.state, "complete", "local analysis with stable capture must reach complete");
+        // 9. reconciliation
+        const recRes = await factory.runCapability("reconciliation", {
+          generationId: live.formatProducerGenerationId(8),
+          action: "converge",
+        });
+        record("reconciliation", recRes);
+        assert.equal(recRes.converged, true);
+        // 10. publication
+        const pubRes = await factory.runCapability("publication", {
+          generationId: live.formatProducerGenerationId(9),
+          fencingToken: activeSchedToken,
+          expectedIncarnation: incarnationId,
+        });
+        record("publication", pubRes);
+        assert.equal(pubRes.published, true);
+
+        await factory.runCapability("reconciliation", {
+          generationId: live.formatProducerGenerationId(10),
+          action: "shutdown",
+        });
+
+        assert.equal(Object.keys(results).length, 10);
+        assert.deepEqual(readdirSync(tmpdir()), [], "offline tarball execution must create nothing under OS tmpdir");
+        console.log(JSON.stringify({
+          nodeVersion: process.version,
+          capabilityCount: Object.keys(results).length,
+          capabilities: results,
+          codeAnalysisState: codeRes.analysis.state,
+          deliveriesCount: deliveries.length,
+          tmpEntries: readdirSync(tmpdir()),
+        }));
+      `;
+
+      const probePath = join(packed.installDir, "all-ten-capabilities-probe.mjs");
+      const dataPath = join(box.root, "all-ten-capabilities-input.json");
+      writeFileShim(probePath, probe);
+      writeFileSync(
+        dataPath,
+        JSON.stringify({
+          format,
+          corpusRoot: corpus.root,
+          repo: corpus.repo,
+          detached: corpus.detached,
+          localRepo,
+          localWorkingCode,
+          commonDir,
+          mainGitDir,
+          detachedGitDir,
+          mergeOid: corpus.commits.merge,
+          gitPath: box.trace.executable,
+          hooksDir: join(box.root, "disabled-hooks"),
+          isolatedTmp,
+          prFixturePath: fixtureCopy,
+          now: 1_700_000_000_000 + 5 * 86_400_000,
+        }),
+      );
+
+      const output = runProtectedPhase(
+        process.execPath,
+        [
+          resolveProductionProbePermissionFlag(),
+          "--allow-fs-read=" + packed.tmpRoot,
+          "--allow-fs-read=" + box.root,
+          "--allow-fs-read=/proc/self/fd",
+          "--allow-fs-write=" + isolatedTmp,
+          "--allow-child-process",
+          "all-ten-capabilities-probe.mjs",
+          root,
+          dataPath,
+        ],
+        {
+          cwd: packed.installDir,
+          env: {
+            ...tripwireEnv(packed.tripwireBin),
+            NODE_PATH: "",
+            TMPDIR: isolatedTmp,
+            TMP: isolatedTmp,
+            TEMP: isolatedTmp,
+          },
+        },
+      );
+      recordPhaseMarker(packed.phaseTrace, "all-ten-capabilities", packed.pythonMarker);
+      expectNoPython(packed.phaseTrace);
+
+      const report = JSON.parse(output) as {
+        nodeVersion: string;
+        capabilityCount: number;
+        capabilities: Record<string, { state: string; delivered: boolean }>;
+        codeAnalysisState: string;
+        deliveriesCount: number;
+        tmpEntries: string[];
+      };
+      expect(report.capabilityCount).toBe(10);
+      for (const capability of [
+        "refs",
+        "history-dag",
+        "github-pr",
+        "index-snapshot",
+        "working-tree",
+        "diffs",
+        "code-analysis",
+        "retention-requests",
+        "reconciliation",
+        "publication",
+      ]) {
+        expect(report.capabilities[capability], capability).toEqual({ state: "available", delivered: true });
+      }
+      expect(report.codeAnalysisState).toBe("complete");
+      expect(report.deliveriesCount).toBeGreaterThanOrEqual(9);
+      expect(report.tmpEntries).toEqual([]);
+      expect(readdirSync(isolatedTmp)).toEqual([]);
+      expect(inventoryDigest(corpus)).toBe(digestBefore);
+      expect(inventoryDigest({ root: localRepo })).toBe(localDigestBefore);
+
+      const tarballBytes = readFileSync(packed.tarball);
+      const tarballSha512 = "sha512-" + createHash("sha512").update(tarballBytes).digest("base64");
+      const tarballSha256 = createHash("sha256").update(tarballBytes).digest("hex");
+      console.info(
+        "E-ASM3 installed tarball",
+        packed.tarball.split("/").at(-1),
+        `integrity=${tarballSha512}`,
+        `sha256=${tarballSha256}`,
+        `node=${report.nodeVersion}`,
+        `capabilities=${report.capabilityCount}`,
+        "python=0 network=0",
+      );
     } finally {
       box.dispose();
     }

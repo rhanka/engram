@@ -69,8 +69,13 @@ const DELIVERED_CAPABILITY_REASONS: Partial<Readonly<Record<CapabilityId, string
   "refs": "ref observation, tracking and history-root selection over the host-injected Git executor",
   "history-dag": "uncapped streaming commit DAG and changed-file extraction over the host-injected Git port",
   "github-pr": "all-state GitHub pull-request pagination and attribution over the host-injected GitHub transport",
+  "index-snapshot": "side-effect-free index capture and latest-only encrypted snapshot staging over the host-injected Git and content ports",
+  "working-tree": "side-effect-free working-tree capture and latest-only encrypted snapshot staging over the host-injected Git and content ports",
+  "diffs": "pre-persistence policy-screened staged, unstaged and conflict diff derivation and sealed private batch delivery over the host-injected content ports",
   "code-analysis": "production syntax analysis through the host parser runtime and pinned packaged grammars",
   "retention-requests": "scoped private retention request derivation and receipt verification over the host-injected retention port",
+  "reconciliation": "bounded watch-before-scan reconciliation and scheduler orchestration over the host-injected watch, clock, writer and storage ports",
+  "publication": "fenced generation publication and completion control over the host-injected writer, scheduler, storage and generation completion ports",
 };
 
 export function describeCapabilities(): readonly CapabilityStatus[] {
