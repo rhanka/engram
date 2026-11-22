@@ -256,6 +256,44 @@ function runProtectedBuild(env: NodeJS.ProcessEnv): void {
 
 let packed: PackedInstall;
 
+type ProductionProbeMode = "repair" | "factory" | "matrix" | "malformed" | "worktree" | "coverage" | "references";
+
+// Builds the Node permission-model spawn for the production probe. Node
+// 22.13/23.5 stabilised the flag as `--permission`; Node 24 rejects the
+// legacy `--experimental-permission` spelling (`bad option`).
+function buildProductionProbeArgs(mode: ProductionProbeMode, tmpRoot: string, installDir: string, rootDir: string): string[] {
+  return [
+    "--permission",
+    "--allow-fs-read=" + tmpRoot,
+    ...(mode === "factory"
+      ? ["--allow-fs-write=" + join(installDir, "node_modules", "@sentropic", "engram-live", "dist", "grammars")]
+      : []),
+    "production-parse-probe.mjs",
+    mode,
+    rootDir,
+  ];
+}
+
+describe("production probe permission flag", () => {
+  it("never emits --experimental-permission", () => {
+    const modes: ProductionProbeMode[] = ["repair", "factory", "matrix", "malformed", "worktree", "coverage", "references"];
+    for (const mode of modes) {
+      const args = buildProductionProbeArgs(mode, "/tmp/probe-tmp", "/tmp/probe-tmp/install", "/repo");
+      expect(args[0]).toBe("--permission");
+      expect(args.some((arg) => arg === "--experimental-permission" || arg.startsWith("--experimental-permission="))).toBe(false);
+      expect(args).toContain("--allow-fs-read=/tmp/probe-tmp");
+    }
+    expect(buildProductionProbeArgs("factory", "/tmp/probe-tmp", "/tmp/probe-tmp/install", "/repo")).toContain(
+      "--allow-fs-write=/tmp/probe-tmp/install/node_modules/@sentropic/engram-live/dist/grammars",
+    );
+    expect(
+      buildProductionProbeArgs("repair", "/tmp/probe-tmp", "/tmp/probe-tmp/install", "/repo").some((arg) =>
+        arg.startsWith("--allow-fs-write="),
+      ),
+    ).toBe(false);
+  });
+});
+
 // Packs the deliverable exactly as shipped, inside the protected
 // environment; returns the tarball path and the exact packed file list.
 function packTarball(destination: string, env: NodeJS.ProcessEnv): { tarball: string; packedPaths: string[] } {
@@ -707,14 +745,10 @@ describe("live package", () => {
     if (tmpRoot) rmSync(tmpRoot, { force: true, recursive: true });
   });
 
-  function productionProbe(mode: "repair" | "factory" | "matrix" | "malformed" | "worktree" | "coverage" | "references") {
-    const output = runProtectedPhase(process.execPath, [
-      "--experimental-permission", "--allow-fs-read=" + packed.tmpRoot,
-      ...(mode === "factory" ? ["--allow-fs-write=" + join(
-        packed.installDir, "node_modules", "@sentropic", "engram-live", "dist", "grammars",
-      )] : []),
-      "production-parse-probe.mjs", mode, root,
-    ], { cwd: packed.installDir, env: { ...tripwireEnv(packed.tripwireBin), NODE_PATH: "" } });
+  function productionProbe(mode: ProductionProbeMode) {
+    const output = runProtectedPhase(process.execPath,
+      buildProductionProbeArgs(mode, packed.tmpRoot, packed.installDir, root),
+      { cwd: packed.installDir, env: { ...tripwireEnv(packed.tripwireBin), NODE_PATH: "" } });
     recordPhaseMarker(packed.phaseTrace, "production-parse-" + mode, packed.pythonMarker);
     expectNoPython(packed.phaseTrace);
     return JSON.parse(output);
