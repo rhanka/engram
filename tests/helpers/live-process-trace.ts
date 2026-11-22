@@ -1113,7 +1113,8 @@ export class ProducerArtifactTrace {
       }
     }
     const permissionArgs = [
-      "--permission",
+      // Node 22.13/23.5 stabilised --permission; older lines only accept the legacy spelling.
+      resolveNodePermissionFlag(),
       "--allow-fs-read=*",
       ...[...writableRoots].map((dirPath) => `--allow-fs-write=${dirPath}`),
       "--allow-child-process",
@@ -1231,4 +1232,11 @@ export class ProducerArtifactTrace {
     for (const item of recordedWrites) boundaryTrace.recordFileWrite(item);
     return boundaryTrace;
   }
+}
+
+/** Node permission-model flag for this runtime (same rule as tests/live-package.test.ts). */
+export function resolveNodePermissionFlag(nodeVersion: string = process.versions.node): "--permission" | "--experimental-permission" {
+  const [major = 0, minor = 0] = nodeVersion.split(".").map((part) => Number.parseInt(part, 10));
+  if (major > 23 || (major === 23 && minor >= 5) || (major === 22 && minor >= 13)) return "--permission";
+  return "--experimental-permission";
 }
