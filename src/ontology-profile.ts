@@ -4,6 +4,7 @@ import { extname, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { toJsonValue } from "./json-value.js";
 import type { Sha256Digest } from "./metamodel-contracts.js";
+import { DATA_MODEL_FORMAT } from "./model-schemas.js";
 import { canonicalBytes, digestOfPreimage } from "./ontology-guardian/canonical.js";
 import { fromInternalDigest, semanticProfileDigest, stableForHash } from "./ontology-guardian/digests.js";
 import { isRecord, validateRelationCardinality } from "./profile-validate.js";
@@ -307,6 +308,19 @@ export function parseOntologyProfile(raw: string | Record<string, unknown>, sour
 }
 
 export function validateOntologyProfile(profile: OntologyProfile): string[] {
+  const header = profile.data_model;
+  if (header !== undefined) {
+    if (!isRecord(header)) return ["data_model must be an object"];
+    if (header.format !== DATA_MODEL_FORMAT) return [`data_model.format must be ${DATA_MODEL_FORMAT}`];
+    const unknownKey = Object.keys(header).find((key) => key !== "format" && key !== "enums");
+    if (unknownKey !== undefined) return [`data_model.${unknownKey} is not allowed`];
+    if (header.enums !== undefined && !isRecord(header.enums)) return ["data_model.enums must be an object"];
+    if (profile.metamodel_version !== undefined) return ["metamodel_version is not allowed with data_model"];
+    if (typeof profile.version !== "string" || !/^2(?:\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))?$/.test(profile.version)) {
+      return ["version must be an exact major-2 version string for data_model"];
+    }
+  }
+
   const errors: string[] = [];
   if (Object.hasOwn(profile, AUTHORED_DOCUMENT)) {
     let verified = false;
@@ -600,6 +614,7 @@ function buildRuntimeProfile(profile: OntologyProfile, sourcePath?: string, auth
     throw new Error(`Invalid ontology profile:\n${errors.map((item) => `  - ${item}`).join("\n")}`);
   }
 
+  const { data_model } = profile;
   const v1 = profile.metamodel_version === "engram.metamodel/v1";
   const nodeTypes = normalizeStringMap<OntologyNodeType>(profile.node_types);
   const relationTypes = normalizeStringMap<OntologyRelationType>(profile.relation_types);
@@ -608,6 +623,9 @@ function buildRuntimeProfile(profile: OntologyProfile, sourcePath?: string, auth
   const runtime: Omit<NormalizedOntologyProfile, "profile_hash"> = {
     id: profile.id!,
     version: String(profile.version),
+    ...(data_model === undefined ? {} : { data_model: {
+      format: data_model.format, ...(data_model.enums === undefined ? {} : { enums: data_model.enums }),
+    } }),
     ...(v1 ? {
       metamodel_version: profile.metamodel_version,
       ...(profile.presentation === undefined ? {} : { presentation: profile.presentation }),
@@ -620,7 +638,7 @@ function buildRuntimeProfile(profile: OntologyProfile, sourcePath?: string, auth
     relation_types: Object.fromEntries(
       Object.entries(relationTypes).map(([id, relation]) => [id, {
         ...normalizeRelation(relation),
-        ...(v1 && relation.cardinality !== undefined ? { cardinality: relation.cardinality } : {}),
+        ...((v1 || data_model !== undefined) && relation.cardinality !== undefined ? { cardinality: relation.cardinality } : {}),
       }]),
     ),
     registries: Object.fromEntries(
@@ -641,7 +659,7 @@ function buildRuntimeProfile(profile: OntologyProfile, sourcePath?: string, auth
 }
 
 export function normalizeOntologyProfile(profile: OntologyProfile, sourcePath?: string): NormalizedOntologyProfile {
-  const v1 = profile.metamodel_version === "engram.metamodel/v1";
+  const v1 = profile.data_model === undefined && profile.metamodel_version === "engram.metamodel/v1";
   const authored = v1
     ? resolveAuthoredProfile(profile) ?? { digest: semanticProfileDigest(profile), document: structuredClone(profile) }
     : undefined;
