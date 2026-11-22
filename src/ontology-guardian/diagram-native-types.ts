@@ -1,20 +1,14 @@
 // Structural transcription: pinned DS f6f3ba37 document.ts/view.ts/attributes.ts
 // (all three raw sources are carried in the corpus). M3 K2/K6, grammars and
 // view extensions are explicit below. Nominal-reference validation stays DS.
-export type NativeRefKind = "entity" | "relation" | "occurrence" | "port" | "view" | "resource" | "document";
+import type { NativeRefKind, NativeScalarSchema } from "../model-schemas.js";
+export type { NativeRefKind, NativeScalarSchema };
 export type NativeScalarValue =
   | { readonly kind: "text" | "date" | "enum" | "reference"; readonly value: string }
   | { readonly kind: "boolean"; readonly value: boolean }
   | { readonly kind: "quantity"; readonly value: number; readonly unit: string }
   | { readonly kind: "struct"; readonly type: string; readonly fields: Readonly<Record<string, NativeAttributeValue>> };
 export type NativeAttributeValue = NativeScalarValue | { readonly kind: "collection"; readonly items: readonly NativeAttributeValue[] };
-export type NativeScalarSchema =
-  | { readonly kind: "text"; readonly minLength?: number; readonly maxLength?: number; readonly pattern?: string; readonly patternName?: string }
-  | { readonly kind: "boolean" | "date" }
-  | { readonly kind: "quantity"; readonly units: readonly string[]; readonly integer?: boolean; readonly min?: number; readonly max?: number }
-  | { readonly kind: "enum"; readonly values: readonly string[] }
-  | { readonly kind: "reference"; readonly refKind: NativeRefKind; readonly targetTypes?: readonly string[] }
-  | { readonly kind: "struct"; readonly targetTypes: readonly string[] };
 export type NativeAttributeSchema = { readonly name: string; readonly required?: boolean } &
   (NativeScalarSchema | { readonly kind: "collection"; readonly item: NativeScalarSchema; readonly maxItems: number; readonly minItems?: number });
 export interface NativeTypeDefinition {
