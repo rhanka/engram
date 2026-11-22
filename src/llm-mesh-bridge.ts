@@ -12,6 +12,7 @@ import {
   createDefaultProviderAdapters,
   createLlmMesh,
   normalizeProviderError,
+  RoutePlanError,
   StaticProviderRegistry,
   type AuthResolver,
   type GenerateRequest,
@@ -298,6 +299,11 @@ function requestProviderId(
   return "local";
 }
 
+export interface MeshAttemptCall { providerId: string; modelId: string }
+const routedRunner = new WeakMap<LlmMesh, (req: GenerateRequest, v: GraphifyMeshResponseValidator | undefined, onAttempt: (c: MeshAttemptCall) => void) => Promise<GenerateResponse>>();
+const meshErrorAttempts = new WeakMap<object, MeshAttemptCall[]>();
+export const getMeshErrorAttempts = (error: unknown): MeshAttemptCall[] | undefined => error && typeof error === "object" ? meshErrorAttempts.get(error) : undefined;
+export const isRoutePlanError = (error: unknown): boolean => error instanceof RoutePlanError || asRecord(error)?.name === "RoutePlanError";
 export function isSeatAcquisitionError(error: unknown): boolean {
   const code = error && typeof error === "object" ? (error as { code?: unknown }).code : undefined;
   return code === "no_account" || code === "no_active_account" || code === "access-unavailable" || /AccountTransportAcquireError|RefreshDeferredError|Token refresh (deferred|failed)|reauthentication required/i.test(error instanceof Error ? error.message : String(error));
@@ -396,6 +402,7 @@ export function createGraphifyMesh(options: CreateGraphifyMeshOptions): Graphify
   const generateRouted = async (
     request: GenerateRequest,
     validateResponse?: GraphifyMeshResponseValidator,
+    onAttempt?: (call: MeshAttemptCall) => void,
   ): Promise<GenerateResponse> => {
     if (request.signal?.aborted) throw abortReason(request.signal);
 
@@ -421,7 +428,12 @@ export function createGraphifyMesh(options: CreateGraphifyMeshOptions): Graphify
 
       let completionStarted = false;
       try {
+        const diag = plan.diagnostics.find((d) => d.candidateRef === candidateRef);
+        const call: MeshAttemptCall = { providerId: diag?.actualProviderId || requestProviderId(request, plan, candidateRef), modelId: diag?.actualModelId || requestedModel(request) };
+        onAttempt?.(call);
         const response = await attempt.generate(request);
+        if (response.providerId) call.providerId = response.providerId;
+        if (response.modelId) call.modelId = response.modelId;
         if (request.signal?.aborted) {
           throw new MeshRequestCancellation(abortReason(request.signal));
         }
@@ -483,7 +495,7 @@ export function createGraphifyMesh(options: CreateGraphifyMeshOptions): Graphify
     throw new Error("Graphify mesh: route planner returned no candidates");
   };
 
-  return {
+  const mesh: GraphifyMesh = {
     listProviders: runtime.listProviders,
     listModels: runtime.listModels,
     generate: (request: GenerateRequest) => generateRouted(request),
@@ -494,6 +506,8 @@ export function createGraphifyMesh(options: CreateGraphifyMeshOptions): Graphify
       throw new Error("Graphify mesh: routed streaming is not supported yet");
     },
   };
+  routedRunner.set(mesh, generateRouted);
+  return mesh;
 }
 
 export interface MeshTextJsonClientOptions {
@@ -600,12 +614,19 @@ export function meshTextJsonClient(
             "route completion.",
           );
         }
-        response = await mesh.generateValidated(
-          request,
-          (generated) => input.validateResponse!(generated.text ?? ""),
-        );
-      } else {
-        response = await mesh.generate(request);
+      }
+      const attempts: MeshAttemptCall[] = [], run = routedRunner.get(mesh);
+      const validate = input.validateResponse ? (generated: GenerateResponse) => input.validateResponse!(generated.text ?? "") : undefined;
+      try {
+        response = run ? await run(request, validate, (c) => attempts.push(c))
+          : validate ? await (mesh as GraphifyMesh).generateValidated(request, validate)
+          : await mesh.generate(request);
+      } catch (err) {
+        if (run && err && typeof err === "object") {
+          meshErrorAttempts.set(err, attempts);
+          if (Object.isExtensible(err)) try { Object.defineProperty(err, "audit", { value: { ...asRecord((err as { audit?: unknown }).audit), mesh: true, attempts }, configurable: true, writable: true }); } catch { /* ignore */ }
+        }
+        throw err;
       }
       const text = response.text ?? "";
       // Mirror direct-backend behaviour: when an outputPath is provided,
@@ -632,6 +653,7 @@ export function meshTextJsonClient(
           // ran. Usage rides along so per-id rows can record it as tokens.
           providerId: response.providerId ?? provider,
           modelId: response.modelId ?? model,
+          ...(attempts.length > 0 ? { attempts } : {}),
           ...(response.usage ? { usage: response.usage } : {}),
           ...(quota ? { quota } : {}),
         },

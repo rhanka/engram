@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
+import { RoutePlanError } from "@sentropic/llm-mesh";
 import type {
   GenerateRequest,
   GenerateResponse,
@@ -17,6 +18,8 @@ import type {
 import {
   classifyRouteFailure,
   createGraphifyMesh,
+  getMeshErrorAttempts,
+  isRoutePlanError,
   meshTextJsonClient,
 } from "../src/llm-mesh-bridge.js";
 
@@ -554,6 +557,79 @@ describe("graphify llm-mesh bridge", () => {
 
     const plainComplete = await runWith({}, { quota: { remaining: 42, window: "5h" } });
     expect(plainComplete.audit.quota).toEqual({ remaining: 42, window: "5h" });
+  });
+
+  it("surfaces inner failover attempts on audit (success & error) and excludes unsent plan/prepare failures", async () => {
+    // 1. Candidate 0 fails after attempt.generate (retryable); candidate 1 succeeds on another provider/model.
+    const first = routeAttempt(async () => { throw { code: "ECONNRESET", message: "reset" }; }, undefined, "c0");
+    const second = routeAttempt(async () => ({
+      ...generateResponse,
+      providerId: "anthropic",
+      modelId: "claude-sonnet-5",
+    }), undefined, "c1");
+    const multiPlan: RoutePlan = {
+      ...routePlan(["c0", "c1"]),
+      diagnostics: [
+        { ...routePlan(["c0"]).diagnostics[0]!, candidateRef: "c0", actualProviderId: "openai", actualModelId: "gpt-5.5" },
+        { ...routePlan(["c1"]).diagnostics[0]!, candidateRef: "c1", actualProviderId: "anthropic", actualModelId: "claude-sonnet-5" },
+      ],
+    };
+    const planner1 = routePlanner([first, second]);
+    planner1.plan = vi.fn(async () => multiPlan);
+    const client1 = meshTextJsonClient(createGraphifyMesh({ routingSubject, createRoutePlanner: () => planner1 }), {
+      provider: "openai",
+      model: "gpt-5.5",
+    });
+    const ok = await client1.generateJson({ schema: "s", prompt: "p", validateResponse: () => {} });
+    expect(ok.audit.attempts).toEqual([
+      { providerId: "openai", modelId: "gpt-5.5" },
+      { providerId: "anthropic", modelId: "claude-sonnet-5" },
+    ]);
+
+    // 2. Candidate 0 fails in prepareAttempt (seat acquisition, unsent); candidate 1 succeeds -> only 1 attempt.
+    const planner2 = routePlanner([first, second]);
+    planner2.plan = vi.fn(async () => multiPlan);
+    planner2.prepareAttempt = vi.fn(async (_s, _p, _c, _r, i) => {
+      if (i === 0) throw Object.assign(new Error("Token refresh deferred"), { code: "no_active_account" });
+      return second;
+    });
+    const client2 = meshTextJsonClient(createGraphifyMesh({ routingSubject, createRoutePlanner: () => planner2 }), {
+      provider: "openai",
+      model: "gpt-5.5",
+    });
+    const okAfterPrep = await client2.generateJson({ schema: "s", prompt: "p" });
+    expect(okAfterPrep.audit.attempts).toEqual([{ providerId: "anthropic", modelId: "claude-sonnet-5" }]);
+
+    // 3. planner.plan throws RoutePlanError -> 0 attempts recorded on caught error + isRoutePlanError true.
+    const planner3 = routePlanner([]);
+    planner3.plan = vi.fn(async () => { throw new RoutePlanError("No eligible route", "no-route"); });
+    const client3 = meshTextJsonClient(createGraphifyMesh({ routingSubject, createRoutePlanner: () => planner3 }), {
+      provider: "openai",
+      model: "gpt-5.5",
+    });
+    let planErr: unknown;
+    try { await client3.generateJson({ schema: "s", prompt: "p" }); } catch (e) { planErr = e; }
+    expect(isRoutePlanError(planErr)).toBe(true);
+    expect(getMeshErrorAttempts(planErr)).toEqual([]);
+    expect((planErr as { audit?: { attempts?: unknown } }).audit?.attempts).toEqual([]);
+
+    // 4. Both candidates fail after attempt.generate (even with a frozen final error) -> 2 attempts tracked.
+    const frozenErr = Object.freeze(Object.assign(new Error("503 down"), { status: 503 }));
+    const f1 = routeAttempt(async () => { throw { code: "ECONNRESET", message: "reset" }; }, undefined, "c0");
+    const f2 = routeAttempt(async () => { throw frozenErr; }, undefined, "c1");
+    const planner4 = routePlanner([f1, f2]);
+    planner4.plan = vi.fn(async () => multiPlan);
+    const client4 = meshTextJsonClient(createGraphifyMesh({ routingSubject, createRoutePlanner: () => planner4 }), {
+      provider: "openai",
+      model: "gpt-5.5",
+    });
+    let bothErr: unknown;
+    try { await client4.generateJson({ schema: "s", prompt: "p" }); } catch (e) { bothErr = e; }
+    expect(bothErr).toBe(frozenErr);
+    expect(getMeshErrorAttempts(bothErr)).toEqual([
+      { providerId: "openai", modelId: "gpt-5.5" },
+      { providerId: "anthropic", modelId: "claude-sonnet-5" },
+    ]);
   });
 });
 
