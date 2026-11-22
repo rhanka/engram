@@ -75,14 +75,21 @@ export async function createScrapMeshClient(rawAlias: string, deps: ScrapMeshDep
     stream: () => { throw new Error("scrap mesh: probe runtime cannot stream"); },
   });
   let ownerScope: string | undefined;
+  const reasons = new Set<string>();
   for (const scope of scopes) {
     try {
       const plan = await probe.plan({ principalRef, ownerScopeRef: scope }, { requestedModel: model });
       if (plan.candidateRefs.length > 0) { ownerScope = scope; break; }
-    } catch (error) { if (!(error instanceof RoutePlanError || (error as { name?: unknown } | null)?.name === "RoutePlanError")) throw error; /* unknown-model / no-route: unusable */ }
+    } catch (error) {
+      if (!(error instanceof RoutePlanError || (error as { name?: unknown } | null)?.name === "RoutePlanError")) throw error;
+      // Surface why the seat is unusable (e.g. reauth-required), never a credential.
+      const e = error as { code?: unknown; diagnostics?: readonly { code?: unknown; transportProviderId?: unknown }[] };
+      for (const d of e.diagnostics ?? []) reasons.add(`${String(d.transportProviderId)}: ${String(d.code)}`);
+      if (!e.diagnostics?.length && e.code) reasons.add(String(e.code));
+    }
   }
   if (!ownerScope) {
-    throw new Error(`scrap extract: no usable mesh seat for "mesh:${model}" (tried owner scopes: ${scopes.join(", ")})`);
+    throw new Error(`scrap extract: no usable mesh seat for "mesh:${model}" (tried owner scopes: ${scopes.join(", ")}${reasons.size ? `; reasons: ${[...reasons].join(", ")}` : ""})`);
   }
   const clients = deps.adapterClients ?? {
     gemini: new CloudCodeRuntimeClient(),

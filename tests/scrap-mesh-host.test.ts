@@ -151,6 +151,17 @@ describe("scrap mesh host", () => {
     expect(isExtractUsageError(new Error("scrap extract: no usable mesh seat for X"))).toBe(true);
   });
 
+  it("names the planner reason (reauth-required) when no seat can serve the alias", async () => {
+    const { createScrapMeshClient } = await import("../src/scrap/mesh-host.js");
+    const facade = { createRoutePlanner: () => ({ plan: async () => { throw Object.assign(new Error("No eligible route"), {
+      name: "RoutePlanError", code: "no-route",
+      diagnostics: [{ code: "reauth-required", transportProviderId: "cloud-code", message: "re-authenticate the account" }],
+    }); } }) };
+    // Kills a mutant that drops the diagnostics from the message.
+    await expect(createScrapMeshClient("gemini-4-hydrogen-high", { facade: facade as any, adapterClients: { gemini: stubClient() } as any, ownerScopes: ["owner:test"] }))
+      .rejects.toThrow(/no usable mesh seat.*reasons: cloud-code: reauth-required/);
+  });
+
   it("rejects a catalog alias whose provider has no seat executor in this host", async () => {
     const seen = { plans: 0 };
     const { createScrapMeshClient } = await import("../src/scrap/mesh-host.js");
