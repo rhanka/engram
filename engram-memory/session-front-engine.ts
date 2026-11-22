@@ -361,3 +361,17 @@ export function createSessionFrontEngineV1(store: SessionFrontStoreV1) {
     },
   };
 }
+
+/**
+ * Neutral query-version record for SJ-1a. Product code hands only neutral
+ * values (no role or mandate semantics); the digest covers every other field.
+ */
+export interface SessionFrontQueryNeutralV1 { readonly queryId: string; readonly version: number; readonly digest: Digest; readonly tenantId: string; readonly workspaceId: string; readonly worktreeId: string; readonly roleRef?: string; readonly sessionId?: string; readonly pinnedRefs: readonly string[]; readonly selectorIds: readonly string[]; }
+export function sessionFrontQueryIdV1(input: { readonly tenantId: string; readonly workspaceId: string; readonly worktreeId: string; readonly roleRef?: string; readonly sessionId?: string }): string {
+  const scope = input.roleRef === undefined ? { kind: "session", sessionId: input.sessionId ?? "none" } : { kind: "role", roleRef: input.roleRef };
+  return `query_${recordIdFromDigest(receiptDigest("session-context-query-id", { tenantId: input.tenantId, workspaceId: input.workspaceId, worktreeId: input.worktreeId, ...scope })).slice(4, 20)}`;
+}
+export function sessionFrontQueryDigestV1(input: Omit<SessionFrontQueryNeutralV1, "digest">): Digest {
+  const { queryId, version, tenantId, workspaceId, worktreeId, roleRef, sessionId, pinnedRefs, selectorIds } = input;
+  return receiptDigest("session-context-query", { queryId, version, tenantId, workspaceId, worktreeId, ...(roleRef === undefined ? {} : { roleRef }), ...(sessionId === undefined ? {} : { sessionId }), pinnedRefs: [...pinnedRefs], selectorIds: [...selectorIds] });
+}

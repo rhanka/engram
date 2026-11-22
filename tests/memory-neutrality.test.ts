@@ -370,6 +370,8 @@ const TEST_ALLOWED_HOST_EDGES = new Set([
   "tests/mcp-memory-l4-pipeline.test.ts -> src/mcp/memory/schemas",
   "tests/mcp-memory-l4-pipeline.test.ts -> src/memory-tools/reads",
   "tests/session-front-ingest.test.ts -> src/session-front-contracts",
+  "tests/session-context-engine.test.ts -> src/session-front-contracts",
+  "tests/session-context-engine.test.ts -> src/session-context/engine",
 ]);
 
 function hostEdgeKey(path: string, resolved: string): string {
