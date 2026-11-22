@@ -33,3 +33,34 @@ export type {
 } from "./reused-extraction.js";
 export { createSafeGitExecutor } from "./git-executor.js";
 export type { SafeGitExecutor, SafeGitOptions, GitSpawnFn, GitSpawnOptions, GitSpawnResult } from "./git-executor.js";
+export * from "./git-protocol.js";
+export {
+  GIT_STREAM_EXTRACTOR_VERSION,
+  GitStreamError,
+  identityIsoDate,
+  streamGitHistory,
+} from "./git-stream.js";
+export type {
+  StreamedFileChange,
+  StreamedIdentity,
+  StreamedParentDiff,
+  StreamedCommit,
+  GitStreamOptions,
+  GitStreamStats,
+} from "./git-stream.js";
+export * from "./history.js";
+export * from "./refs.js";
+export * from "./repository.js";
+export * from "./retention.js";
+export * from "./pr-sync.js";
+export * from "./pr-attribution.js";
+export * from "./worktree.js";
+export * from "./attributes.js";
+export * from "./filesystem.js";
+export * from "./diffs.js";
+export * from "./snapshots.js";
+export * from "./content-policy.js";
+export * from "./scheduler.js";
+export * from "./watch.js";
+export * from "./reconcile.js";
+export * from "./coverage.js";

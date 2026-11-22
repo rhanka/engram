@@ -24,6 +24,24 @@
     "symbol-history.ts",
     "git-executor.ts",
     "integration.ts",
-    "reused-extraction.ts"
+    "reused-extraction.ts",
+    "git-stream.ts",
+    "git-protocol.ts",
+    "history.ts",
+    "refs.ts",
+    "repository.ts",
+    "retention.ts",
+    "pr-sync.ts",
+    "pr-attribution.ts",
+    "worktree.ts",
+    "attributes.ts",
+    "filesystem.ts",
+    "diffs.ts",
+    "snapshots.ts",
+    "content-policy.ts",
+    "scheduler.ts",
+    "watch.ts",
+    "reconcile.ts",
+    "coverage.ts"
   ]
 }

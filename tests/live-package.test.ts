@@ -390,6 +390,258 @@ const REUSED_EXTRACTION_PROBE = String.raw`
   }
 `;
 
+const EASM1_NEWLY_PACKED_MODULES = [
+  "git-stream",
+  "git-protocol",
+  "history",
+  "refs",
+  "repository",
+  "retention",
+  "pr-sync",
+  "pr-attribution",
+  "worktree",
+  "attributes",
+  "filesystem",
+  "diffs",
+  "snapshots",
+  "content-policy",
+  "scheduler",
+  "watch",
+  "reconcile",
+  "coverage",
+] as const;
+
+const ALL_MODULES_PROBE = String.raw`
+  import assert from 'node:assert/strict';
+  import { readFileSync } from 'node:fs';
+  import { join, resolve } from 'node:path';
+  import { pathToFileURL } from 'node:url';
+  import * as live from '@sentropic/engram-live';
+
+  const rootDir = process.argv[2];
+  const moduleNames = JSON.parse(process.argv[3]);
+  assert.throws(() => readFileSync(resolve(rootDir, 'package.json')), { code: 'ERR_ACCESS_DENIED' });
+  assert.equal(process.permission.has('fs.read', resolve(rootDir, 'node_modules')), false);
+  globalThis.fetch = () => assert.fail('offline module import requested network access');
+
+  const expectedRootExports = {
+    // git-protocol
+    GIT_PROTOCOL_VERSION: 'string',
+    DEFAULT_COMMIT_BATCH: 'number',
+    MAX_CONCURRENT_GIT_CHILDREN: 'number',
+    RENAME_DETECTION_ARGUMENT: 'string',
+    MAX_OBJECT_BYTES: 'number',
+    MAX_FIELD_BYTES: 'number',
+    MAX_DIFF_BLOCK_BYTES: 'number',
+    DIFF_RECORD_STRUCTURAL_BYTES: 'number',
+    GitProtocolError: 'function',
+    revListArguments: 'function',
+    revListCountArguments: 'function',
+    catFileArguments: 'function',
+    diffTreeArguments: 'function',
+    RevListParser: 'function',
+    CatFileParser: 'function',
+    DiffTreeParser: 'function',
+    protocolAsciiBytes: 'function',
+    // git-stream
+    GIT_STREAM_EXTRACTOR_VERSION: 'string',
+    GitStreamError: 'function',
+    identityIsoDate: 'function',
+    streamGitHistory: 'function',
+    // history
+    HISTORY_EXTRACTOR_VERSION: 'string',
+    HistoryError: 'function',
+    runHistoryPass: 'function',
+    deriveReachability: 'function',
+    MAX_DERIVED_MEMBERSHIPS: 'number',
+    DerivedReachabilityCache: 'function',
+    // refs
+    classifyRefName: 'function',
+    trackRef: 'function',
+    selectHistoryRoots: 'function',
+    // repository
+    observeRepository: 'function',
+    // retention
+    RetentionError: 'function',
+    deriveRetentionRequests: 'function',
+    runRetentionPass: 'function',
+    // pr-sync
+    PR_SYNC_EXTRACTOR_VERSION: 'string',
+    PR_SYNC_OVERLAP_MS: 'number',
+    PrSyncError: 'function',
+    observationIdentityKey: 'function',
+    objectJobIdentityKey: 'function',
+    deduplicatePrObservations: 'function',
+    deduplicatePrPageItems: 'function',
+    assertSameRepository: 'function',
+    etagPositionKey: 'function',
+    requireEndOfListProof: 'function',
+    canAcknowledgePrObjects: 'function',
+    runPrSyncPass: 'function',
+    // pr-attribution
+    pinPrAttribution: 'function',
+    applyPrHeadUpdate: 'function',
+    classifyMergeStrategy: 'function',
+    // worktree
+    BorrowedIndexError: 'function',
+    captureWorktree: 'function',
+    // attributes
+    ATTR_UNSPECIFIED: 'string',
+    ATTR_UNSET: 'string',
+    ATTR_SET: 'string',
+    isFiltered: 'function',
+    hasTextconvDriver: 'function',
+    defaultAttributes: 'function',
+    sameAttributes: 'function',
+    parseCheckAttrZ: 'function',
+    readAttributes: 'function',
+    readAttributesIndex: 'function',
+    fingerprintAttributes: 'function',
+    // filesystem
+    DEFAULT_MAX_FILE_BYTES: 'number',
+    ForbiddenPathError: 'function',
+    ParentSymlinkError: 'function',
+    UnstableReadError: 'function',
+    OversizedFileError: 'function',
+    SafeReadUnavailableError: 'function',
+    safeReadCapability: 'function',
+    toPathBytes: 'function',
+    toPathKey: 'function',
+    fromPathKey: 'function',
+    fingerprintBytes: 'function',
+    isGitInternalPath: 'function',
+    splitNulBytes: 'function',
+    resolveLinkWithinRoot: 'function',
+    defaultReadFileBytes: 'function',
+    readLinkTarget: 'function',
+    // diffs
+    DiffError: 'function',
+    deriveLocalDiff: 'function',
+    // snapshots
+    SNAPSHOT_ERROR_CODES: 'object',
+    SnapshotError: 'function',
+    digestLocalDiff: 'function',
+    stageLocalSnapshot: 'function',
+    runUnregisterPurge: 'function',
+    // content-policy
+    ContentPolicyError: 'function',
+    classifyPath: 'function',
+    protectedPathRef: 'function',
+    SECRET_PATTERNS: 'object',
+    containsSecretText: 'function',
+    matchSecretRule: 'function',
+    screenBatchSurfaces: 'function',
+    scanValuesForLeak: 'function',
+    // scheduler
+    scopeIdentity: 'function',
+    Scheduler: 'function',
+    // watch
+    createWatchHub: 'function',
+    createNativeWatchHub: 'function',
+    // reconcile
+    Reconciler: 'function',
+    // coverage
+    DEFAULT_MAX_DELTA_PATHS_PER_AXIS: 'number',
+    sourceVectorsEqual: 'function',
+    initialCoverage: 'function',
+    certifyAxis: 'function',
+    invalidateAxes: 'function',
+    markReconciled: 'function',
+    markAxis: 'function',
+    allCurrent: 'function',
+    deriveReadiness: 'function',
+    toContractState: 'function',
+  };
+  for (const [name, expectedType] of Object.entries(expectedRootExports)) {
+    assert.equal(typeof live[name], expectedType, 'public entry must export ' + name + ' as ' + expectedType + ', got ' + typeof live[name]);
+  }
+
+  // Offline smoke execution of packed engine and L6b scheduler/watch/coverage entries.
+  assert.equal(live.classifyRefName('refs/heads/main'), 'local-branch');
+  assert.deepEqual(live.revListArguments(['HEAD']).slice(-2), ['--parents', 'HEAD']);
+  assert.equal(live.identityIsoDate({ name: 'Test', email: 'test@example.test', unixSeconds: 0, offsetMinutes: 0 }), '1970-01-01T00:00:00Z');
+  assert.equal(live.classifyMergeStrategy({ strategy: 'squash' }), 'squash');
+  const reach = live.deriveReachability(
+    [{ oid: 'a'.repeat(40), parents: [] }],
+    [{ name: 'r1', qualifiedOid: { algorithm: 'sha1', oid: 'a'.repeat(40) } }],
+  );
+  assert.equal(reach.get('r1')?.has('a'.repeat(40)), true);
+  assert.equal(live.isFiltered(live.defaultAttributes()), false);
+  assert.equal(live.isGitInternalPath('.git/config'), true);
+  assert.equal(live.isGitInternalPath('.github/workflows/ci.yml'), false);
+  assert.equal(live.fingerprintBytes(live.toPathBytes('probe.ts')).length, 64);
+  assert.equal(live.classifyPath('.env').allowed, false);
+  assert.equal(live.containsSecretText('plain source code'), false);
+  const cov = live.initialCoverage(['working-tree', 'index', 'refs'], 1000);
+  assert.equal(live.deriveReadiness(cov).localReady, false);
+  assert.equal(live.toContractState('unknown'), 'unavailable');
+  assert.equal(live.toContractState('current'), 'current');
+  const fakeToken = {
+    tokenId: 'tok:1',
+    scope: { tenant: 't', clone: 'c', worktree: 'w' },
+    epoch: 1,
+    epochId: 'ep:1',
+    declarationRevision: 1,
+    projectionIncarnation: 'inc:1',
+    issuedAt: 0,
+    expiresAt: 10_000,
+  };
+  assert.equal(typeof live.scopeIdentity(fakeToken), 'string');
+  const scheduler = new live.Scheduler(
+    {
+      clock: { now: () => 0, schedule: () => ({ cancel() {} }) },
+      validateToken: () => true,
+      park: () => {},
+      readProgress: () => undefined,
+      writeProgress: () => {},
+      backlogSize: () => 0,
+    },
+    {
+      maxPendingPaths: 16,
+      maxPendingBytes: 1024 * 1024,
+      maxConcurrency: 2,
+      maxActiveOperationsPerScope: 1,
+      maxRetries: 1,
+      retryBaseMs: 10,
+      maxBackoffMs: 100,
+      maxFailedKept: 4,
+      maxConsumers: 4,
+      maxFileSizeBytes: 65536,
+      maxPathBytes: 256,
+      readMarginBytes: 64,
+      maxDiscoveryBytes: 4096,
+      maxBatchBytes: 65536,
+      maxGitChildren: 2,
+      attemptDeadlineMs: 1000,
+      cancellationDeadlineMs: 50,
+      interactiveQuantum: 3,
+      backfillQuantum: 1,
+      backfillReserveBytes: 65536,
+      durableBacklogQuota: 100,
+    },
+  );
+  const watchHub = live.createWatchHub(
+    { start: async () => {}, stop: async () => {}, onSignal: () => () => {} },
+    { now: () => 0 },
+    { scheduler, debounceMs: 500, maxPendingPaths: 16 },
+  );
+  assert.equal(watchHub.state, 'starting');
+  await watchHub.dispose();
+
+  // Direct offline import of every emitted neutral source module in dist/.
+  const installed = resolve('node_modules/@sentropic/engram-live');
+  const loadedModules = [];
+  for (const name of moduleNames) {
+    const mod = await import(pathToFileURL(join(installed, 'dist', name + '.js')).href);
+    assert.equal(typeof mod, 'object', 'dist/' + name + '.js must import cleanly');
+    loadedModules.push({ name, exportCount: Object.keys(mod).length });
+  }
+  console.log(JSON.stringify({
+    checkedRootExports: Object.keys(expectedRootExports).length,
+    loadedModules,
+  }));
+`;
+
 // No-Python proof, phase by phase: build, packing, installation, imports and
 // exercises each run in an ISOLATED child process whose PATH starts with
 // python/python2/python3/python2.7/py tripwires that record any invocation
@@ -502,6 +754,16 @@ function buildReusedProbeArgs(mode: ReusedProbeMode, tmpRoot: string, installDir
     "reused-extraction-probe.mjs",
     mode,
     rootDir,
+  ];
+}
+
+function buildAllModulesProbeArgs(tmpRoot: string, rootDir: string, moduleNames: readonly string[], nodeVersion: string = process.versions.node): string[] {
+  return [
+    resolveProductionProbePermissionFlag(nodeVersion),
+    "--allow-fs-read=" + tmpRoot,
+    "all-modules-probe.mjs",
+    rootDir,
+    JSON.stringify(moduleNames),
   ];
 }
 
@@ -981,6 +1243,7 @@ describe("live package", () => {
     }
     writeFileSync(join(packed.installDir, "production-parse-probe.mjs"), PRODUCTION_PARSE_PROBE);
     writeFileSync(join(packed.installDir, "reused-extraction-probe.mjs"), REUSED_EXTRACTION_PROBE);
+    writeFileSync(join(packed.installDir, "all-modules-probe.mjs"), ALL_MODULES_PROBE);
   }, 120000);
 
   afterAll(() => {
@@ -1666,6 +1929,145 @@ describe("live package", () => {
       expect(networkCalls).toBe(0);
       expect(inventoryDigest({ root: repo })).toBe(digestBefore);
     } finally { box.dispose(); }
+  });
+
+  it("every neutral source module is delivered in the installed tarball and imports without the root package", () => {
+    // E-ASM1 RED (plan/09 E-ASM): every neutral .ts source module directly in
+    // engram-live/ (the 15 previously packed modules plus the 18 engine and
+    // L6b modules) is compiled, emitted (.js/.d.ts/.d.ts.map), packed in the
+    // tarball, exported from "." without adding an export subpath, and imports
+    // offline inside a root-denied child process without the root package.
+    const neutralSourceModules = readdirSync(liveRoot, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".ts") && !entry.name.endsWith(".d.ts"))
+      .map((entry) => entry.name.slice(0, -3))
+      .sort();
+    expect(neutralSourceModules).toHaveLength(33);
+    for (const name of EASM1_NEWLY_PACKED_MODULES) {
+      expect(neutralSourceModules, `source directory contains ${name}.ts`).toContain(name);
+    }
+
+    const installedRoot = join(packed.installDir, "node_modules", "@sentropic", "engram-live");
+    const installedFiles = new Set(listFilesRecursively(installedRoot));
+    for (const name of neutralSourceModules) {
+      for (const extension of ["js", "d.ts", "d.ts.map"]) {
+        const rel = `dist/${name}.${extension}`;
+        expect(packed.packedPaths, `packed tarball must contain ${rel}`).toContain(rel);
+        expect(installedFiles.has(rel), `installed tree must contain ${rel}`).toBe(true);
+      }
+    }
+
+    // No new export subpath, no dependency, no lifecycle script, no bin.
+    const installedPackageJson = JSON.parse(readFileSync(join(installedRoot, "package.json"), "utf8")) as Record<string, unknown>;
+    expect(installedPackageJson.exports).toEqual({
+      ".": { types: "./dist/index.d.ts", import: "./dist/index.js" },
+      "./contracts": { types: "./dist/contracts.d.ts", import: "./dist/contracts.js" },
+      "./integration": { types: "./dist/integration.d.ts", import: "./dist/integration.js" },
+    });
+    expect(installedPackageJson.dependencies).toBeUndefined();
+    expect(installedPackageJson.optionalDependencies).toBeUndefined();
+    expect(installedPackageJson.peerDependencies).toBeUndefined();
+    expect(installedPackageJson.bin).toBeUndefined();
+
+    // Offline, root-denied child process: imports @sentropic/engram-live,
+    // verifies all 18 modules' public exports and smoke-runs them, then
+    // directly imports every one of the 33 delivered dist/<module>.js files.
+    const output = runProtectedPhase(
+      process.execPath,
+      buildAllModulesProbeArgs(packed.tmpRoot, root, neutralSourceModules),
+      { cwd: packed.installDir, env: { ...tripwireEnv(packed.tripwireBin), NODE_PATH: "" } },
+    );
+    recordPhaseMarker(packed.phaseTrace, "all-modules", packed.pythonMarker);
+    expectNoPython(packed.phaseTrace);
+    const report = JSON.parse(output) as {
+      checkedRootExports: number;
+      loadedModules: { name: string; exportCount: number }[];
+    };
+    expect(report.checkedRootExports).toBeGreaterThanOrEqual(100);
+    expect(report.loadedModules.map((entry) => entry.name)).toEqual(neutralSourceModules);
+
+    // Strict external consumer typecheck (skipLibCheck: false) against the
+    // installed tarball covering symbols and types from all 18 new modules.
+    const tscBin = join(root, "node_modules", "typescript", "bin", "tsc");
+    const typeRoots = join(root, "node_modules", "@types");
+    const consumerDir = mkdtempSync(join(packed.installDir, ".tsc-easm1-"));
+    try {
+      const consumerFile = join(consumerDir, "all-18.mts");
+      writeFileSync(
+        consumerFile,
+        [
+          'import {',
+          '  GIT_PROTOCOL_VERSION, revListArguments, GitProtocolError, type GitProcessPort,',
+          '  GIT_STREAM_EXTRACTOR_VERSION, streamGitHistory, GitStreamError, type StreamedCommit,',
+          '  HISTORY_EXTRACTOR_VERSION, runHistoryPass, deriveReachability, type HistoryPassOutcome,',
+          '  classifyRefName, trackRef, selectHistoryRoots, type SelectHistoryRootsInput,',
+          '  observeRepository, type RepositoryObservationDto,',
+          '  RetentionError, deriveRetentionRequests, runRetentionPass, type RetentionPassOutcome,',
+          '  PR_SYNC_EXTRACTOR_VERSION, runPrSyncPass, PrSyncError, type PrSyncOutcome,',
+          '  pinPrAttribution, applyPrHeadUpdate, classifyMergeStrategy, type PinPrAttributionInput,',
+          '  BorrowedIndexError, captureWorktree, type CaptureResult,',
+          '  ATTR_UNSPECIFIED, defaultAttributes, isFiltered, type PathAttributes,',
+          '  DEFAULT_MAX_FILE_BYTES, toPathBytes, fingerprintBytes, type SafeFileBytes,',
+          '  DiffError, deriveLocalDiff, type DeriveLocalDiffInput,',
+          '  SNAPSHOT_ERROR_CODES, digestLocalDiff, stageLocalSnapshot, runUnregisterPurge, type StageLocalSnapshotOutcome,',
+          '  ContentPolicyError, classifyPath, containsSecretText, type PathClassification,',
+          '  scopeIdentity, Scheduler, type SchedulerBudgets,',
+          '  createWatchHub, createNativeWatchHub, type WatchHub,',
+          '  Reconciler, type ReconcilerPorts,',
+          '  DEFAULT_MAX_DELTA_PATHS_PER_AXIS, initialCoverage, deriveReadiness, toContractState, type CoverageMap,',
+          '} from "@sentropic/engram-live";',
+          'export const summary = {',
+          '  proto: GIT_PROTOCOL_VERSION, rev: revListArguments(["HEAD"]), pErr: GitProtocolError,',
+          '  stream: GIT_STREAM_EXTRACTOR_VERSION, streamFn: streamGitHistory, sErr: GitStreamError,',
+          '  hist: HISTORY_EXTRACTOR_VERSION, histFn: runHistoryPass, reach: deriveReachability,',
+          '  refs: [classifyRefName, trackRef, selectHistoryRoots],',
+          '  repo: observeRepository,',
+          '  ret: [RetentionError, deriveRetentionRequests, runRetentionPass],',
+          '  pr: [PR_SYNC_EXTRACTOR_VERSION, runPrSyncPass, PrSyncError, pinPrAttribution, applyPrHeadUpdate, classifyMergeStrategy],',
+          '  wt: [BorrowedIndexError, captureWorktree],',
+          '  attr: [ATTR_UNSPECIFIED, defaultAttributes, isFiltered],',
+          '  fs: [DEFAULT_MAX_FILE_BYTES, toPathBytes, fingerprintBytes],',
+          '  diff: [DiffError, deriveLocalDiff],',
+          '  snap: [SNAPSHOT_ERROR_CODES, digestLocalDiff, stageLocalSnapshot, runUnregisterPurge],',
+          '  pol: [ContentPolicyError, classifyPath, containsSecretText],',
+          '  sched: [scopeIdentity, Scheduler],',
+          '  watch: [createWatchHub, createNativeWatchHub],',
+          '  rec: Reconciler,',
+          '  cov: [DEFAULT_MAX_DELTA_PATHS_PER_AXIS, initialCoverage, deriveReadiness, toContractState],',
+          '};',
+          'export type AllTypes = [',
+          '  GitProcessPort, StreamedCommit, HistoryPassOutcome, SelectHistoryRootsInput,',
+          '  RepositoryObservationDto, RetentionPassOutcome, PrSyncOutcome, PinPrAttributionInput,',
+          '  CaptureResult, PathAttributes, SafeFileBytes, DeriveLocalDiffInput,',
+          '  StageLocalSnapshotOutcome, PathClassification, SchedulerBudgets, WatchHub,',
+          '  ReconcilerPorts, CoverageMap,',
+          '];',
+          "",
+        ].join("\n"),
+      );
+      const checked = spawnSync(
+        process.execPath,
+        [
+          tscBin,
+          "--ignoreConfig",
+          "--noEmit",
+          "--strict",
+          "--target", "ES2022",
+          "--module", "NodeNext",
+          "--moduleResolution", "NodeNext",
+          "--skipLibCheck", "false",
+          "--typeRoots", typeRoots,
+          "--types", "node",
+          consumerFile,
+        ],
+        { cwd: packed.installDir, env: tripwireEnv(packed.tripwireBin), encoding: "utf8" },
+      );
+      expect(checked.status, `strict external consumer tsc failed:\n${checked.stdout}\n${checked.stderr}`).toBe(0);
+    } finally {
+      rmSync(consumerDir, { recursive: true, force: true });
+    }
+    recordPhaseMarker(packed.phaseTrace, "all-modules-tsc", packed.pythonMarker);
+    expectNoPython(packed.phaseTrace);
+    console.info("E-ASM1 packed surface", `files=${packed.packedPaths.length} neutralModules=${neutralSourceModules.length} newlyPacked=${EASM1_NEWLY_PACKED_MODULES.length}`);
   });
 });
 
