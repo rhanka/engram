@@ -34,7 +34,7 @@ type Fragment = Record<string, unknown>;
 export const NATIVE_TEXT_SCHEMA: Fragment = { type: "object", properties: { kind: { const: "text" }, minLength: { type: "number" }, maxLength: { type: "number" }, pattern: { type: "string" }, patternName: { type: "string" } }, required: ["kind"], additionalProperties: false };
 export const NATIVE_BOOLEAN_SCHEMA: Fragment = { type: "object", properties: { kind: { const: "boolean" } }, required: ["kind"], additionalProperties: false };
 export const NATIVE_DATE_SCHEMA: Fragment = { type: "object", properties: { kind: { const: "date" } }, required: ["kind"], additionalProperties: false };
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   const prototype = Object.getPrototypeOf(value);
   return prototype === Object.prototype || prototype === null;
@@ -42,8 +42,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 const SIMPLE_KINDS = new Set(["int", "bigint", "timestamptz", "uuid", "json"]);
 const TEXT_KINDS = new Set(["string", "text"]);
 const isNonNegInt = (value: unknown): value is number => typeof value === "number" && Number.isInteger(value) && value >= 0;
-const RESERVED_KEYS = new Set(["__proto__", "prototype", "constructor", "sourcePath", "profile_hash", "bound_source_path"]);
-const extraKey = (value: Record<string, unknown>, ...allowed: string[]): string | undefined => Object.keys(value).find((key) => !allowed.includes(key));
+export const RESERVED_KEYS = new Set(["__proto__", "prototype", "constructor", "sourcePath", "profile_hash", "bound_source_path"]);
+export const extraKey = (value: Record<string, unknown>, ...allowed: string[]): string | undefined => Object.keys(value).find((key) => !allowed.includes(key));
 export function validateLogicalType(type: unknown, enums: Record<string, unknown>, path: string): string[] {
   if (!isRecord(type)) return [`${path} must be an object`];
   if (Object.hasOwn(type, "enumRef")) return typeof type.enumRef === "string" && Object.keys(type).length === 1 && Object.hasOwn(enums, type.enumRef) && isRecord(enums[type.enumRef]) ? [] : [`${path}.enumRef references unknown domain ${String(type.enumRef)}`];
@@ -197,7 +197,7 @@ export function validateModelFkEdges<R extends object>(nodes: Record<string, { r
   return errors;
 }
 type FieldCheck = (v: unknown, path: string, errors: string[]) => void;
-const isNonEmptyStr = (v: unknown): v is string => typeof v === "string" && v.trim().length > 0, isTrimmedStr = (v: unknown): v is string => isNonEmptyStr(v) && v.trim() === v;
+export const isNonEmptyStr = (v: unknown): v is string => typeof v === "string" && v.trim().length > 0, isTrimmedStr = (v: unknown): v is string => isNonEmptyStr(v) && v.trim() === v;
 const isStrList = (v: unknown): v is string[] => Array.isArray(v) && v.every(isNonEmptyStr);
 const rule = (ok: (v: unknown) => boolean, msg: string): FieldCheck => (v, p, e) => { if (!ok(v)) e.push(`${p} ${msg}`); };
 const all = (keys: readonly string[], fn: FieldCheck): Record<string, FieldCheck> => Object.fromEntries(keys.map((k) => [k, fn]));
