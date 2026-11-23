@@ -13,7 +13,11 @@ import {
   validateOntologyProfile,
 } from "../ontology-profile.js";
 import type { NormalizedOntologyProfile } from "../types.js";
-import type { AdmissionEntry } from "./admission.js";
+import {
+  checkProfilePayloadCoherence,
+  projectProfileAdmissionEntry,
+  type AdmissionEntry,
+} from "./admission.js";
 import { canonicalBytes, sha256Hex } from "./canonical.js";
 import type { OntologyPayload, RegistryEnvelope } from "./catalog.js";
 import { pinsDigestOf, resultDigestOf, stableForHash } from "./digests.js";
@@ -68,24 +72,6 @@ function resolveAppContextProfilePath(): string {
     }
   }
   return candidates[0]!;
-}
-
-function isHexDigest(value: unknown): value is Digest {
-  return typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
-}
-
-function isValidPin(pin: unknown): pin is Pin {
-  if (pin === null || typeof pin !== "object") return false;
-  const candidate = pin as Record<string, unknown>;
-  return (
-    typeof candidate.id === "string" &&
-    typeof candidate.version === "string" &&
-    isHexDigest(candidate.contentDigest)
-  );
-}
-
-function pinsEqual(a: Pin, b: Pin): boolean {
-  return a.id === b.id && a.version === b.version && a.contentDigest === b.contentDigest;
 }
 
 /**
@@ -204,56 +190,21 @@ export function assertAppContextPayloadCoherent(payload: OntologyPayload): void 
       `app-context payload namespace/owner mismatch: expected ${APP_CONTEXT_NAMESPACE}/${APP_CONTEXT_OWNER}`,
     );
   }
-  if (payload.profileShape !== "engram-profile") {
-    throw new Error(
-      `app-context payload profileShape mismatch: expected engram-profile, got ${String(payload.profileShape)}`,
-    );
-  }
-  if (payload.artifactKind !== "profile" || payload.artifactBinding.artifactKind !== "profile") {
-    throw new Error("app-context payload coherence requires artifactKind === 'profile'");
-  }
-  if (!isValidPin(payload.profilePin) || !isValidPin(payload.artifactBinding.profilePin)) {
-    throw new Error("app-context payload profilePin and artifactBinding.profilePin must be valid Pins");
+  const coherenceProblem = checkProfilePayloadCoherence(payload);
+  if (coherenceProblem !== null) {
+    throw new Error(`app-context payload contradiction: ${coherenceProblem}`);
   }
   if (
     payload.profilePin.id !== APP_CONTEXT_PROFILE_ID ||
-    payload.profilePin.version !== APP_CONTEXT_PROFILE_VERSION ||
-    payload.artifactBinding.profilePin.id !== APP_CONTEXT_PROFILE_ID ||
-    payload.artifactBinding.profilePin.version !== APP_CONTEXT_PROFILE_VERSION
+    payload.profilePin.version !== APP_CONTEXT_PROFILE_VERSION
   ) {
     throw new Error(
       `app-context payload requires profilePin ${APP_CONTEXT_PROFILE_ID}@${APP_CONTEXT_PROFILE_VERSION}`,
     );
   }
-  if (!pinsEqual(payload.profilePin, payload.artifactBinding.profilePin)) {
-    throw new Error(
-      "app-context payload contradiction: outer profilePin does not equal artifactBinding.profilePin",
-    );
-  }
-  if (!Array.isArray(payload.stack) || !Array.isArray(payload.artifactBinding.stack)) {
-    throw new Error("app-context payload stack and artifactBinding.stack must be arrays");
-  }
-  if (
-    payload.stack.length !== payload.artifactBinding.stack.length ||
-    payload.stack.some(
-      (layer, idx) =>
-        !isValidPin(layer) ||
-        !isValidPin(payload.artifactBinding.stack[idx]) ||
-        !pinsEqual(layer, payload.artifactBinding.stack[idx]!),
-    )
-  ) {
-    throw new Error(
-      "app-context payload contradiction: outer stack does not equal artifactBinding.stack",
-    );
-  }
-  if (payload.stack.length !== 1 || !pinsEqual(payload.stack[0]!, payload.profilePin)) {
+  if (payload.stack.length !== 1) {
     throw new Error(
       "app-context payload contradiction: stack must contain exactly one layer equal to profilePin",
-    );
-  }
-  if (payload.digests.contentDigest !== payload.profilePin.contentDigest) {
-    throw new Error(
-      "app-context payload contradiction: digests.contentDigest does not equal profilePin.contentDigest",
     );
   }
   const recomputedPinsDigest = pinsDigestOf({ layers: payload.stack });
@@ -432,26 +383,16 @@ export function projectAppContextAdmissionEntry(
   if (payload.visibility !== "public" || payload.artifactKind !== "profile") {
     throw new Error("unreachable: assertAppContextPayloadCoherent guarantees public profile payload");
   }
-  return deepFreeze({
-    family: "ENG",
-    artifactKind: payload.artifactKind,
-    profileShape: payload.profileShape,
-    generatedBpmn: false,
-    qualificationScope: {
-      libraries: [{ id: "@sentropic/engram", version: "0.28.0" }],
-      proofSets: [],
-      selections: [{ phase: "build", readinessPolicy: "strict" }],
-    },
-    ruleSheetRuleIds: payload.ruleSheets.map((sheet) => sheet.ruleIds),
-    stack: payload.stack,
-    pinsDigest: payload.digests.pinsDigest,
-    resultEvidence: payload.digests.resultEvidence,
-    profilePin: payload.profilePin,
-    corpusDigest: payload.corpusRef.digest,
-    selections: payload.ruleSheets.flatMap((sheet) => sheet.selections),
-    ruleSheetPins: payload.ruleSheets.map((sheet) => sheet.sheetPin),
-    visibility: payload.visibility,
-  });
+  return deepFreeze(
+    projectProfileAdmissionEntry(payload, {
+      family: "ENG",
+      qualificationScope: {
+        libraries: [{ id: "@sentropic/engram", version: "0.28.0" }],
+        proofSets: [],
+        selections: [{ phase: "build", readinessPolicy: "strict" }],
+      },
+    }),
+  );
 }
 
 export const APP_CONTEXT_ADMISSION_ENTRY: AdmissionEntry =

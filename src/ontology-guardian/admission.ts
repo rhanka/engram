@@ -1,5 +1,6 @@
 // §5.5 admission gate as a pure function. Refuses unresolved or mismatching
 // result evidence explicitly; never falls back to latest.
+import { isRecord, isTrimmedStr } from "../model-schemas.js";
 import { canonicalBytes } from "./canonical.js";
 import { severityPolicyDigestOf } from "./digests.js";
 import {
@@ -11,7 +12,14 @@ import { PINNED_CORPUS_AUTHORITY_TAG } from "./catalog.js";
 import { isDigest } from "./types.js";
 import type { CompiledSetting } from "./diagnostics.js";
 import type { ArtifactKind, Digest, DigestEvidence, Pin, ProfileShape } from "./types.js";
-import type { CompiledLintOptions, Receipt, RuleVerdict } from "./catalog.js";
+import type {
+  CompiledLintOptions,
+  OntologyPayload,
+  PublicRuleSheetRef,
+  Receipt,
+  RuleVerdict,
+  SelectionRuleRow,
+} from "./catalog.js";
 
 export interface AdmissionSelection {
   readonly phase: string;
@@ -218,7 +226,7 @@ function refuse(reason: string): AdmissionVerdict {
   return { admitted: false, code: "missing-receipt", reason };
 }
 
-function pinsEqual(a: readonly Pin[], b: readonly Pin[]): boolean {
+export function pinsEqual(a: readonly Pin[], b: readonly Pin[]): boolean {
   if (a.length !== b.length) return false;
   return a.every((p, i) => {
     const q = b[i] as Pin;
@@ -231,14 +239,34 @@ function evidenceEqual(a: DigestEvidence, b: DigestEvidence): boolean {
   return a.digest === b.digest;
 }
 
-function pinProblem(pin: Pin, what: string): string | null {
-  if (typeof pin !== "object" || pin === null) return `${what} pin not an object`;
+export function pinProblem(pin: Pin, what: string): string | null {
+  if (!isRecord(pin)) return `${what} pin not an object`;
   if (Object.keys(pin).sort().join(",") !== "contentDigest,id,version") return `${what} pin fields malformed`;
   if (!isExactVersion(pin.version)) return `${what} floating or unknown version`;
-  if (typeof pin.id !== "string" || pin.id === "" || typeof pin.version !== "string" || pin.version === "") {
+  if (!isTrimmedStr(pin.id) || typeof pin.version !== "string" || pin.version === "") {
     return `${what} pin identity malformed`;
   }
   if (!isDigest(pin.contentDigest)) return `${what} pin digest malformed`;
+  return null;
+}
+
+/** §1.3 ordered, duplicate-free, canonical Pin list check. */
+export function pinListProblem(pins: unknown, what: string, allowEmpty = false): string | null {
+  if (!Array.isArray(pins)) return `${what} must be an array`;
+  if (!allowEmpty && pins.length === 0) return `${what} must contain at least one layer`;
+  const seen = new Set<string>();
+  for (const pin of pins) {
+    const problem = pinProblem(pin as Pin, what);
+    if (problem !== null) return problem;
+    let key: string;
+    try {
+      key = canonicalBytes(pin);
+    } catch {
+      return `${what} pin is not canonical JSON`;
+    }
+    if (seen.has(key)) return `${what} contains duplicate pin`;
+    seen.add(key);
+  }
   return null;
 }
 
@@ -926,4 +954,141 @@ function checkPrivateParity(
   // The full owner evidence stays owner-side; the guardian checks the
   // opaque binding (digest, scope, verdict rows), never the settings.
   return checkVerdictsAgainstSelection(receipt.receiptKind, receipt.ruleVerdicts, owner);
+}
+
+/** Fail-closed wrapper over `checkSelections` for standalone payload checks. */
+export function checkEntrySelections(entry: AdmissionEntry): string | null {
+  try {
+    return checkSelections(entry);
+  } catch (error) {
+    return (error as Error).message;
+  }
+}
+
+/**
+ * Shared profile-payload internal coherence check (§5.3, DESIGN-NOTE-L1-PINS §3):
+ * verifies `engram-profile` / `profile` discriminants, valid equal outer and
+ * `artifactBinding` pins, valid equal duplicate-free stacks ending at `profilePin`,
+ * and `digests.contentDigest === profilePin.contentDigest`.
+ */
+export function checkProfilePayloadCoherence(payload: unknown): string | null {
+  if (!isRecord(payload)) return "payload must be an object";
+  if (payload.profileShape !== "engram-profile") {
+    return `profileShape mismatch: expected engram-profile, got ${String(payload.profileShape)}`;
+  }
+  const binding = payload.artifactBinding;
+  if (payload.artifactKind !== "profile" || !isRecord(binding) || binding.artifactKind !== "profile") {
+    return "artifactKind and artifactBinding.artifactKind must be 'profile'";
+  }
+  const outerPinProblem = pinProblem(payload.profilePin as Pin, "profilePin");
+  if (outerPinProblem !== null) return outerPinProblem;
+  const bindingPinProblem = pinProblem(binding.profilePin as Pin, "artifactBinding.profilePin");
+  if (bindingPinProblem !== null) return bindingPinProblem;
+  const profilePin = payload.profilePin as Pin;
+  if (!pinsEqual([profilePin], [binding.profilePin as Pin])) {
+    return "outer profilePin does not equal artifactBinding.profilePin";
+  }
+  const stackProblem = pinListProblem(payload.stack, "stack");
+  if (stackProblem !== null) return stackProblem;
+  const bindingStackProblem = pinListProblem(binding.stack, "artifactBinding.stack", true);
+  if (bindingStackProblem !== null) return bindingStackProblem;
+  const stack = payload.stack as readonly Pin[];
+  if (!pinsEqual(stack, binding.stack as readonly Pin[])) {
+    return "outer stack does not equal artifactBinding.stack";
+  }
+  if (!pinsEqual([stack[stack.length - 1]!], [profilePin])) {
+    return "top of stack does not equal profilePin";
+  }
+  const digests = payload.digests;
+  if (!isRecord(digests) || digests.contentDigest !== profilePin.contentDigest) {
+    return "digests.contentDigest does not equal profilePin.contentDigest";
+  }
+  return null;
+}
+
+function composePublicRuleSheetSelections(
+  sheets: readonly PublicRuleSheetRef[],
+): readonly AdmissionSelection[] {
+  if (sheets.length === 0) return [];
+  if (sheets.length === 1) return sheets[0]!.selections;
+  const first = sheets[0]!;
+  const composed: AdmissionSelection[] = [];
+  for (const baseSel of first.selections) {
+    const baseSettingsBytes = canonicalBytes(baseSel.settings);
+    const mergedRules = new Map<string, SelectionRuleRow>();
+    for (const sheet of sheets) {
+      const matching = sheet.selections.filter(
+        (s) => s.phase === baseSel.phase && s.readinessPolicy === baseSel.readinessPolicy,
+      );
+      if (matching.length !== 1) {
+        throw new Error("ruleSheet selections must cover identical (phase, readinessPolicy) pairs");
+      }
+      const sel = matching[0]!;
+      if (
+        sel.severityPolicyDigest !== baseSel.severityPolicyDigest ||
+        canonicalBytes(sel.settings) !== baseSettingsBytes
+      ) {
+        throw new Error("ruleSheet selections disagree on settings or severityPolicyDigest");
+      }
+      if (canonicalBytes(sel.rules.map((r) => r.ruleId)) !== canonicalBytes(sheet.ruleIds)) {
+        throw new Error("ruleSheet selection rules must match sheet ruleIds in order");
+      }
+      for (const row of sel.rules) {
+        const prev = mergedRules.get(row.ruleId);
+        if (prev !== undefined && canonicalBytes(prev) !== canonicalBytes(row)) {
+          throw new Error(`conflicting selection row for rule ${row.ruleId}`);
+        }
+        mergedRules.set(row.ruleId, row);
+      }
+    }
+    composed.push({
+      phase: baseSel.phase,
+      readinessPolicy: baseSel.readinessPolicy,
+      settings: baseSel.settings,
+      severityPolicyDigest: baseSel.severityPolicyDigest,
+      rules: [...mergedRules.values()],
+    });
+  }
+  for (const sheet of sheets.slice(1)) {
+    if (sheet.selections.length !== first.selections.length) {
+      throw new Error("ruleSheet selections must cover identical (phase, readinessPolicy) pairs");
+    }
+  }
+  return composed;
+}
+
+/**
+ * Projects a profile `OntologyPayload` (`artifactKind: "profile"`) into an
+ * `AdmissionEntry`, preserving `ruleSheets` (`ruleSheetPins`, `ruleSheetRuleIds`,
+ * and public `selections`) for `checkAdmission`.
+ */
+export function projectProfileAdmissionEntry(
+  payload: Extract<OntologyPayload, { readonly artifactKind: "profile" }>,
+  options: {
+    readonly family: AdmissionFamily;
+    readonly qualificationScope: QualificationScope;
+    readonly ownerSelections?: readonly OwnerSelectionBinding[];
+  },
+): AdmissionEntry {
+  const isPublic = payload.visibility === "public";
+  const selections = isPublic
+    ? composePublicRuleSheetSelections(payload.ruleSheets as readonly PublicRuleSheetRef[])
+    : [];
+  return {
+    family: options.family,
+    artifactKind: payload.artifactKind,
+    profileShape: payload.profileShape,
+    generatedBpmn: false,
+    qualificationScope: options.qualificationScope,
+    ruleSheetRuleIds: payload.ruleSheets.map((sheet) => sheet.ruleIds),
+    stack: payload.stack,
+    pinsDigest: payload.digests.pinsDigest,
+    resultEvidence: payload.digests.resultEvidence,
+    profilePin: payload.profilePin,
+    corpusDigest: payload.corpusRef.digest,
+    selections,
+    ruleSheetPins: payload.ruleSheets.map((sheet) => sheet.sheetPin),
+    visibility: isPublic ? "public" : "private",
+    ...(options.ownerSelections !== undefined ? { ownerSelections: options.ownerSelections } : {}),
+  };
 }
