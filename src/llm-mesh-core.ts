@@ -401,6 +401,21 @@ function hasValidatedGenerate(mesh: LlmMesh): mesh is GraphifyMesh {
   return typeof (mesh as Partial<GraphifyMesh>).generateValidated === "function";
 }
 
+/** System message the mesh JSON client sends; shared with the browser transport. */
+export const SCRAP_EXTRACT_SYSTEM_PROMPT =
+  "You are Engram's JSON extraction backend. Return only valid JSON matching the requested schema."
+  + " Do not include Markdown prose outside the JSON object.";
+
+/** User message of a scrap seat request: the schema framing extract itself sends. */
+export function scrapExtractUserMessage(schema: string, prompt: string): string {
+  return [`Schema: ${schema}`, "", prompt].join("\n");
+}
+
+/** Single-input rendering of a scrap seat request for transports with one chat box (browser). */
+export function scrapExtractBrowserMessage(schema: string, prompt: string): string {
+  return [SCRAP_EXTRACT_SYSTEM_PROMPT, scrapExtractUserMessage(schema, prompt)].join("\n\n");
+}
+
 /**
  * Wraps an LlmMesh as a TextJsonGenerationClient so existing wiki
  * description generation code can call it without depending on
@@ -449,18 +464,8 @@ function meshTextJsonClient(
         providerId: provider,
         modelId: model,
         messages: [
-          {
-            role: "system",
-            content: "You are Engram's JSON extraction backend. Return only valid JSON matching the requested schema. Do not include Markdown prose outside the JSON object.",
-          },
-          {
-            role: "user",
-            content: [
-              `Schema: ${input.schema}`,
-              "",
-              input.prompt,
-            ].join("\n"),
-          },
+          { role: "system", content: SCRAP_EXTRACT_SYSTEM_PROMPT },
+          { role: "user", content: scrapExtractUserMessage(input.schema, input.prompt) },
         ],
         responseFormat: { type: "json-object" },
         ...(options.effort ? { reasoning: { effort: options.effort } } : {}),

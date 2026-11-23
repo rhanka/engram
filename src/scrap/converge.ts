@@ -3,7 +3,9 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from
 import { basename, join, resolve } from "node:path";
 import { specsOf, type Mission } from "./extract.js";
 export type Verdict = "unanimous" | "majority" | "split" | "absent" | "insufficient";
-export interface ConvergeOptions { runs: string[]; mission: string; out: string; allowMissingDigest?: boolean }
+export interface ConvergeOptions {
+  runs: string[]; mission: string; out: string; allowMissingDigest?: boolean; allowTransports?: string[];
+}
 export type RunProv = { value: unknown; quote: unknown } | { status: "failed"; error: string } | { status: "missing" };
 export interface FieldVote { verdict: Verdict; value: unknown; n_answered: number; n_runs: number; runs: Record<string, RunProv> }
 export interface FieldStats { counts: Record<Verdict, number>; pairwise_agreement: Record<string, number | null>; krippendorff_alpha: number | null; alpha_excluded_units: number }
@@ -19,7 +21,10 @@ const sumSqOf = (m: Map<string, number>): number => [...m.values()].reduce((a, c
 const sortRec = (r: Record<string, number>): Record<string, number> => Object.fromEntries(Object.keys(r).sort().map((k) => [k, r[k]!]));
 const countVerdicts = (vs: Verdict[]): Record<Verdict, number> => { const c: Record<Verdict, number> = { unanimous: 0, majority: 0, split: 0, absent: 0, insufficient: 0 }; for (const v of vs) c[v]++; return c; };
 const toAlphaVal = (s: Slot): string | null => s.status !== "answered" ? null : (s.entry.norm === null ? "" : `v:${s.entry.norm}`);
-export const isConvergeUsageError = (e: unknown): boolean => /mission digest mismatch|missing summary|missing mission digest|invalid mission|requires at least 2 runs|duplicate run directory|missing results\.ndjson|ENOENT/.test(String(e));
+export const isConvergeUsageError = (e: unknown): boolean =>
+  /mission digest mismatch|missing summary|missing mission digest|invalid mission/.test(String(e))
+  || /requires at least 2 runs|duplicate run directory|missing results\.ndjson/.test(String(e))
+  || /requires --allow-transport|mixed or unmarked transports|ENOENT/.test(String(e));
 function classifyRow(r: Record<string, unknown> | undefined): RunState {
   if (!r) return { status: "missing" };
   if (r.error != null) return { status: "failed", error: String(r.error).trim() || "unknown_error" };
@@ -100,15 +105,24 @@ export async function runConverge(opts: ConvergeOptions): Promise<{ rows: Record
   const specs = specsOf(mission), bases = opts.runs.map((d) => basename(d.replace(/[\\/]+$/, "")) || d);
   const runNames = new Set(bases).size === bases.length ? bases : [...opts.runs];
   const allIds: string[] = [], seenIds = new Set<string>(), missingDigestRuns: string[] = [];
+  const allowed = [...(opts.allowTransports ?? [])].sort();
+  const runTransports: Record<string, string | null> = {};
   const runMaps = opts.runs.map((dir, ri) => {
     const file = join(dir, "results.ndjson");
     if (!existsSync(file)) throw new Error(`scrap converge: missing results.ndjson in ${dir}`);
     const byId = new Map<string, Record<string, unknown>>();
-    let hasSummary = false, missingDigest = false;
+    const seenTransports = new Set<string>();
+    let hasSummary = false, missingDigest = false, objectLines = 0, keyLines = 0, badTransport = false;
     for (const line of readFileSync(file, "utf-8").split("\n")) {
       if (!line.trim()) continue;
       let r: unknown; try { r = JSON.parse(line); } catch { continue; }
       if (!isObj(r)) continue;
+      objectLines++;
+      if ("transport" in r) {
+        keyLines++;
+        if (typeof r.transport === "string") seenTransports.add(r.transport);
+        else badTransport = true;
+      }
       if (r.type === "summary") {
         hasSummary = true;
         const md = r.mission_digest ?? r.missionDigest, got = md == null ? "" : cleanDigest(md);
@@ -121,6 +135,15 @@ export async function runConverge(opts: ConvergeOptions): Promise<{ rows: Record
     if (!hasSummary || missingDigest) {
       if (!opts.allowMissingDigest) throw new Error(`scrap converge: ${!hasSummary ? "missing summary row" : "missing mission digest in summary"} in ${dir} (pass --allow-missing-digest to override)`);
       missingDigestRuns.push(runNames[ri]!);
+    }
+    const only = [...seenTransports][0];
+    const uniform = !badTransport && seenTransports.size === 1 && keyLines === objectLines && only !== undefined;
+    if (keyLines === 0) runTransports[runNames[ri]!] = null;
+    else if (uniform && allowed.includes(only!)) runTransports[runNames[ri]!] = only!;
+    else if (uniform) {
+      throw new Error(`scrap converge: run ${dir} requires --allow-transport (run transport: ${only})`);
+    } else {
+      throw new Error(`scrap converge: run ${dir} has mixed or unmarked transports (refusing with no override)`);
     }
     return byId;
   });
@@ -196,7 +219,9 @@ export async function runConverge(opts: ConvergeOptions): Promise<{ rows: Record
   });
   const sumFields = Object.fromEntries(specs.map((s) => s.kind !== "record" ? [s.name, summarize(scalarAcc.get(s.name)!, runNames)] : (() => { const rs = recAcc.get(s.name)!; return [s.name, { counts: countVerdicts(rs.verdicts), aligned: rs.aligned, unmatched: rs.unmatched, subfields: Object.fromEntries(s.subFields!.map((sf) => [sf.name, summarize(rs.subs.get(sf.name)!, runNames)])) }]; })()));
   const run_stats = Object.fromEntries(runNames.map((n, i) => [n, { ...rawRunStats[i]!, failed_by_code: sortRec(rawRunStats[i]!.failed_by_code) }]));
-  const summary = { type: "summary", runs: runNames, run_stats, mission_digest: expectedDigest, allow_missing_digest: opts.allowMissingDigest === true, missing_digest_runs: missingDigestRuns, ids: allIds.length, fields: sumFields };
+  const summary = { type: "summary", runs: runNames, run_stats, mission_digest: expectedDigest,
+    allow_missing_digest: opts.allowMissingDigest === true, missing_digest_runs: missingDigestRuns,
+    allow_transports: allowed, run_transports: runTransports, ids: allIds.length, fields: sumFields };
   mkdirSync(opts.out, { recursive: true });
   writeFileSync(join(opts.out, "converge.ndjson"), `${[...rows, summary].map((r) => JSON.stringify(r)).join("\n")}\n`, "utf-8");
   console.log(`scrap converge summary: runs=${runNames.length} ids=${allIds.length} out=${join(opts.out, "converge.ndjson")}`);

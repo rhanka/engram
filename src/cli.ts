@@ -6158,12 +6158,57 @@ export async function main(): Promise<void> {
     try { await runExtract({ out: o.out, mission: o.mission, model: o.model, retryFailed: o.retryFailed === true }); }
     catch (e) { if (isExtractUsageError(e)) { console.error(String(e)); process.exit(2); } throw e; }
   });
-  scrap.command("converge").option("--runs <dirs...>", "run directories").option("--mission <file>").option("--out <dir>").option("--allow-missing-digest", "allow runs lacking a summary or mission digest").action(async (o) => {
-    if (!Array.isArray(o.runs) || o.runs.length < 2 || !o.mission || !o.out) { console.error("usage: engram scrap converge --runs DIR_A DIR_B [DIR_C...] --mission FILE --out DIR [--allow-missing-digest]"); process.exit(2); }
-    const { runConverge, isConvergeUsageError } = await import("./scrap/converge.js");
-    try { await runConverge({ runs: o.runs, mission: o.mission, out: o.out, allowMissingDigest: o.allowMissingDigest === true }); }
-    catch (e) { if (isConvergeUsageError(e)) { console.error(String(e)); process.exit(2); } throw e; }
-  });
+  scrap.command("converge").option("--runs <dirs...>", "run directories")
+    .option("--mission <file>").option("--out <dir>")
+    .option("--allow-missing-digest", "allow runs lacking a summary or mission digest")
+    .option("--allow-transport <names...>", "allow runs carrying the given transport marker").action(async (o) => {
+      if (!Array.isArray(o.runs) || o.runs.length < 2 || !o.mission || !o.out) {
+        console.error("usage: engram scrap converge --runs DIR_A DIR_B [DIR_C...] --mission FILE --out DIR"
+          + " [--allow-missing-digest] [--allow-transport NAME...]");
+        process.exit(2);
+      }
+      const { runConverge, isConvergeUsageError } = await import("./scrap/converge.js");
+      const allow = Array.isArray(o.allowTransport) ? { allowTransports: o.allowTransport as string[] } : {};
+      try {
+        await runConverge({ runs: o.runs, mission: o.mission, out: o.out,
+          allowMissingDigest: o.allowMissingDigest === true, ...allow });
+      } catch (e) { if (isConvergeUsageError(e)) { console.error(String(e)); process.exit(2); } throw e; }
+    });
+  scrap.command("prompt").option("--capture <dir>").option("--mission <file>").option("--id <id>")
+    .option("--repair").option("--from <file>").option("--json").action(async (o) => {
+      if (!o.capture || !o.mission || !o.id || (o.repair && !o.from)) {
+        console.error("usage: engram scrap prompt --capture DIR --mission FILE --id ID"
+          + " [--repair --from FILE] [--json]");
+        process.exit(2);
+      }
+      const { runScrapPrompt, isScrapImportUsageError } = await import("./scrap/import.js");
+      const { isExtractUsageError } = await import("./scrap/extract.js");
+      const usageErr = (e: unknown): boolean => isScrapImportUsageError(e) || isExtractUsageError(e);
+      try {
+        const r = await runScrapPrompt({ capture: o.capture, mission: o.mission, id: o.id,
+          repair: o.repair === true, ...(o.from ? { from: o.from } : {}) });
+        if (o.json) {
+          process.stdout.write(`${JSON.stringify({ id: o.id, attempt: r.attempt, message: r.message,
+            prompt_sha256: r.promptSha256, snapshot_sha256: r.snapshotSha256,
+            mission_digest: r.missionDigest })}\n`);
+        } else process.stdout.write(r.message);
+      } catch (e) { if (usageErr(e)) { console.error(String(e)); process.exit(2); } throw e; }
+    });
+  scrap.command("import").option("--out <dir>").option("--capture <dir>").option("--mission <file>")
+    .option("--from <file>").option("--model <label>").option("--retry-failed").action(async (o) => {
+      if (!o.out || !o.capture || !o.mission || !o.from || !o.model) {
+        console.error("usage: engram scrap import --out DIR --capture DIR --mission FILE --from FILE"
+          + " --model LABEL [--retry-failed]");
+        process.exit(2);
+      }
+      const { runScrapImport, isScrapImportUsageError } = await import("./scrap/import.js");
+      const { isExtractUsageError } = await import("./scrap/extract.js");
+      const usageErr = (e: unknown): boolean => isScrapImportUsageError(e) || isExtractUsageError(e);
+      try {
+        await runScrapImport({ out: o.out, capture: o.capture, mission: o.mission, from: o.from,
+          model: o.model, retryFailed: o.retryFailed === true });
+      } catch (e) { if (usageErr(e)) { console.error(String(e)); process.exit(2); } throw e; }
+    });
 
   program
     .command("merge-driver <ancestor> <current> <other>", { hidden: true })

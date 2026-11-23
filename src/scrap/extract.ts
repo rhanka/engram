@@ -23,7 +23,9 @@ export interface MeshClientDeps {
 export function isExtractUsageError(e: unknown): boolean {
   return /cannot infer provider|missing credentials|unknown mesh alias|no usable mesh seat|no seat executor|cross-family alias routing|claude CLI probe|invalid mission|optional peer package "@sentropic\/llm-mesh"/.test(String(e));
 }
-type FieldSpec = { name: string; kind: "scalar" | "record"; maxValues: number; subFields?: RecordSubField[] };
+export type FieldSpec = { name: string; kind: "scalar" | "record"; maxValues: number; subFields?: RecordSubField[] };
+export const SCRAP_EXTRACT_SCHEMA = "scrap-extract";
+export const SCRAP_PACKET_BUDGET = 24000;
 type TokenCounts = { input: number; output: number; reasoning: number; total: number };
 type WindowBucket = { startMs: number; endMs: number; calls: number; byModel: Record<string, number> };
 const textOf = (h: string): string => h.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
@@ -98,22 +100,139 @@ function apiEquivalent(pt: PriceTable | null, u: TokenCounts | null): number | "
   if (u.reasoning > 0 && pt.per_million.reasoning === undefined) return "unknown";
   return Number(((u.input * pt.per_million.input + u.output * pt.per_million.output + u.reasoning * (pt.per_million.reasoning ?? 0)) / 1_000_000).toFixed(9));
 }
-export async function runExtract(oc: ExtractOptions, client?: ExtractClient, deps?: MeshClientDeps): Promise<void> {
-  const missionRaw = readFileSync(oc.mission), mission = JSON.parse(missionRaw.toString("utf-8")) as Mission;
+export interface LoadedMission { mission: Mission; specs: FieldSpec[]; names: string[]; digest: string }
+export function loadMission(path: string): LoadedMission {
+  const raw = readFileSync(path);
+  let mission: Mission;
+  try {
+    mission = JSON.parse(raw.toString("utf-8")) as Mission;
+  } catch (e) {
+    throw new Error(`scrap extract: invalid mission (${e instanceof Error ? e.message : String(e)})`);
+  }
   const specs = specsOf(mission), names = specs.map((f) => f.name);
-  const meshAlias = oc.model.startsWith("mesh:") ? oc.model.slice("mesh:".length) : null;
-  const pm = meshAlias === null ? providerOf(oc.model) : null;
-  if (meshAlias !== null && !client && !deps?.createMeshClient) await import("./mesh-host.js").then((m) => m.preflightMeshAlias(meshAlias));
-  // char budget (UTF-16 code units, not tokens): slice keeps prompts bounded without a tokenizer.
-  const cap = oc.tokenCap ?? mission.tokenCap ?? 24000;
-  const latest = new Map<string, { status: string; pages?: { sha256: string }[]; id: string; url: string }>();
-  for (const line of readFileSync(join(oc.out, "state.jsonl"), "utf-8").split("\n")) {
+  return { mission, specs, names, digest: createHash("sha256").update(raw).digest("hex") };
+}
+export interface PacketRow { id: string; url: string; status: string; pages?: { sha256: string }[] }
+export function loadPackets(captureDir: string): Map<string, PacketRow> {
+  const latest = new Map<string, PacketRow>();
+  for (const line of readFileSync(join(captureDir, "state.jsonl"), "utf-8").split("\n")) {
     if (!line.trim()) continue;
     let s: { id?: string; status?: string } & Record<string, unknown>;
-    try { s = JSON.parse(line); } catch { continue; }
+    try {
+      s = JSON.parse(line);
+    } catch {
+      continue;
+    }
     if (typeof s.id !== "string" || s.status === "invalid_input") continue;
-    latest.set(s.id, s as { status: string; id: string; url: string });
+    latest.set(s.id, s as unknown as PacketRow);
   }
+  return latest;
+}
+export interface PacketTexts { sha: string; text: string }
+export function packetPrompt(
+  captureDir: string,
+  packet: PacketRow,
+  mission: Mission,
+  names: string[],
+  cap: number,
+): { texts: PacketTexts[]; prompt: string } {
+  const texts = (packet.pages ?? []).map((p) => ({
+    sha: p.sha256,
+    text: textOf(readFileSync(join(captureDir, "snapshots", `${p.sha256}.html`), "utf-8")),
+  }));
+  return { texts, prompt: buildPrompt(mission, names, texts.map((t) => t.text).join("\n\n").slice(0, cap)) };
+}
+export function repairPrompt(prompt: string, error: string, previous: string): string {
+  return `${prompt}\n\nYour previous response failed JSON parsing (${error}).\nPrevious response:\n`
+    + `${previous.slice(0, 4000)}\n\nReturn ONLY one complete, valid JSON object matching the schema above.`;
+}
+export type ParseOutcome =
+  | { ok: true; value: Record<string, unknown> }
+  | { ok: false; code: "empty_response" | "parse_error"; message: string };
+export function parseAnswer(text: string | null | undefined): ParseOutcome {
+  if (text === null || text === undefined || !text.trim()) {
+    return { ok: false, code: "empty_response", message: "LLM returned empty or filtered response" };
+  }
+  let got: unknown;
+  try {
+    got = parseJsonFromLlmText(text);
+  } catch (e) {
+    return { ok: false, code: "parse_error", message: e instanceof Error ? e.message : String(e) };
+  }
+  if (!isObj(got)) return { ok: false, code: "parse_error", message: "response is not a JSON object" };
+  return { ok: true, value: got };
+}
+export function fieldsOf(
+  specs: FieldSpec[],
+  answer: Record<string, unknown>,
+  texts: PacketTexts[],
+): Record<string, unknown> {
+  const fields: Record<string, unknown> = {};
+  for (const f of specs) {
+    const raw = answer[f.name];
+    if (f.kind === "record") {
+      const arr = Array.isArray(raw) ? raw : (raw == null ? [] : [raw]);
+      const values: Record<string, unknown>[] = [];
+      let dropped = 0, subDropped = 0;
+      for (const item of arr) {
+        if (item == null) continue;
+        if (!isObj(item)) { dropped++; continue; }
+        const rec: Record<string, unknown> = {};
+        let passed = 0, failedSubs = 0, seenNull = 0;
+        for (const sf of f.subFields!) {
+          const rawSub = item[sf.name];
+          if (rawSub == null || (isObj(rawSub) && "value" in rawSub && rawSub.value == null)) {
+            rec[sf.name] = { value: null, quote: null, sha256: null };
+            if (sf.name in item) seenNull++;
+            continue;
+          }
+          const e = isObj(rawSub) && "value" in rawSub ? rawSub : undefined;
+          const q = quoteOf(e?.quote);
+          const hit = q ? texts.find((t) => t.text.includes(q)) : undefined;
+          if (!e || !q || !hit) {
+            rec[sf.name] = { value: null, quote: null, sha256: null, reason: "unverified_quote" };
+            failedSubs++;
+          } else { rec[sf.name] = { value: e.value, quote: q, sha256: hit.sha }; passed++; }
+        }
+        if (passed === 0) { if (failedSubs > 0 || (Object.keys(item).length > 0 && seenNull === 0)) dropped++; }
+        else if (values.length < f.maxValues) { values.push(rec); subDropped += failedSubs; }
+      }
+      fields[f.name] = { values, unverified_dropped: dropped, unverified_subfields: subDropped };
+    } else if (f.maxValues > 1) {
+      const arr = Array.isArray(raw) ? raw : (raw == null ? [] : [raw]);
+      const values: { value: unknown; quote: string; sha256: string }[] = [];
+      let dropped = 0;
+      for (const item of arr) {
+        if (item == null) continue;
+        if (!isObj(item) || !("value" in item)) { dropped++; continue; }
+        if (item.value == null) continue;
+        const q = quoteOf(item.quote);
+        const hit = q ? texts.find((t) => t.text.includes(q)) : undefined;
+        if (!q || !hit) dropped++;
+        else if (values.length < f.maxValues) values.push({ value: item.value, quote: q, sha256: hit.sha });
+      }
+      fields[f.name] = { values, unverified_dropped: dropped };
+    } else {
+      const e = isObj(raw) ? raw : undefined, q = quoteOf(e?.quote);
+      const hit = q ? texts.find((t) => t.text.includes(q)) : undefined;
+      if (!e || e.value == null) fields[f.name] = { value: null, quote: null, sha256: null };
+      else if (!q || !hit) fields[f.name] = { value: null, quote: null, sha256: null, reason: "unverified_quote" };
+      else fields[f.name] = { value: e.value, quote: q, sha256: hit.sha };
+    }
+  }
+  return fields;
+}
+export async function runExtract(oc: ExtractOptions, client?: ExtractClient, deps?: MeshClientDeps): Promise<void> {
+  const loaded = loadMission(oc.mission), mission = loaded.mission;
+  const specs = loaded.specs, names = loaded.names, missionDigest = loaded.digest;
+  const meshAlias = oc.model.startsWith("mesh:") ? oc.model.slice("mesh:".length) : null;
+  const pm = meshAlias === null ? providerOf(oc.model) : null;
+  if (meshAlias !== null && !client && !deps?.createMeshClient) {
+    await import("./mesh-host.js").then((m) => m.preflightMeshAlias(meshAlias));
+  }
+  // char budget (UTF-16 code units, not tokens): slice keeps prompts bounded without a tokenizer.
+  const cap = oc.tokenCap ?? mission.tokenCap ?? SCRAP_PACKET_BUDGET;
+  const latest = loadPackets(oc.out);
   const resPath = join(oc.out, "results.ndjson");
   const lastErr = new Map<string, string | null>();
   if (existsSync(resPath)) for (const line of readFileSync(resPath, "utf-8").split("\n")) {
@@ -162,7 +281,8 @@ export async function runExtract(oc: ExtractOptions, client?: ExtractClient, dep
     console.log(`scrap extract summary: ok=${okCount} failed=${failCount} tokens=in:${tot.input},out:${tot.output},reasoning:${tot.reasoning},total:${tot.total} api_equivalent=${apiKnown ? totApi.toFixed(6) : "unknown"} calls=${callsTotal}${winStr ? ` windows=${winStr}` : ""}${routedMismatchCount > 0 ? ` routed_mismatches=${routedMismatchCount}` : ""}`);
     if (callsTotal > 0) {
       const sum = {
-        type: "summary", mission_digest: createHash("sha256").update(missionRaw).digest("hex"), ok: okCount, failed: failCount, calls_total: callsTotal, calls_window_minutes: winMin,
+        type: "summary", mission_digest: missionDigest, ok: okCount, failed: failCount,
+        calls_total: callsTotal, calls_window_minutes: winMin,
         calls_by_window, calls_by_model: sortRec(callsByModel), routed_mismatches: routedMismatchCount, tokens: { ...tot },
         cost: { api_equivalent: apiKnown ? Number(totApi.toFixed(9)) : "unknown", seat_quota: lastSeatQuota ?? "unknown" },
       };
@@ -208,19 +328,20 @@ export async function runExtract(oc: ExtractOptions, client?: ExtractClient, dep
   };
   for (const s of todo) {
     curMismatch = undefined;
-    let texts: { sha: string; text: string }[];
+    let built: { texts: PacketTexts[]; prompt: string };
     try {
-      texts = ((s as { pages?: { sha256: string }[] }).pages ?? []).map((p) => ({ sha: p.sha256, text: textOf(readFileSync(join(oc.out, "snapshots", `${p.sha256}.html`), "utf-8")) }));
+      built = packetPrompt(oc.out, s, mission, names, cap);
     } catch (e) { fail(s, "write_error", `snapshot read failed: ${e instanceof Error ? e.message : String(e)}`); continue; }
-    const prompt = buildPrompt(mission, names, texts.map((t) => t.text).join("\n\n").slice(0, cap));
+    const texts = built.texts, prompt = built.prompt;
     let gotObj: Record<string, unknown> | null = null, lastAudit: Record<string, unknown> | undefined, mergedUsage: unknown, seatQuota: Record<string, unknown> | undefined;
     let parseErr: string | null = null, prevRaw: string | null = null, failed = false;
     for (let attempt = 0; attempt < 2; attempt++) {
-      const curPrompt = attempt === 0 ? prompt : `${prompt}\n\nYour previous response failed JSON parsing (${parseErr}).\nPrevious response:\n${(prevRaw ?? "").slice(0, 4000)}\n\nReturn ONLY one complete, valid JSON object matching the schema above.`;
+      const curPrompt = attempt === 0 ? prompt : repairPrompt(prompt, parseErr ?? "", prevRaw ?? "");
       let rawText: string | null = null, res: { audit?: unknown; text?: unknown };
       try {
         // No temp files: the answer comes back through validateResponse in memory.
-        res = await cli.generateJson({ schema: "scrap-extract", prompt: curPrompt, maxOutputTokens, validateResponse: (t) => { rawText = t; } });
+        res = await cli.generateJson({ schema: SCRAP_EXTRACT_SCHEMA, prompt: curPrompt, maxOutputTokens,
+          validateResponse: (t) => { rawText = t; } });
       } catch (e) {
         const ea = isObj(e) && isObj(e.audit) ? e.audit : undefined;
         if (isSeatAcquisitionError(e)) { if (recordCall(e, "attempts") > 0) lastSeatQuota = isObj(ea?.quota) ? ea.quota : undefined; if (callsTotal > 0) finish(); throw e; }
@@ -238,64 +359,15 @@ export async function runExtract(oc: ExtractOptions, client?: ExtractClient, dep
       recordUsage(audit?.usage); seatQuota = q; lastSeatQuota = q;
       if (audit) { lastAudit = audit; if (audit.usage !== undefined) mergedUsage = mergeUsage(mergedUsage, audit.usage); }
       const cand = res.text, text = typeof cand === "string" ? cand : rawText;
-      if (text === null || text === undefined || !text.trim()) { fail(s, "empty_response", "LLM returned empty or filtered response"); failed = true; break; }
-      let got: unknown;
-      try { got = parseJsonFromLlmText(text); }
-      catch (e) { const m = e instanceof Error ? e.message : String(e); if (attempt === 0) { parseErr = m; prevRaw = text; continue; } fail(s, "parse_error", m); failed = true; break; }
-      if (!isObj(got)) { const m = "response is not a JSON object"; if (attempt === 0) { parseErr = m; prevRaw = text; continue; } fail(s, "parse_error", m); failed = true; break; }
-      gotObj = got; break;
+      const outcome = parseAnswer(text);
+      if (!outcome.ok) {
+        if (attempt === 0 && outcome.code === "parse_error") { parseErr = outcome.message; prevRaw = text; continue; }
+        fail(s, outcome.code, outcome.message); failed = true; break;
+      }
+      gotObj = outcome.value; break;
     }
     if (failed || !gotObj) continue;
-    const fields: Record<string, unknown> = {};
-    for (const f of specs) {
-      const raw = gotObj[f.name];
-      if (f.kind === "record") {
-        const arr = Array.isArray(raw) ? raw : (raw == null ? [] : [raw]);
-        const values: Record<string, unknown>[] = [];
-        let dropped = 0, subDropped = 0;
-        for (const item of arr) {
-          if (item == null) continue;
-          if (!isObj(item)) { dropped++; continue; }
-          const rec: Record<string, unknown> = {};
-          let passed = 0, failedSubs = 0, seenNull = 0;
-          for (const sf of f.subFields!) {
-            const rawSub = item[sf.name];
-            if (rawSub == null || (isObj(rawSub) && "value" in rawSub && rawSub.value == null)) {
-              rec[sf.name] = { value: null, quote: null, sha256: null };
-              if (sf.name in item) seenNull++;
-              continue;
-            }
-            const e = isObj(rawSub) && "value" in rawSub ? rawSub : undefined;
-            const q = quoteOf(e?.quote);
-            const hit = q ? texts.find((t) => t.text.includes(q)) : undefined;
-            if (!e || !q || !hit) { rec[sf.name] = { value: null, quote: null, sha256: null, reason: "unverified_quote" }; failedSubs++; }
-            else { rec[sf.name] = { value: e.value, quote: q, sha256: hit.sha }; passed++; }
-          }
-          if (passed === 0) { if (failedSubs > 0 || (Object.keys(item).length > 0 && seenNull === 0)) dropped++; }
-          else if (values.length < f.maxValues) { values.push(rec); subDropped += failedSubs; }
-        }
-        fields[f.name] = { values, unverified_dropped: dropped, unverified_subfields: subDropped };
-      } else if (f.maxValues > 1) {
-        const arr = Array.isArray(raw) ? raw : (raw == null ? [] : [raw]);
-        const values: { value: unknown; quote: string; sha256: string }[] = [];
-        let dropped = 0;
-        for (const item of arr) {
-          if (item == null) continue;
-          if (!isObj(item) || !("value" in item)) { dropped++; continue; }
-          if (item.value == null) continue;
-          const q = quoteOf(item.quote);
-          const hit = q ? texts.find((t) => t.text.includes(q)) : undefined;
-          if (!q || !hit) dropped++; else if (values.length < f.maxValues) values.push({ value: item.value, quote: q, sha256: hit.sha });
-        }
-        fields[f.name] = { values, unverified_dropped: dropped };
-      } else {
-        const e = isObj(raw) ? raw : undefined, q = quoteOf(e?.quote);
-        const hit = q ? texts.find((t) => t.text.includes(q)) : undefined;
-        if (!e || e.value == null) fields[f.name] = { value: null, quote: null, sha256: null };
-        else if (!q || !hit) fields[f.name] = { value: null, quote: null, sha256: null, reason: "unverified_quote" };
-        else fields[f.name] = { value: e.value, quote: q, sha256: hit.sha };
-      }
-    }
+    const fields = fieldsOf(specs, gotObj, texts);
     const extra: Record<string, unknown> = {};
     if (mergedUsage !== undefined) extra.tokens = mergedUsage;
     const apiEq = apiEquivalent(pt, usageCounts(mergedUsage));
