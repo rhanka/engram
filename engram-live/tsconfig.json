@@ -44,6 +44,7 @@
     "scheduler.ts",
     "watch.ts",
     "reconcile.ts",
-    "coverage.ts"
+    "coverage.ts",
+    "derived-worktree-graph.ts"
   ]
 }

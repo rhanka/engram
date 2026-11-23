@@ -495,12 +495,29 @@ export const ENGINE_AND_SCHEDULER_MODULES = [
   "coverage",
 ];
 
+const CORE_PACKED_MODULES = [
+  "facts",
+  "batch-codec",
+  "generation",
+  "symbol-history",
+  "code-analysis",
+  "analysis-cache",
+  "comparisons",
+  "parse-adapter",
+  "factory-history",
+  "factory-local",
+  "derived-worktree-graph",
+];
+
 // The EXACT delivered surface: package.json + the pinned grammar manifest +
 // the enumerated built dist files + one WASM per pinned language.
 export function expectedPackedPaths(manifestLanguages) {
   return [
-    ...["facts", "batch-codec", "generation", "symbol-history", "code-analysis", "analysis-cache", "comparisons", "parse-adapter", "factory-history", "factory-local", ...ENGINE_AND_SCHEDULER_MODULES].flatMap(name =>
-      [`dist/${name}.js`, `dist/${name}.d.ts`, `dist/${name}.d.ts.map`]),
+    ...[...CORE_PACKED_MODULES, ...ENGINE_AND_SCHEDULER_MODULES].flatMap((name) => [
+      `dist/${name}.js`,
+      `dist/${name}.d.ts`,
+      `dist/${name}.d.ts.map`,
+    ]),
     "package.json",
     "grammar-manifest.json",
     "dist/index.js",
@@ -542,7 +559,12 @@ function runLivePackageCheck() {
   for (const emitted of ["index.js", "contracts.js", "registration.js", "integration.js", "index.d.ts", "contracts.d.ts", "registration.d.ts", "integration.d.ts", "line-attribution.js", "line-attribution.d.ts", "line-attribution.d.ts.map", "git-executor.js", "git-executor.d.ts", "git-executor.d.ts.map",
     "reused-extraction.js", "reused-extraction.d.ts", "reused-extraction.d.ts.map",
     "reused/extract-core.js", "reused/live-cache-keys.js", "reused/node-id.js", "reused/relation-remap.js",
-    ...["facts", "batch-codec", "generation", "symbol-history", "code-analysis", "analysis-cache", "comparisons", "parse-adapter", "factory-history", "factory-local", ...ENGINE_AND_SCHEDULER_MODULES].flatMap(name => [`${name}.js`, `${name}.d.ts`, `${name}.d.ts.map`])]) {
+    ...[...CORE_PACKED_MODULES, ...ENGINE_AND_SCHEDULER_MODULES].flatMap((name) => [
+      `${name}.js`,
+      `${name}.d.ts`,
+      `${name}.d.ts.map`,
+    ]),
+  ]) {
     if (!existsSync(join(liveRoot, "dist", emitted))) {
       note(`build missing: engram-live/dist/${emitted} (run node scripts/build-live.mjs first; no skip)`);
     }

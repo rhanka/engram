@@ -1963,7 +1963,7 @@ describe("live package", () => {
       .filter((entry) => entry.isFile() && entry.name.endsWith(".ts") && !entry.name.endsWith(".d.ts"))
       .map((entry) => entry.name.slice(0, -3))
       .sort();
-    expect(neutralSourceModules).toHaveLength(35);
+    expect(neutralSourceModules).toHaveLength(36);
     expect(neutralSourceModules).toContain("factory-history");
     expect(neutralSourceModules).toContain("factory-local");
     for (const name of EASM1_NEWLY_PACKED_MODULES) {

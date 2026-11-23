@@ -1780,6 +1780,7 @@ export interface PullRequestFactDto {
   readonly baseRef: string;
   readonly mergeOid?: QualifiedOid | null;
   readonly mergeStrategy?: PullRequestMergeStrategy;
+  readonly mergedAt?: number | null;
 }
 
 /** One transport page item: same shape as the persisted observation. */
@@ -1916,49 +1917,127 @@ const PULL_REQUEST_FACT_KEYS: readonly string[] = [
   "baseRef",
   "mergeOid",
   "mergeStrategy",
+  "mergedAt",
 ];
 
-export function validatePullRequestFact(value: unknown): ValidationResult {
-  if (!isRecord(value)) return { ok: false, errors: ["PR fact must be an object"] };
-  const errors: string[] = [];
-  rejectUnknownKeys(value, PULL_REQUEST_FACT_KEYS, "PR fact", errors);
-  for (const forbidden of PR_FACT_FORBIDDEN_KEYS) {
-    if (forbidden in value) errors.push(`PR fact must never carry "${forbidden}" (tokens stay out of facts/logs/rows)`);
+const UNPAIRED_SURROGATE_RE =
+  /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
+export function readStrictNfcString(value: unknown): string | undefined {
+  return typeof value === "string" && !UNPAIRED_SURROGATE_RE.test(value)
+    ? value.normalize("NFC")
+    : undefined;
+}
+
+export function readStrictPlainRecord(
+  value: unknown,
+  seen?: WeakSet<object>,
+): Record<string, unknown> | null {
+  try {
+    if (!isRecord(value) || seen?.has(value)) {
+      return null;
+    }
+    if (Object.getOwnPropertySymbols(value).length > 0) {
+      return null;
+    }
+    const out: Record<string, unknown> = Object.create(null);
+    for (const rawKey of Object.getOwnPropertyNames(value)) {
+      const key = readStrictNfcString(rawKey);
+      if (key === undefined || rawKey === "__proto__" || Object.hasOwn(out, key)) {
+        return null;
+      }
+      const desc = Object.getOwnPropertyDescriptor(value, rawKey);
+      if (!desc || !desc.enumerable || !("value" in desc)) {
+        return null;
+      }
+      out[key] = desc.value;
+    }
+    return out;
+  } catch {
+    return null;
   }
-  if (!isNonEmptyString(value.repositoryOwner) || hasNul(value.repositoryOwner)) {
+}
+
+export function validatePullRequestFact(value: unknown): ValidationResult {
+  const record = readStrictPlainRecord(value);
+  if (record === null) {
+    return { ok: false, errors: ["PR fact must be a plain object with own enumerable data properties"] };
+  }
+  const errors: string[] = [];
+  rejectUnknownKeys(record, PULL_REQUEST_FACT_KEYS, "PR fact", errors);
+  for (const forbidden of PR_FACT_FORBIDDEN_KEYS) {
+    if (forbidden in record) {
+      errors.push(`PR fact must never carry "${forbidden}" (tokens stay out of facts/logs/rows)`);
+    }
+  }
+  if (!isNonEmptyString(record.repositoryOwner) || hasNul(record.repositoryOwner)) {
     errors.push("PR fact.repositoryOwner must be a non-empty string without NUL");
   }
-  if (!isNonEmptyString(value.repositoryRepo) || hasNul(value.repositoryRepo)) {
+  if (!isNonEmptyString(record.repositoryRepo) || hasNul(record.repositoryRepo)) {
     errors.push("PR fact.repositoryRepo must be a non-empty string without NUL");
   }
-  if (typeof value.number !== "number" || !Number.isSafeInteger(value.number) || value.number <= 0) {
+  if (typeof record.number !== "number" || !Number.isSafeInteger(record.number) || record.number <= 0) {
     errors.push("PR fact.number must be a positive safe integer");
   }
-  if (!isPullRequestState(value.state)) {
+  if (!isPullRequestState(record.state)) {
     errors.push(`PR fact.state must be one of ${PULL_REQUEST_STATES.join(", ")}`);
   }
-  if (typeof value.isDraft !== "boolean") {
+  if (typeof record.isDraft !== "boolean") {
     errors.push("PR fact.isDraft must be a boolean (drafts are open + isDraft true)");
   }
-  if (typeof value.updatedAt !== "number" || !Number.isSafeInteger(value.updatedAt) || value.updatedAt <= 0) {
+  if (
+    typeof record.updatedAt !== "number"
+    || Object.is(record.updatedAt, -0)
+    || !Number.isSafeInteger(record.updatedAt)
+    || record.updatedAt <= 0
+  ) {
     errors.push("PR fact.updatedAt must be a positive safe integer (milliseconds)");
   }
-  const head = validateQualifiedOid(value.headOid);
-  if (!head.ok) errors.push(...head.errors.map((error) => `PR fact.headOid: ${error}`));
-  if (!isNonEmptyString(value.headRef) || hasNul(value.headRef)) {
+  const headObj = readStrictPlainRecord(record.headOid);
+  const head = headObj === null
+    ? { ok: false, errors: ["qualifiedOid must be an object"] }
+    : validateQualifiedOid(headObj);
+  if (!head.ok) {
+    errors.push(...head.errors.map((error) => `PR fact.headOid: ${error}`));
+  }
+  if (!isNonEmptyString(record.headRef) || hasNul(record.headRef)) {
     errors.push("PR fact.headRef must be a non-empty string without NUL");
   }
-  const base = validateQualifiedOid(value.baseOid);
-  if (!base.ok) errors.push(...base.errors.map((error) => `PR fact.baseOid: ${error}`));
-  if (!isNonEmptyString(value.baseRef) || hasNul(value.baseRef)) {
+  const baseObj = readStrictPlainRecord(record.baseOid);
+  const base = baseObj === null
+    ? { ok: false, errors: ["qualifiedOid must be an object"] }
+    : validateQualifiedOid(baseObj);
+  if (!base.ok) {
+    errors.push(...base.errors.map((error) => `PR fact.baseOid: ${error}`));
+  }
+  if (!isNonEmptyString(record.baseRef) || hasNul(record.baseRef)) {
     errors.push("PR fact.baseRef must be a non-empty string without NUL");
   }
-  if (value.mergeOid !== undefined && value.mergeOid !== null) {
-    const merge = validateQualifiedOid(value.mergeOid);
-    if (!merge.ok) errors.push(...merge.errors.map((error) => `PR fact.mergeOid: ${error}`));
+  if (record.mergeOid !== undefined && record.mergeOid !== null) {
+    const mergeObj = readStrictPlainRecord(record.mergeOid);
+    const merge = mergeObj === null
+      ? { ok: false, errors: ["qualifiedOid must be an object"] }
+      : validateQualifiedOid(mergeObj);
+    if (!merge.ok) {
+      errors.push(...merge.errors.map((error) => `PR fact.mergeOid: ${error}`));
+    }
   }
-  if (value.mergeStrategy !== undefined && !isPullRequestMergeStrategy(value.mergeStrategy)) {
-    errors.push(`PR fact.mergeStrategy, when present, must be one of ${PULL_REQUEST_MERGE_STRATEGIES.join(", ")}`);
+  if (record.mergeStrategy !== undefined && !isPullRequestMergeStrategy(record.mergeStrategy)) {
+    errors.push(
+      `PR fact.mergeStrategy, when present, must be one of ${PULL_REQUEST_MERGE_STRATEGIES.join(", ")}`,
+    );
+  }
+  if (record.mergedAt !== undefined && record.mergedAt !== null) {
+    if (
+      typeof record.mergedAt !== "number"
+      || Object.is(record.mergedAt, -0)
+      || !Number.isSafeInteger(record.mergedAt)
+      || record.mergedAt <= 0
+    ) {
+      errors.push("PR fact.mergedAt, when present, must be a positive safe integer (milliseconds) or null");
+    } else if (isPullRequestState(record.state) && record.state !== "merged") {
+      errors.push('PR fact.mergedAt, when non-null, requires state "merged"');
+    }
   }
   return { ok: errors.length === 0, errors };
 }

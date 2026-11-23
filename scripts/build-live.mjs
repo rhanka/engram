@@ -454,9 +454,25 @@ const ENGINE_AND_SCHEDULER_MODULES = [
   "reconcile",
   "coverage",
 ];
+const CORE_PACKED_MODULES = [
+  "facts",
+  "batch-codec",
+  "generation",
+  "symbol-history",
+  "code-analysis",
+  "analysis-cache",
+  "comparisons",
+  "parse-adapter",
+  "factory-history",
+  "factory-local",
+  "derived-worktree-graph",
+];
 const emittedFiles = [
-  ...["facts", "batch-codec", "generation", "symbol-history", "code-analysis", "analysis-cache", "comparisons", "parse-adapter", "factory-history", "factory-local", ...ENGINE_AND_SCHEDULER_MODULES].flatMap(name =>
-    [`${name}.js`, `${name}.d.ts`, `${name}.d.ts.map`]),
+  ...[...CORE_PACKED_MODULES, ...ENGINE_AND_SCHEDULER_MODULES].flatMap((name) => [
+    `${name}.js`,
+    `${name}.d.ts`,
+    `${name}.d.ts.map`,
+  ]),
   "line-attribution.d.ts",
   "line-attribution.d.ts.map",
   "line-attribution.js",

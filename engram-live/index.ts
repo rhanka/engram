@@ -78,3 +78,4 @@ export * from "./scheduler.js";
 export * from "./watch.js";
 export * from "./reconcile.js";
 export * from "./coverage.js";
+export * from "./derived-worktree-graph.js";
