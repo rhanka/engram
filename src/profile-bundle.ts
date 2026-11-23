@@ -129,7 +129,7 @@ const MODELED_REL_KEYS = new Set([
   "assertion_basis", "derivation_method", "derivation_methods", "description",
 ]);
 const UNBOUNDED_CARDINALITY: OntologyCardinalityBound = { min: 0, max: "many" };
-const TAGGED_ROW_KEYS = ["attributes", "key", "unique", "references", "endpoints"];
+const TAGGED_ROW_KEYS = ["attributes", "key", "unique", "references", "endpoints", "cardinality"];
 const TAGGED_ROW_SKIP = new Set([...MODELED_NODE_KEYS, ...MODELED_REL_KEYS, ...TAGGED_ROW_KEYS]);
 const GRAN_RANK: Record<string, number> = { file: 0, page: 1, section: 2, paragraph: 3 };
 
@@ -904,6 +904,12 @@ export function checkProfileCompatibility(
 
   const oldB = oldSide.bundle, newB = newSide.bundle;
   const oldP = oldB.profile, newP = newB.profile;
+  if (oldP.data_model !== undefined && newP.data_model === undefined) {
+    const issue = { severity: "error" as const, code: "invalid_profile_schema", path: "new.data_model",
+      message: "a typed successor dropped its data_model header" };
+    return deepFreeze({ ok: false, compatible: false, oldDigest: oldB.digest, newDigest: newB.digest,
+      breaking: [], nonBreaking: [], validationIssues: [issue] });
+  }
   const v1 = oldP.metamodel_version === "engram.metamodel/v1" && newP.metamodel_version === "engram.metamodel/v1";
   const oldDoc = asRec(oldB.documentProjection), newDoc = asRec(newB.documentProjection);
   const breaking: ProfileBreakingChange[] = [];
@@ -916,12 +922,15 @@ export function checkProfileCompatibility(
     nonBreaking.push({ code, path, subject, message, before, after });
   };
 
+  const taggedPair = oldP.data_model !== undefined && newP.data_model !== undefined;
+  const taggedUnhandled: string[] = [];
   const checkResidual = (path: string, subject: string, oldVal: unknown, newVal: unknown) => {
     const rOld = renderCanon(oldVal), rNew = renderCanon(newVal);
     const before = renderTrunc(rOld), after = renderTrunc(rNew);
     const unproj = (oldVal !== undefined && !toJsonValue(oldVal).ok) || (newVal !== undefined && !toJsonValue(newVal).ok);
     if (unproj) {
-      pushB("changed_modeled_field", path, subject, before, after);
+      if (taggedPair) taggedUnhandled.push(path);
+      else pushB("changed_modeled_field", path, subject, before, after);
       return;
     }
     if (rOld === rNew) return;
@@ -932,18 +941,20 @@ export function checkProfileCompatibility(
           return;
         }
       } catch (err) {
-        pushB("changed_modeled_field", path, subject, before, after, `changed_modeled_field at ${path}: ${err instanceof Error ? err.message : String(err)}`);
+        if (taggedPair) taggedUnhandled.push(path);
+        else pushB("changed_modeled_field", path, subject, before, after,
+          `changed_modeled_field at ${path}: ${err instanceof Error ? err.message : String(err)}`);
         return;
       }
     }
-    pushB("changed_modeled_field", path, subject, before, after);
+    if (taggedPair) taggedUnhandled.push(path);
+    else pushB("changed_modeled_field", path, subject, before, after);
   };
 
   if (oldP.id !== newP.id) pushB("changed_profile_id", "id", "id", canonicalBytes(oldP.id), canonicalBytes(newP.id));
   if (oldP.default_language !== newP.default_language) pushB("changed_default_language", "default_language", "default_language", canonicalBytes(oldP.default_language), canonicalBytes(newP.default_language));
   if (oldP.version !== newP.version) pushNB("bumped_profile_version", "version", "version", canonicalBytes(oldP.version), canonicalBytes(newP.version));
   checkResidual("metamodel_version", "metamodel_version", oldP.metamodel_version, newP.metamodel_version);
-  const taggedPair = oldP.data_model !== undefined && newP.data_model !== undefined;
   const nodeSkip = taggedPair ? TAGGED_ROW_SKIP : MODELED_NODE_KEYS;
   const relSkip = taggedPair ? TAGGED_ROW_SKIP : MODELED_REL_KEYS;
   if (!taggedPair) checkResidual("data_model", "data_model", oldP.data_model, newP.data_model);
@@ -1023,7 +1034,9 @@ export function checkProfileCompatibility(
     for (const k of Object.keys(oRaw)) if (!nodeSkip.has(k)) setProp(oRem, k, oRaw[k]);
     for (const k of Object.keys(nRaw)) if (!nodeSkip.has(k)) setProp(nRem, k, nRaw[k]);
     if (renderCanon(oRem) !== renderCanon(nRem)) {
-      pushB("changed_unmodeled_block", `node_types.${t}`, t, renderTrunc(renderCanon(oRem)), renderTrunc(renderCanon(nRem)));
+      if (taggedPair) taggedUnhandled.push(`node_types.${t}`);
+      else pushB("changed_unmodeled_block", `node_types.${t}`, t, renderTrunc(renderCanon(oRem)),
+        renderTrunc(renderCanon(nRem)));
     }
   }
 
@@ -1038,7 +1051,15 @@ export function checkProfileCompatibility(
   }
   for (const r of Object.keys(newP.relation_types)) {
     if (!Object.prototype.hasOwnProperty.call(oldP.relation_types, r)) {
-      pushNB("added_relation_type", `relation_types.${r}`, r, null, renderCanon(newDocRels[r] ?? newP.relation_types[r]));
+      const added = renderCanon(newDocRels[r] ?? newP.relation_types[r]);
+      const card = asRec(asRec(newDocRels[r]).cardinality);
+      const inMin = asRec(card.in).min, outMin = asRec(card.out).min;
+      const rel = newP.relation_types[r]!;
+      const fromOld = (ids?: readonly string[]) => (ids ?? []).some((id) => Object.hasOwn(oldP.node_types, id));
+      const constrains = taggedPair && ((typeof inMin === "number" && inMin > 0 && fromOld(rel.target_types))
+        || (typeof outMin === "number" && outMin > 0 && fromOld(rel.source_types)));
+      if (constrains) pushB("added_constraining_relation", `relation_types.${r}`, r, null, added);
+      else pushNB("added_relation_type", `relation_types.${r}`, r, null, added);
     }
   }
   for (const r of Object.keys(oldP.relation_types)) {
@@ -1077,7 +1098,9 @@ export function checkProfileCompatibility(
     for (const k of Object.keys(oRaw)) if (!relSkip.has(k) && !(v1 && k === "cardinality")) setProp(oRem, k, oRaw[k]);
     for (const k of Object.keys(nRaw)) if (!relSkip.has(k) && !(v1 && k === "cardinality")) setProp(nRem, k, nRaw[k]);
     if (renderCanon(oRem) !== renderCanon(nRem)) {
-      pushB("changed_unmodeled_block", `relation_types.${r}`, r, renderTrunc(renderCanon(oRem)), renderTrunc(renderCanon(nRem)));
+      if (taggedPair) taggedUnhandled.push(`relation_types.${r}`);
+      else pushB("changed_unmodeled_block", `relation_types.${r}`, r, renderTrunc(renderCanon(oRem)),
+        renderTrunc(renderCanon(nRem)));
     } else if (renderCanon(oRaw.description) !== renderCanon(nRaw.description)) {
       pushNB("changed_relation_description", `relation_types.${r}`, r, renderCanon(oRaw.description), renderCanon(nRaw.description));
     }
@@ -1248,6 +1271,24 @@ export function checkProfileCompatibility(
       }
     }
     pushB("changed_unmodeled_block", path, k, before, after);
+  }
+
+  if (taggedPair && taggedUnhandled.length > 0) {
+    taggedUnhandled.sort();
+    return deepFreeze({
+      ok: false,
+      compatible: false,
+      oldDigest: oldB.digest,
+      newDigest: newB.digest,
+      breaking: [],
+      nonBreaking: [],
+      validationIssues: taggedUnhandled.map((path) => ({
+        severity: "error",
+        code: "unclassified_data_model_delta",
+        path,
+        message: `unclassified_data_model_delta at ${path}`,
+      })),
+    });
   }
 
   sortChanges(breaking);

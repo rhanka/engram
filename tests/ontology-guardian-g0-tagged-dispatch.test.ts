@@ -50,8 +50,16 @@ it.each([{}, { enums: undefined }])("accepts an exact major-2 triple and omits u
 });
 
 const untagged = { ...example, data_model: undefined };
+// §6:404: "In a typed comparison, dropping the header from a successor, an unknown format, an unsupported
+// major or an invalid declaration refuses at validation with `invalid_profile_schema`."
+// Case 0 (a typed successor drops its header) refuses; case 1 (untagged legacy to its first tagged
+// successor) stays breaking per §6:402.
+it("refuses a typed successor that drops its data_model header", () => {
+  expect(checkProfileCompatibility(parseOntologyProfile(example), parseOntologyProfile(untagged)))
+    .toMatchObject({ ok: false, compatible: false, breaking: [], nonBreaking: [],
+      validationIssues: [{ severity: "error", code: "invalid_profile_schema", path: "new.data_model" }] });
+});
 it.each([
-  [example, untagged],
   [untagged, example],
 ])("fails closed on data_model change %#", (before, after) => {
   expect(checkProfileCompatibility(parseOntologyProfile(before), parseOntologyProfile(after)))
