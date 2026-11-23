@@ -3,8 +3,10 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from
 import { basename, join, resolve } from "node:path";
 import { specsOf, type Mission } from "./extract.js";
 export type Verdict = "unanimous" | "majority" | "split" | "absent" | "insufficient";
+export interface ConvergeGroup { name: string; dirs: string[] }
 export interface ConvergeOptions {
   runs: string[]; mission: string; out: string; allowMissingDigest?: boolean; allowTransports?: string[];
+  groups?: ConvergeGroup[];
 }
 export type RunProv = { value: unknown; quote: unknown } | { status: "failed"; error: string } | { status: "missing" };
 export interface FieldVote { verdict: Verdict; value: unknown; n_answered: number; n_runs: number; runs: Record<string, RunProv> }
@@ -24,7 +26,60 @@ const toAlphaVal = (s: Slot): string | null => s.status !== "answered" ? null : 
 export const isConvergeUsageError = (e: unknown): boolean =>
   /mission digest mismatch|missing summary|missing mission digest|invalid mission/.test(String(e))
   || /requires at least 2 runs|duplicate run directory|missing results\.ndjson/.test(String(e))
-  || /requires --allow-transport|mixed or unmarked transports|ENOENT/.test(String(e));
+  || /requires --allow-transport|mixed or unmarked transports|ENOENT/.test(String(e))
+  || /scrap converge: group/.test(String(e));
+const GROUP_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const canonDirOf = (d: string): string => {
+  const a = resolve(d);
+  try { return realpathSync(a); } catch { return a; }
+};
+interface GroupPlan { name: string; order: number[] }
+function planGroups(
+  groups: ConvergeGroup[] | undefined, runs: string[], canonDirs: string[], runNames: string[],
+): GroupPlan[] | null {
+  if (!groups || !groups.length) return null;
+  const byCanon = new Map<string, string>(), names = new Set<string>(), plans: GroupPlan[] = [];
+  for (const g of groups) {
+    const name = g?.name ?? "";
+    if (!GROUP_NAME_RE.test(name)) {
+      throw new Error(`scrap converge: group ${name || "<empty>"}: invalid name ${JSON.stringify(name)}`);
+    }
+    if (names.has(name)) throw new Error(`scrap converge: group ${name}: duplicate group name`);
+    if (runNames.includes(name)) throw new Error(`scrap converge: group ${name}: name equals a run directory name`);
+    names.add(name);
+    if (!Array.isArray(g.dirs) || g.dirs.length < 2) {
+      throw new Error(`scrap converge: group ${name}: needs at least two members`);
+    }
+    const seen = new Set<string>(), order: number[] = [];
+    for (const d of g.dirs) {
+      if (String(d) === "") throw new Error(`scrap converge: group ${name}: empty member`);
+      const canon = canonDirOf(String(d)), idx = canonDirs.indexOf(canon);
+      if (idx < 0) throw new Error(`scrap converge: group ${name}: member ${d} is not a --runs directory`);
+      if (seen.has(canon)) throw new Error(`scrap converge: group ${name}: member ${d} appears twice in one group`);
+      seen.add(canon);
+      const other = byCanon.get(canon);
+      if (other !== undefined) {
+        throw new Error(`scrap converge: group ${name}: directory ${d} is already in group ${other}`);
+      }
+      byCanon.set(canon, name);
+      order.push(idx);
+    }
+    order.sort((a, b) => a - b);
+    for (let k = 1; k < order.length; k++) {
+      if (order[k] !== order[k - 1]! + 1) {
+        throw new Error(`scrap converge: group ${name}: members are not adjacent in --runs`);
+      }
+    }
+    plans.push({ name, order });
+  }
+  const colsLeft = runs.length - byCanon.size + plans.length;
+  if (colsLeft < 2) {
+    const who = plans.map((p) => p.name).join(",");
+    throw new Error(`scrap converge: group ${who}: leaves only ${colsLeft} columns, need at least 2`);
+  }
+  plans.sort((a, b) => a.order[0]! - b.order[0]!);
+  return plans;
+}
 function classifyRow(r: Record<string, unknown> | undefined): RunState {
   if (!r) return { status: "missing" };
   if (r.error != null) return { status: "failed", error: String(r.error).trim() || "unknown_error" };
@@ -98,12 +153,13 @@ function cellOf(raw: unknown, maxValues = 1): Entry {
 }
 export async function runConverge(opts: ConvergeOptions): Promise<{ rows: Record<string, unknown>[]; summary: Record<string, unknown> }> {
   if (!Array.isArray(opts.runs) || opts.runs.length < 2) throw new Error("scrap converge: requires at least 2 runs");
-  const canonDirs = opts.runs.map((d) => { const a = resolve(d); try { return realpathSync(a); } catch { return a; } });
+  const canonDirs = opts.runs.map(canonDirOf);
   if (new Set(canonDirs).size !== canonDirs.length) throw new Error("scrap converge: duplicate run directory");
   const missionRaw = readFileSync(opts.mission), expectedDigest = createHash("sha256").update(missionRaw).digest("hex");
   let mission: Mission; try { mission = JSON.parse(missionRaw.toString("utf-8")) as Mission; } catch (e) { throw new Error(`scrap converge: invalid mission JSON: ${e instanceof Error ? e.message : String(e)}`); }
   const specs = specsOf(mission), bases = opts.runs.map((d) => basename(d.replace(/[\\/]+$/, "")) || d);
   const runNames = new Set(bases).size === bases.length ? bases : [...opts.runs];
+  const plans = planGroups(opts.groups, opts.runs, canonDirs, runNames);
   const allIds: string[] = [], seenIds = new Set<string>(), missingDigestRuns: string[] = [];
   const allowed = [...(opts.allowTransports ?? [])].sort();
   const runTransports: Record<string, string | null> = {};
@@ -149,11 +205,57 @@ export async function runConverge(opts: ConvergeOptions): Promise<{ rows: Record
   });
   const scalarAcc = new Map<string, StatAcc>(specs.filter((s) => s.kind !== "record").map((s) => [s.name, { verdicts: [], units: [] }]));
   const recAcc = new Map(specs.filter((s) => s.kind === "record").map((s) => [s.name, { verdicts: [] as Verdict[], aligned: 0, unmatched: 0, subs: new Map(s.subFields!.map((sf) => [sf.name, { verdicts: [] as Verdict[], units: [] as (string | null)[][] }])) }]));
-  const rawRunStats: RunStats[] = runNames.map(() => ({ answered: 0, failed: 0, failed_by_code: {}, missing: 0 }));
+  const colNames: string[] = [], colIdxs: number[][] = [];
+  if (!plans) {
+    colNames.push(...runNames);
+    runNames.forEach((_, i) => colIdxs.push([i]));
+  } else {
+    const firstOf = new Map(plans.map((p) => [p.order[0]!, p])), inside = new Set(plans.flatMap((p) => p.order));
+    runNames.forEach((n, i) => {
+      const p = firstOf.get(i);
+      if (p) { colNames.push(p.name); colIdxs.push([...p.order]); }
+      else if (!inside.has(i)) { colNames.push(n); colIdxs.push([i]); }
+    });
+  }
+  if (plans) {
+    for (const p of plans) {
+      let firstId: string | null = null, firstA = "", firstB = "", dupIds = 0;
+      for (const id of allIds) {
+        const hit = p.order.filter((i) => classifyRow(runMaps[i]!.get(id)).status === "answered");
+        if (hit.length < 2) continue;
+        dupIds++;
+        if (firstId === null) { firstId = id; firstA = opts.runs[hit[0]!]!; firstB = opts.runs[hit[1]!]!; }
+      }
+      if (dupIds > 0) {
+        throw new Error(`scrap converge: group ${p.name}: ${dupIds} ids answered in more than one member`
+          + ` (first id=${firstId} in ${firstA} and ${firstB})`);
+      }
+    }
+  }
+  const colMaps = colIdxs.map((idxs) => {
+    if (idxs.length === 1) return runMaps[idxs[0]!]!;
+    const folded = new Map<string, Record<string, unknown>>();
+    for (const id of allIds) {
+      const hit = idxs.filter((i) => classifyRow(runMaps[i]!.get(id)).status === "answered");
+      if (hit.length === 1) { folded.set(id, runMaps[hit[0]!]!.get(id)!); continue; }
+      const last = [...idxs].reverse().find((i) => runMaps[i]!.has(id));
+      if (last !== undefined) folded.set(id, runMaps[last]!.get(id)!);
+    }
+    return folded;
+  });
+  const rawRunStats: RunStats[] = colNames.map(() => ({ answered: 0, failed: 0, failed_by_code: {}, missing: 0 }));
+  const memberStats: RunStats[] = plans ? runNames.map(() => ({ answered: 0, failed: 0, failed_by_code: {}, missing: 0 })) : [];
   const rows = allIds.map((id) => {
-    const perRun = runMaps.map((m) => m.get(id)), states = perRun.map(classifyRow);
+    const perRun = colMaps.map((m) => m.get(id)), states = perRun.map(classifyRow);
     states.forEach((st, ri) => {
       const rs = rawRunStats[ri]!;
+      if (st.status === "answered") rs.answered++;
+      else if (st.status === "missing") rs.missing++;
+      else { rs.failed++; rs.failed_by_code[st.error] = (rs.failed_by_code[st.error] ?? 0) + 1; }
+    });
+    if (plans) runMaps.forEach((m, ri) => {
+      const rs = memberStats[ri]!;
+      const st = classifyRow(m.get(id));
       if (st.status === "answered") rs.answered++;
       else if (st.status === "missing") rs.missing++;
       else { rs.failed++; rs.failed_by_code[st.error] = (rs.failed_by_code[st.error] ?? 0) + 1; }
@@ -163,13 +265,13 @@ export async function runConverge(opts: ConvergeOptions): Promise<{ rows: Record
     for (const s of specs) {
       if (s.kind !== "record") {
         const slots: Slot[] = states.map((st) => st.status === "answered" ? { status: "answered", entry: cellOf(st.fields[s.name], s.maxValues) } : st);
-        const vote = voteEntries(slots, runNames), acc = scalarAcc.get(s.name)!;
+        const vote = voteEntries(slots, colNames), acc = scalarAcc.get(s.name)!;
         fields[s.name] = vote; acc.verdicts.push(vote.verdict); acc.units.push(slots.map(toAlphaVal)); continue;
       }
       const rs = recAcc.get(s.name)!;
       if (nAnswered < 2) {
         rs.verdicts.push("insufficient");
-        fields[s.name] = { verdict: "insufficient", n_answered: nAnswered, n_runs: runNames.length, aligned: [], unmatched: [] };
+        fields[s.name] = { verdict: "insufficient", n_answered: nAnswered, n_runs: colNames.length, aligned: [], unmatched: [] };
         continue;
       }
       type RecItem = { rec: Record<string, unknown>; pc: string | null; st: string | null; sc: string | null; hit?: boolean };
@@ -198,12 +300,12 @@ export async function runConverge(opts: ConvergeOptions): Promise<{ rows: Record
       let anyMaj = false, anySplit = false;
       for (const c of clusters) {
         if (c.byRun.size <= nAnswered / 2) for (const ri of c.byRun.keys()) nonMajRuns.add(ri);
-        if (c.byRun.size < 2) { const [ri, rec] = [...c.byRun.entries()][0]!; unmatched.push({ run: runNames[ri]!, fields: Object.fromEntries(s.subFields!.map((sf) => { const e = cellOf(rec[sf.name]); return [sf.name, { value: e.value, quote: e.quote }]; })) }); continue; }
+        if (c.byRun.size < 2) { const [ri, rec] = [...c.byRun.entries()][0]!; unmatched.push({ run: colNames[ri]!, fields: Object.fromEntries(s.subFields!.map((sf) => { const e = cellOf(rec[sf.name]); return [sf.name, { value: e.value, quote: e.quote }]; })) }); continue; }
         if (c.byRun.size < nAnswered) anyMaj = true;
         const subOut: Record<string, FieldVote> = {};
         for (const sf of s.subFields!) {
           const slots: Slot[] = states.map((st, ri) => st.status === "answered" ? { status: "answered", entry: cellOf(c.byRun.get(ri)?.[sf.name]) } : st);
-          const v = voteEntries(slots, runNames), ss = rs.subs.get(sf.name)!;
+          const v = voteEntries(slots, colNames), ss = rs.subs.get(sf.name)!;
           subOut[sf.name] = v; ss.verdicts.push(v.verdict); ss.units.push(slots.map(toAlphaVal));
           if (v.verdict === "majority") anyMaj = true; else if (v.verdict === "split") anySplit = true;
         }
@@ -213,17 +315,40 @@ export async function runConverge(opts: ConvergeOptions): Promise<{ rows: Record
       }
       const recVerdict: Verdict = !aligned.length && !unmatched.length ? "absent" : anySplit || nonMajRuns.size >= nAnswered / 2 ? "split" : !nonMajRuns.size && !anyMaj ? "unanimous" : "majority";
       rs.verdicts.push(recVerdict); rs.aligned += aligned.length; rs.unmatched += unmatched.length;
-      fields[s.name] = { verdict: recVerdict, n_answered: nAnswered, n_runs: runNames.length, aligned, unmatched };
+      fields[s.name] = { verdict: recVerdict, n_answered: nAnswered, n_runs: colNames.length, aligned, unmatched };
     }
     return { id, ...(url ? { url } : {}), fields };
   });
-  const sumFields = Object.fromEntries(specs.map((s) => s.kind !== "record" ? [s.name, summarize(scalarAcc.get(s.name)!, runNames)] : (() => { const rs = recAcc.get(s.name)!; return [s.name, { counts: countVerdicts(rs.verdicts), aligned: rs.aligned, unmatched: rs.unmatched, subfields: Object.fromEntries(s.subFields!.map((sf) => [sf.name, summarize(rs.subs.get(sf.name)!, runNames)])) }]; })()));
-  const run_stats = Object.fromEntries(runNames.map((n, i) => [n, { ...rawRunStats[i]!, failed_by_code: sortRec(rawRunStats[i]!.failed_by_code) }]));
-  const summary = { type: "summary", runs: runNames, run_stats, mission_digest: expectedDigest,
+  const sumFields = Object.fromEntries(specs.map((s) => s.kind !== "record" ? [s.name, summarize(scalarAcc.get(s.name)!, colNames)] : (() => { const rs = recAcc.get(s.name)!; return [s.name, { counts: countVerdicts(rs.verdicts), aligned: rs.aligned, unmatched: rs.unmatched, subfields: Object.fromEntries(s.subFields!.map((sf) => [sf.name, summarize(rs.subs.get(sf.name)!, colNames)])) }]; })()));
+  const run_stats = Object.fromEntries(colNames.map((n, i) => [n, { ...rawRunStats[i]!, failed_by_code: sortRec(rawRunStats[i]!.failed_by_code) }]));
+  const superseded = new Map<string, number>();
+  if (plans) {
+    for (const p of plans) {
+      const folded = colMaps[colIdxs.findIndex((idxs) => idxs[0] === p.order[0])]!;
+      let sup = 0;
+      for (const id of allIds) {
+        const cell = folded.get(id);
+        for (const i of p.order) {
+          const r = runMaps[i]!.get(id);
+          if (r !== undefined && r !== cell && classifyRow(r).status === "failed") sup++;
+        }
+      }
+      superseded.set(p.name, sup);
+    }
+  }
+  const memberEntry = (i: number): Record<string, unknown> => ({
+    run: runNames[i], transport: runTransports[runNames[i]!] ?? null, answered: memberStats[i]!.answered,
+    failed: memberStats[i]!.failed, failed_by_code: sortRec(memberStats[i]!.failed_by_code),
+    missing: memberStats[i]!.missing,
+  });
+  const groupEntries = plans ? { groups: Object.fromEntries(plans.map((p) => [p.name, {
+    members: p.order.map(memberEntry), superseded_failed: superseded.get(p.name) ?? 0,
+  }])) } : {};
+  const summary = { type: "summary", runs: colNames, run_stats, mission_digest: expectedDigest,
     allow_missing_digest: opts.allowMissingDigest === true, missing_digest_runs: missingDigestRuns,
-    allow_transports: allowed, run_transports: runTransports, ids: allIds.length, fields: sumFields };
+    allow_transports: allowed, run_transports: runTransports, ...groupEntries, ids: allIds.length, fields: sumFields };
   mkdirSync(opts.out, { recursive: true });
   writeFileSync(join(opts.out, "converge.ndjson"), `${[...rows, summary].map((r) => JSON.stringify(r)).join("\n")}\n`, "utf-8");
-  console.log(`scrap converge summary: runs=${runNames.length} ids=${allIds.length} out=${join(opts.out, "converge.ndjson")}`);
+  console.log(`scrap converge summary: runs=${colNames.length} ids=${allIds.length} out=${join(opts.out, "converge.ndjson")}`);
   return { rows, summary };
 }

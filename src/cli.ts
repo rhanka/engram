@@ -6161,17 +6161,25 @@ export async function main(): Promise<void> {
   scrap.command("converge").option("--runs <dirs...>", "run directories")
     .option("--mission <file>").option("--out <dir>")
     .option("--allow-missing-digest", "allow runs lacking a summary or mission digest")
-    .option("--allow-transport <names...>", "allow runs carrying the given transport marker").action(async (o) => {
+    .option("--allow-transport <names...>", "allow runs carrying the given transport marker")
+    .option("--group <specs...>", "group several --runs directories into one annotator column").action(async (o) => {
       if (!Array.isArray(o.runs) || o.runs.length < 2 || !o.mission || !o.out) {
         console.error("usage: engram scrap converge --runs DIR_A DIR_B [DIR_C...] --mission FILE --out DIR"
-          + " [--allow-missing-digest] [--allow-transport NAME...]");
+          + " [--allow-missing-digest] [--allow-transport NAME...] [--group NAME=DIR,DIR...]");
         process.exit(2);
       }
       const { runConverge, isConvergeUsageError } = await import("./scrap/converge.js");
       const allow = Array.isArray(o.allowTransport) ? { allowTransports: o.allowTransport as string[] } : {};
       try {
+        const specs: string[] = Array.isArray(o.group) ? (o.group as string[]) : [];
+        const groups = specs.map((spec) => {
+          const eq = String(spec).indexOf("=");
+          const name = eq < 0 ? "" : String(spec).slice(0, eq);
+          if (eq < 0 || !name) throw new Error(`scrap converge: group ${spec}: spec must be NAME=DIR,DIR...`);
+          return { name, dirs: String(spec).slice(eq + 1).split(",") };
+        });
         await runConverge({ runs: o.runs, mission: o.mission, out: o.out,
-          allowMissingDigest: o.allowMissingDigest === true, ...allow });
+          allowMissingDigest: o.allowMissingDigest === true, ...allow, ...(groups.length ? { groups } : {}) });
       } catch (e) { if (isConvergeUsageError(e)) { console.error(String(e)); process.exit(2); } throw e; }
     });
   scrap.command("prompt").option("--capture <dir>").option("--mission <file>").option("--id <id>")

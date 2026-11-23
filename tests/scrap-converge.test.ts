@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtempSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -1238,5 +1238,557 @@ describe("scrap converge", () => {
       allowTransports: ["browser", "browser"] });
     expect(res.summary.run_transports).toEqual({ runA: null, runB: "browser" });
     expect(res.summary.allow_transports).toEqual(["browser", "browser"]);
+  });
+
+  it("keeps byte-identical converge.ndjson without --group (kills mutants: groups-leak, renamed-runs)", async () => {
+    const digest = sha256(JSON.stringify(OFFICES_MISSION));
+    const off = (s: string | null, c: string | null, p: string | null, z: string | null) => ({
+      street: fVal(s), city: fVal(c), province: fVal(p), postal_code: fVal(z),
+    });
+    const row = (id: string, company: string | null, postal: string | null, values: unknown[]) => ({
+      id, url: `http://x/${id}`,
+      fields: { company: fVal(company), postal_code: fVal(postal), offices: { values } },
+    });
+    const toronto = [off("100 King St W", "Toronto", "ON", "M5X 1A9")];
+    const torontoLong = [off("100 King Street West", "Toronto", "ON", "M5X 1A9")];
+    const ottawa = [off("50 O'Connor St", "Ottawa", "ON", "K1P 6L2")];
+    const ottawaNoPc = [off("50 O'Connor St", "Ottawa", "ON", null)];
+    const fx = writeFixture(OFFICES_MISSION, {
+      seedA: [
+        row("b1", "Acme Canada Inc.", "M5X 1A9", toronto),
+        row("b2", "Beta LLC", "K1P 6L2", ottawa),
+        row("b3", "Gamma Inc.", null, []),
+      ],
+      seedB: [
+        { ...row("b1", "Acme Canada Inc.", "M5X-1A9", torontoLong), transport: "browser" },
+        { ...row("b2", "Beta LLC", "K1P 6L2", ottawaNoPc), transport: "browser" },
+        { ...row("b3", "Gamma Inc.", null, []), transport: "browser" },
+        { type: "summary", transport: "browser", mission_digest: digest, ok: 3, failed: 0 },
+      ],
+      seedC: [
+        row("b1", "Acme Canada Inc.", "M5X 1A9", toronto),
+        { id: "b2", url: "http://x/b2", error: "llm_error", error_detail: "503", fields: null },
+      ],
+    });
+    const opts = { runs: fx.runDirs, mission: fx.missionPath, out: fx.outDir, allowTransports: ["browser"] };
+    await runConverge(opts);
+    const bytes = readFileSync(join(fx.outDir, "converge.ndjson"), "utf-8");
+    expect(sha256(bytes)).toBe("e0afcf171ea863853aa114f3b235b72ccad60538cc07e410c08481e9eeae767d");
+    expect("groups" in readConverge(fx.outDir).summary).toBe(false);
+  });
+
+  // --- --group helpers (S and B share no id; X and Y overlap both) ---
+  const goff = (s: string | null, c: string | null, p: string | null, z: string | null) => ({
+    street: fVal(s), city: fVal(c), province: fVal(p), postal_code: fVal(z),
+  });
+  const grow = (id: string, company: string | null, postal: string | null, values: unknown[]) => ({
+    id, url: `http://x/${id}`,
+    fields: { company: fVal(company), postal_code: fVal(postal), offices: { values } },
+  });
+  const groupRuns = () => {
+    const toronto = [goff("100 King St W", "Toronto", "ON", "M5X 1A9")];
+    const ottawa = [goff("50 O'Connor St", "Ottawa", "ON", "K1P 6L2")];
+    const halifax = [goff("1801 Hollis St", "Halifax", "NS", "B3J 3N4")];
+    const calgary = [goff("100 Main St", "Calgary", "AB", "T2P 1N2")];
+    return {
+      S: [grow("s1", "Acme Canada Inc.", "M5X 1A9", toronto), grow("s2", "Beta LLC", "K1P 6L2", ottawa)],
+      B: [grow("s3", "Gamma Inc.", "B3J 3N4", halifax), grow("s4", "Delta Co", "T2P 1N2", calgary)],
+      X: [
+        grow("s1", "Acme Canada Inc.", "M5X 1A9", toronto),
+        grow("s2", "Beta LLC", "K1P 6L2", ottawa),
+        grow("s3", "Xenon Ltd", "B3J 3N4", halifax),
+        grow("s4", "Delta Co", "T2P 1N2", calgary),
+      ],
+      Y: [
+        grow("s1", "Acme Canada Inc.", "M5X 1A9", toronto),
+        grow("s2", "Ypsilon LLC", "K1P 6L2", ottawa),
+        grow("s3", "Gamma Inc.", "B3J 3N4", halifax),
+        grow("s4", "Delta Co", "T2P 1N2", calgary),
+      ],
+    };
+  };
+
+  it("equals a hand-merged run dir (kills mutants: fold-first, misplaced, pairwise-members)", async () => {
+    const fx = writeFixture(OFFICES_MISSION, groupRuns());
+    const sDir = fx.runDirs[0]!, bDir = fx.runDirs[1]!, xDir = fx.runDirs[2]!, yDir = fx.runDirs[3]!;
+    const a1Dir = join(fx.root, "A1");
+    mkdirSync(a1Dir, { recursive: true });
+    const cat = (d: string): string => readFileSync(join(d, "results.ndjson"), "utf-8");
+    writeFileSync(join(a1Dir, "results.ndjson"), cat(sDir) + cat(bDir));
+    const groups = [{ name: "A1", dirs: [sDir, bDir] }];
+    await runConverge({ runs: fx.runDirs, mission: fx.missionPath, out: join(fx.root, "out-group"), groups });
+    await runConverge({ runs: [a1Dir, xDir, yDir], mission: fx.missionPath, out: join(fx.root, "out-hand") });
+    const g = readConverge(join(fx.root, "out-group"));
+    const h = readConverge(join(fx.root, "out-hand"));
+    expect(g.rows).toEqual(h.rows);
+    expect(g.summary.fields).toEqual(h.summary.fields);
+    expect(g.summary.runs).toEqual(h.summary.runs);
+    expect(g.summary.run_stats).toEqual(h.summary.run_stats);
+    expect(g.summary.ids).toBe(h.summary.ids);
+    expect(g.summary.runs).toEqual(["A1", "X", "Y"]);
+    expect(g.rows[0].fields.company).toMatchObject({ verdict: "unanimous", value: "Acme Canada Inc.", n_runs: 3 });
+    expect(Object.keys(g.summary.fields.company.pairwise_agreement).sort()).toEqual(["A1|X", "A1|Y", "X|Y"]);
+  });
+
+  it("same vote with and without the group (kills mutants: member-vote, column-alpha, sb-null)", async () => {
+    const fx = writeFixture(OFFICES_MISSION, groupRuns());
+    const sDir = fx.runDirs[0]!, bDir = fx.runDirs[1]!;
+    await runConverge({
+      runs: fx.runDirs, mission: fx.missionPath, out: join(fx.root, "out-g"),
+      groups: [{ name: "A1", dirs: [sDir, bDir] }],
+    });
+    await runConverge({ runs: fx.runDirs, mission: fx.missionPath, out: join(fx.root, "out-u") });
+    const g = readConverge(join(fx.root, "out-g"));
+    const u = readConverge(join(fx.root, "out-u"));
+    expect(g.rows).toHaveLength(u.rows.length);
+    for (let i = 0; i < g.rows.length; i++) {
+      expect(g.rows[i].id).toBe(u.rows[i].id);
+      for (const f of ["company", "postal_code"]) {
+        for (const k of ["verdict", "value", "n_answered"]) {
+          expect(g.rows[i].fields[f][k]).toEqual(u.rows[i].fields[f][k]);
+        }
+        expect(g.rows[i].fields[f].n_runs).toBe(3);
+        expect(u.rows[i].fields[f].n_runs).toBe(4);
+      }
+      const go = g.rows[i].fields.offices, uo = u.rows[i].fields.offices;
+      expect([go.verdict, go.n_answered]).toEqual([uo.verdict, uo.n_answered]);
+      expect(go.aligned).toHaveLength(uo.aligned.length);
+      go.aligned.forEach((a: any, ai: number) => {
+        for (const sf of ["street", "city", "province", "postal_code"]) {
+          for (const k of ["verdict", "value", "n_answered"]) {
+            expect(a.fields[sf][k]).toEqual(uo.aligned[ai].fields[sf][k]);
+          }
+        }
+      });
+      expect(go.unmatched).toHaveLength(uo.unmatched.length);
+    }
+    expect(g.rows[0].fields.company).toMatchObject({ verdict: "unanimous", value: "Acme Canada Inc." });
+    for (const f of ["company", "postal_code"]) {
+      expect(g.summary.fields[f].counts).toEqual(u.summary.fields[f].counts);
+      expect(g.summary.fields[f].krippendorff_alpha).toBe(u.summary.fields[f].krippendorff_alpha);
+      expect(g.summary.fields[f].alpha_excluded_units).toBe(u.summary.fields[f].alpha_excluded_units);
+    }
+    expect(g.summary.fields.offices.counts).toEqual(u.summary.fields.offices.counts);
+    for (const sf of ["street", "city", "province", "postal_code"]) {
+      const gs = g.summary.fields.offices.subfields[sf], us = u.summary.fields.offices.subfields[sf];
+      expect(gs.krippendorff_alpha).toBe(us.krippendorff_alpha);
+      expect(gs.alpha_excluded_units).toBe(us.alpha_excluded_units);
+    }
+    expect(u.summary.fields.company.pairwise_agreement["S|B"]).toBeNull();
+    const uKeys = Object.keys(u.summary.fields.company.pairwise_agreement).sort();
+    expect(uKeys).toEqual(["B|X", "B|Y", "S|B", "S|X", "S|Y", "X|Y"]);
+    const gKeys = Object.keys(g.summary.fields.company.pairwise_agreement).sort();
+    expect(gKeys).toEqual(["A1|X", "A1|Y", "X|Y"]);
+  });
+
+  it("failed run plus browser retry is one column (kills mutants: failed-cell, superseded, order)", async () => {
+    const digest = sha256(JSON.stringify(OFFICES_MISSION));
+    const toronto = [goff("100 King St W", "Toronto", "ON", "M5X 1A9")];
+    const ottawa = [goff("50 O'Connor St", "Ottawa", "ON", "K1P 6L2")];
+    const fail = (id: string, error: string) => ({
+      id, url: `http://x/${id}`, error, error_detail: "x", fields: null,
+    });
+    const fx = writeFixture(OFFICES_MISSION, {
+      S: [fail("g1", "empty_response"), fail("g2", "llm_error"), grow("g3", "Acme Canada Inc.", "M5X 1A9", toronto)],
+      B: [
+        { ...grow("g1", "Acme Canada Inc.", "M5X 1A9", toronto), transport: "browser" },
+        { ...grow("g2", "Beta LLC", "K1P 6L2", ottawa), transport: "browser" },
+        { type: "summary", transport: "browser", mission_digest: digest, ok: 2, failed: 0 },
+      ],
+      X: [
+        grow("g1", "Acme Canada Inc.", "M5X 1A9", toronto),
+        grow("g2", "Beta LLC", "K1P 6L2", ottawa),
+        grow("g3", "Acme Canada Inc.", "M5X 1A9", toronto),
+      ],
+      Y: [
+        grow("g1", "Acme Canada Inc.", "M5X 1A9", toronto),
+        grow("g2", "Beta LLC", "K1P 6L2", ottawa),
+        grow("g3", "Acme Canada Inc.", "M5X 1A9", toronto),
+      ],
+    });
+    const s = fx.runDirs[0]!, b = fx.runDirs[1]!, x = fx.runDirs[2]!, y = fx.runDirs[3]!;
+    const outApi = join(fx.root, "out-api");
+    await runConverge({
+      runs: fx.runDirs, mission: fx.missionPath, out: outApi,
+      allowTransports: ["browser"], groups: [{ name: "A1", dirs: [s, b] }],
+    });
+    const { rows, summary } = readConverge(outApi);
+    expect(rows).toHaveLength(3);
+    expect(rows[0].fields.company).toMatchObject({ verdict: "unanimous", value: "Acme Canada Inc." });
+    expect(rows[0].fields.company.runs.A1).toEqual({ value: "Acme Canada Inc.", quote: "Acme Canada Inc." });
+    expect(summary.run_stats.A1).toEqual({ answered: 3, failed: 0, failed_by_code: {}, missing: 0 });
+    expect(summary.run_transports).toEqual({ S: null, B: "browser", X: null, Y: null });
+    expect(summary.groups.A1).toEqual({
+      members: [
+        {
+          run: "S", transport: null, answered: 1, failed: 2,
+          failed_by_code: { empty_response: 1, llm_error: 1 }, missing: 0,
+        },
+        { run: "B", transport: "browser", answered: 2, failed: 0, failed_by_code: {}, missing: 1 },
+      ],
+      superseded_failed: 2,
+    });
+    const stripTransport = (d: string): string => {
+      const lines = readFileSync(join(d, "results.ndjson"), "utf-8").split("\n").filter((l) => l.trim());
+      return lines.map((l) => {
+        const r = JSON.parse(l) as Record<string, unknown>;
+        delete r.transport;
+        return JSON.stringify(r);
+      }).join("\n");
+    };
+    const handDir = join(fx.root, "A1");
+    mkdirSync(handDir, { recursive: true });
+    const sLines = readFileSync(join(s, "results.ndjson"), "utf-8").trim();
+    writeFileSync(join(handDir, "results.ndjson"), `${sLines}\n${stripTransport(b)}\n`);
+    await runConverge({ runs: [handDir, x, y], mission: fx.missionPath, out: join(fx.root, "out-hand") });
+    expect(readConverge(join(fx.root, "out-hand")).rows).toEqual(rows);
+    const cliBase = ["scrap", "converge", "--runs", ...fx.runDirs, "--mission", fx.missionPath];
+    const cliFwd = await runCli([...cliBase, "--out", join(fx.root, "out-fwd"), "--allow-transport", "browser",
+      "--group", `A1=${s},${b}`], fx.root);
+    expect(cliFwd.code).toBe(0);
+    const cliRev = await runCli([...cliBase, "--out", join(fx.root, "out-rev"), "--allow-transport", "browser",
+      "--group", `A1=${b},${s}`], fx.root);
+    expect(cliRev.code).toBe(0);
+    const apiBytes = readFileSync(join(outApi, "converge.ndjson"), "utf-8");
+    expect(readFileSync(join(fx.root, "out-fwd", "converge.ndjson"), "utf-8")).toBe(apiBytes);
+    expect(readFileSync(join(fx.root, "out-rev", "converge.ndjson"), "utf-8")).toBe(apiBytes);
+    let noFlagErr: unknown;
+    try {
+      const noGroups = [{ name: "A1", dirs: [s, b] }];
+      await runConverge({ runs: fx.runDirs, mission: fx.missionPath, out: join(fx.root, "out-no"), groups: noGroups });
+    } catch (e) { noFlagErr = e; }
+    expect(String(noFlagErr)).toContain(b);
+    expect(isConvergeUsageError(noFlagErr)).toBe(true);
+    const cliNoFlag = await runCli([...cliBase, "--out", join(fx.root, "out-cli-no"),
+      "--group", `A1=${s},${b}`], fx.root);
+    expect(cliNoFlag.code).toBe(2);
+    expect(cliNoFlag.err).toContain(b);
+  });
+
+  it("both members failed: later member's row is the cell (kills mutants: first-wins, uncounted)", async () => {
+    const toronto = [goff("100 King St W", "Toronto", "ON", "M5X 1A9")];
+    const halifax = [goff("1801 Hollis St", "Halifax", "NS", "B3J 3N4")];
+    const failed = (id: string, error: string) => ({
+      id, url: `http://x/${id}`, error, error_detail: "x", fields: null,
+    });
+    const fx = writeFixture(OFFICES_MISSION, {
+      S: [failed("h1", "llm_error"), grow("h2", "Acme Canada Inc.", "M5X 1A9", toronto)],
+      B: [failed("h1", "parse_error"), grow("h3", "Gamma Inc.", "B3J 3N4", halifax)],
+      X: [
+        grow("h1", "Acme Canada Inc.", "M5X 1A9", toronto),
+        grow("h2", "Acme Canada Inc.", "M5X 1A9", toronto),
+        grow("h3", "Gamma Inc.", "B3J 3N4", halifax),
+      ],
+    });
+    const s = fx.runDirs[0]!, b = fx.runDirs[1]!;
+    await runConverge({ runs: fx.runDirs, mission: fx.missionPath, out: fx.outDir,
+      groups: [{ name: "A1", dirs: [s, b] }] });
+    const { rows, summary } = readConverge(fx.outDir);
+    expect(rows[0].fields.company.runs.A1).toEqual({ status: "failed", error: "parse_error" });
+    expect(summary.run_stats.A1).toEqual({ answered: 2, failed: 1, failed_by_code: { parse_error: 1 }, missing: 0 });
+    expect(summary.groups.A1).toEqual({
+      members: [
+        { run: "S", transport: null, answered: 1, failed: 1, failed_by_code: { llm_error: 1 }, missing: 1 },
+        { run: "B", transport: null, answered: 1, failed: 1, failed_by_code: { parse_error: 1 }, missing: 1 },
+      ],
+      superseded_failed: 1,
+    });
+  });
+
+  it("two answers of one annotator refused (kills mutants: merge-answers, null-not-answer)", async () => {
+    const fx = writeFixture({ fields: ["city"], instruction: "Extract city." }, {
+      S: [
+        { id: "d1", url: "http://x/1", fields: { city: fVal("Ottawa") } },
+        { id: "d2", url: "http://x/2", fields: { city: fVal(null) } },
+        { id: "d3", url: "http://x/3", fields: { city: fVal(null) } },
+      ],
+      B: [
+        { id: "d1", url: "http://x/1", fields: { city: fVal("Toronto") } },
+        { id: "d2", url: "http://x/2", fields: { city: fVal(null) } },
+        { id: "d3", url: "http://x/3", fields: { city: fVal("Toronto") } },
+      ],
+      X: [
+        { id: "d1", url: "http://x/1", fields: { city: fVal("Ottawa") } },
+        { id: "d2", url: "http://x/2", fields: { city: fVal(null) } },
+        { id: "d3", url: "http://x/3", fields: { city: fVal(null) } },
+      ],
+    });
+    const s = fx.runDirs[0]!, b = fx.runDirs[1]!;
+    const outApi = join(fx.root, "out-api");
+    let err: unknown;
+    try {
+      await runConverge({ runs: fx.runDirs, mission: fx.missionPath, out: outApi,
+        groups: [{ name: "A1", dirs: [s, b] }] });
+    } catch (e) { err = e; }
+    expect(String(err)).toMatch(/scrap converge: group/);
+    for (const needle of ["A1", "d1", s, b, "3 ids answered"]) expect(String(err)).toContain(needle);
+    expect(isConvergeUsageError(err)).toBe(true);
+    expect(existsSync(outApi)).toBe(false);
+    const outCli = join(fx.root, "out-cli");
+    const cli = await runCli(["scrap", "converge", "--runs", ...fx.runDirs, "--mission", fx.missionPath,
+      "--out", outCli, "--group", `A1=${s},${b}`], fx.root);
+    expect(cli.code).toBe(2);
+    expect(cli.err).toMatch(/scrap converge: group/);
+    for (const needle of ["A1", "d1", s, b, "3 ids answered"]) expect(cli.err).toContain(needle);
+    expect(existsSync(outCli)).toBe(false);
+  });
+
+  it("bad group membership refused (kills mutants: ghost-member, regrouped-dir, dup-member, split)", async () => {
+    const fx = writeFixture({ fields: ["city"], instruction: "Extract city." }, {
+      S: [{ id: "u1", url: "http://x/1", fields: { city: fVal("Ottawa") } }],
+      B: [{ id: "u2", url: "http://x/2", fields: { city: fVal("Toronto") } }],
+      X: [{ id: "u3", url: "http://x/3", fields: { city: fVal("Vancouver") } }],
+      Y: [{ id: "u4", url: "http://x/4", fields: { city: fVal("Calgary") } }],
+    });
+    const s = fx.runDirs[0]!, b = fx.runDirs[1]!, x = fx.runDirs[2]!;
+    const ghost = join(fx.root, "ghost");
+    type G = { name: string; dirs: string[] };
+    let n = 0;
+    const refuse = async (runs: string[], specs: string[], groups: G[], needles: string[]): Promise<void> => {
+      n++;
+      const outApi = join(fx.root, `out-api-${n}`);
+      let err: unknown;
+      try {
+        await runConverge({ runs, mission: fx.missionPath, out: outApi, groups });
+      } catch (e) { err = e; }
+      expect(String(err)).toMatch(/scrap converge: group/);
+      for (const needle of needles) expect(String(err)).toContain(needle);
+      expect(isConvergeUsageError(err)).toBe(true);
+      expect(existsSync(outApi)).toBe(false);
+      const outCli = join(fx.root, `out-cli-${n}`);
+      const args = ["scrap", "converge", "--runs", ...runs, "--mission", fx.missionPath, "--out", outCli];
+      for (const spec of specs) args.push("--group", spec);
+      const cli = await runCli(args, fx.root);
+      expect(cli.code).toBe(2);
+      expect(cli.err).toMatch(/scrap converge: group/);
+      for (const needle of needles) expect(cli.err).toContain(needle);
+      expect(existsSync(outCli)).toBe(false);
+    };
+    await refuse([s, b, x], [`A1=${s},${ghost}`], [{ name: "A1", dirs: [s, ghost] }],
+      ["A1", ghost, "is not a --runs directory"]);
+    await refuse(
+      [s, b, x], [`A1=${s},${b}`, `A2=${b},${x}`],
+      [{ name: "A1", dirs: [s, b] }, { name: "A2", dirs: [b, x] }], ["A2", b, "already in group"],
+    );
+    await refuse([s, b, x], [`A1=${s},${s}`], [{ name: "A1", dirs: [s, s] }], ["A1", s, "appears twice"]);
+    await refuse([s, b, x], [`A1=${s},${x}`], [{ name: "A1", dirs: [s, x] }], ["A1", "not adjacent"]);
+    await refuse([s, b, x], [`A1=${s},${b},`], [{ name: "A1", dirs: [s, b, ""] }],
+      ["A1", "empty member"]);
+    await refuse([s, b, x], [`A1=${s},,${b}`], [{ name: "A1", dirs: [s, "", b] }],
+      ["A1", "empty member"]);
+  });
+
+  it("degenerate groups refused (kills mutants: lone-member, one-column-left)", async () => {
+    const fx = writeFixture({ fields: ["city"], instruction: "Extract city." }, {
+      S: [{ id: "u1", url: "http://x/1", fields: { city: fVal("Ottawa") } }],
+      B: [{ id: "u2", url: "http://x/2", fields: { city: fVal("Toronto") } }],
+    });
+    const s = fx.runDirs[0]!, b = fx.runDirs[1]!;
+    type G = { name: string; dirs: string[] };
+    const cases: [string, G[], string[]][] = [
+      ["lone", [{ name: "A1", dirs: [s] }], ["A1", "needs at least two members"]],
+      ["onecol", [{ name: "A1", dirs: [s, b] }], ["A1", "leaves only"]],
+    ];
+    for (const [tag, groups, needles] of cases) {
+      const outApi = join(fx.root, `out-api-${tag}`);
+      let err: unknown;
+      try {
+        await runConverge({ runs: fx.runDirs, mission: fx.missionPath, out: outApi, groups });
+      } catch (e) { err = e; }
+      expect(String(err)).toMatch(/scrap converge: group/);
+      for (const needle of needles) expect(String(err)).toContain(needle);
+      expect(isConvergeUsageError(err)).toBe(true);
+      expect(existsSync(outApi)).toBe(false);
+      const outCli = join(fx.root, `out-cli-${tag}`);
+      const args = ["scrap", "converge", "--runs", ...fx.runDirs, "--mission", fx.missionPath, "--out", outCli];
+      for (const gDef of groups) args.push("--group", `${gDef.name}=${gDef.dirs.join(",")}`);
+      const cli = await runCli(args, fx.root);
+      expect(cli.code).toBe(2);
+      expect(cli.err).toMatch(/scrap converge: group/);
+      for (const needle of needles) expect(cli.err).toContain(needle);
+      expect(existsSync(outCli)).toBe(false);
+    }
+  });
+
+  it("bad group names refused (kills mutants: illegal-name, name-collision, dup-group, no-equals)", async () => {
+    const fx = writeFixture({ fields: ["city"], instruction: "Extract city." }, {
+      S: [{ id: "u1", url: "http://x/1", fields: { city: fVal("Ottawa") } }],
+      B: [{ id: "u2", url: "http://x/2", fields: { city: fVal("Toronto") } }],
+      X: [{ id: "u3", url: "http://x/3", fields: { city: fVal("Vancouver") } }],
+      Y: [{ id: "u4", url: "http://x/4", fields: { city: fVal("Calgary") } }],
+    });
+    const s = fx.runDirs[0]!, b = fx.runDirs[1]!, x = fx.runDirs[2]!, y = fx.runDirs[3]!;
+    type G = { name: string; dirs: string[] };
+    let n = 0;
+    const refuse = async (runs: string[], specs: string[], groups: G[], needles: string[]): Promise<void> => {
+      n++;
+      const outApi = join(fx.root, `out-api-${n}`);
+      let err: unknown;
+      try {
+        await runConverge({ runs, mission: fx.missionPath, out: outApi, groups });
+      } catch (e) { err = e; }
+      expect(String(err)).toMatch(/scrap converge: group/);
+      for (const needle of needles) expect(String(err)).toContain(needle);
+      expect(isConvergeUsageError(err)).toBe(true);
+      expect(existsSync(outApi)).toBe(false);
+      const outCli = join(fx.root, `out-cli-${n}`);
+      const args = ["scrap", "converge", "--runs", ...runs, "--mission", fx.missionPath, "--out", outCli];
+      for (const spec of specs) args.push("--group", spec);
+      const cli = await runCli(args, fx.root);
+      expect(cli.code).toBe(2);
+      expect(cli.err).toMatch(/scrap converge: group/);
+      expect(existsSync(outCli)).toBe(false);
+    };
+    await refuse([s, b, x], [`=${s},${b}`], [{ name: "", dirs: [s, b] }],
+      ["scrap converge: group", "invalid name"]);
+    await refuse([s, b, x], [`A|1=${s},${b}`], [{ name: "A|1", dirs: [s, b] }], ["A|1", "invalid name"]);
+    await refuse([s, b, x], [`A/1=${s},${b}`], [{ name: "A/1", dirs: [s, b] }], ["A/1", "invalid name"]);
+    await refuse([s, b, x], [`A 1=${s},${b}`], [{ name: "A 1", dirs: [s, b] }], ["A 1", "invalid name"]);
+    await refuse([s, b, x], [`S=${s},${b}`], [{ name: "S", dirs: [s, b] }], ["S", "name equals a run directory name"]);
+    await refuse(
+      [s, b, x, y], [`A1=${s},${b}`, `A1=${x},${y}`],
+      [{ name: "A1", dirs: [s, b] }, { name: "A1", dirs: [x, y] }], ["A1", "duplicate group name"],
+    );
+    let eqErr: unknown;
+    try {
+      const outEq = join(fx.root, "out-api-eq");
+      const eqGroups = [{ name: "A=1", dirs: [s, b] }];
+      await runConverge({ runs: [s, b, x], mission: fx.missionPath, out: outEq, groups: eqGroups });
+    } catch (e) { eqErr = e; }
+    expect(String(eqErr)).toMatch(/scrap converge: group/);
+    for (const needle of ["A=1", "invalid name"]) expect(String(eqErr)).toContain(needle);
+    expect(isConvergeUsageError(eqErr)).toBe(true);
+    const outNoEq = join(fx.root, "out-cli-noeq");
+    const noEq = await runCli(["scrap", "converge", "--runs", s, b, x, "--mission", fx.missionPath,
+      "--out", outNoEq, "--group", "A1"], fx.root);
+    expect(noEq.code).toBe(2);
+    expect(noEq.err).toMatch(/scrap converge: group/);
+    for (const needle of ["A1", "spec must be"]) expect(noEq.err).toContain(needle);
+    expect(existsSync(outNoEq)).toBe(false);
+  });
+
+  it("group checks run before any results.ndjson read (kills mutants: late-groups)", async () => {
+    const fx = writeFixture({ fields: ["city"], instruction: "Extract city." }, {
+      S: [{ id: "u1", url: "http://x/1", fields: { city: fVal("Ottawa") } }],
+      B: [{ id: "u2", url: "http://x/2", fields: { city: fVal("Toronto") } }],
+    });
+    const s = fx.runDirs[0]!, b = fx.runDirs[1]!;
+    const noRes = join(fx.root, "NORES");
+    mkdirSync(noRes, { recursive: true });
+    const runs = [s, b, noRes];
+    const outApi = join(fx.root, "out-api-late");
+    let err: unknown;
+    try {
+      await runConverge({ runs, mission: fx.missionPath, out: outApi, groups: [{ name: "A|1", dirs: [s, b] }] });
+    } catch (e) { err = e; }
+    expect(String(err)).toMatch(/scrap converge: group/);
+    for (const needle of ["A|1", "invalid name"]) expect(String(err)).toContain(needle);
+    expect(String(err)).not.toContain("missing results.ndjson");
+    expect(isConvergeUsageError(err)).toBe(true);
+    expect(existsSync(outApi)).toBe(false);
+    const outCli = join(fx.root, "out-cli-late");
+    const cli = await runCli(["scrap", "converge", "--runs", ...runs, "--mission", fx.missionPath,
+      "--out", outCli, "--group", `A|1=${s},${b}`], fx.root);
+    expect(cli.code).toBe(2);
+    expect(cli.err).toMatch(/scrap converge: group/);
+    for (const needle of ["A|1", "invalid name"]) expect(cli.err).toContain(needle);
+    expect(cli.err).not.toContain("missing results.ndjson");
+    expect(existsSync(outCli)).toBe(false);
+  });
+
+  it("per-directory checks survive grouping (kills mutants: mixed-member, no-summary, digest-group)", async () => {
+    const mission = { fields: ["city"], instruction: "Extract city." };
+    const mixed = writeFixture(mission, {
+      S: [
+        { id: "m1", url: "http://x/m1", fields: { city: fVal("Ottawa") } },
+        { id: "m2", url: "http://x/m2", fields: { city: fVal("Toronto") }, transport: "browser" },
+      ],
+      B: [
+        { id: "m1", url: "http://x/m1", fields: { city: fVal("Ottawa") } },
+        { id: "m2", url: "http://x/m2", fields: { city: fVal("Toronto") } },
+      ],
+      X: [
+        { id: "m1", url: "http://x/m1", fields: { city: fVal("Ottawa") } },
+        { id: "m2", url: "http://x/m2", fields: { city: fVal("Toronto") } },
+      ],
+    });
+    const s = mixed.runDirs[0]!, b = mixed.runDirs[1]!, x = mixed.runDirs[2]!;
+    const mixedGroups = [{ name: "A1", dirs: [s, b] }];
+    let bareErr: unknown;
+    try {
+      const outBare = join(mixed.root, "out-bare");
+      await runConverge({ runs: mixed.runDirs, mission: mixed.missionPath, out: outBare, groups: mixedGroups });
+    } catch (e) { bareErr = e; }
+    expect(String(bareErr)).toMatch(/mixed or unmarked/);
+    expect(isConvergeUsageError(bareErr)).toBe(true);
+    expect(existsSync(join(mixed.root, "out-bare"))).toBe(false);
+    const cliBase = ["scrap", "converge", "--runs", s, b, x, "--mission", mixed.missionPath];
+    const cliBare = await runCli([...cliBase, "--out", join(mixed.root, "out-cli-bare"),
+      "--group", `A1=${s},${b}`], mixed.root);
+    expect(cliBare.code).toBe(2);
+    expect(cliBare.err).toMatch(/mixed or unmarked/);
+    expect(existsSync(join(mixed.root, "out-cli-bare"))).toBe(false);
+    const cliFlag = await runCli([...cliBase, "--out", join(mixed.root, "out-cli-flag"),
+      "--allow-transport", "browser", "--group", `A1=${s},${b}`], mixed.root);
+    expect(cliFlag.code).toBe(2);
+    expect(cliFlag.err).toMatch(/mixed or unmarked/);
+    expect(existsSync(join(mixed.root, "out-cli-flag"))).toBe(false);
+    const noSum = writeFixture(mission, {
+      S: [{ id: "m1", url: "http://x/m1", fields: { city: fVal("Ottawa") } }],
+      B: [{ id: "m2", url: "http://x/m2", fields: { city: fVal("Toronto") } }],
+      X: [
+        { id: "m1", url: "http://x/m1", fields: { city: fVal("Ottawa") } },
+        { id: "m2", url: "http://x/m2", fields: { city: fVal("Toronto") } },
+      ],
+    }, { omitSummary: ["S"] });
+    const ns = noSum.runDirs[0]!, nb = noSum.runDirs[1]!, nx = noSum.runDirs[2]!;
+    let sumErr: unknown;
+    try {
+      const groups = [{ name: "A1", dirs: [ns, nb] }];
+      await runConverge({ runs: noSum.runDirs, mission: noSum.missionPath, out: join(noSum.root, "out-no"), groups });
+    } catch (e) { sumErr = e; }
+    expect(String(sumErr)).toMatch(/missing summary/);
+    expect(isConvergeUsageError(sumErr)).toBe(true);
+    const cliNoSum = await runCli(["scrap", "converge", "--runs", ns, nb, nx, "--mission", noSum.missionPath,
+      "--out", join(noSum.root, "out-cli-no"), "--group", `A1=${ns},${nb}`], noSum.root);
+    expect(cliNoSum.code).toBe(2);
+    expect(cliNoSum.err).toMatch(/missing summary/);
+    expect(existsSync(join(noSum.root, "out-cli-no"))).toBe(false);
+    const cliOk = await runCli(["scrap", "converge", "--runs", ns, nb, nx, "--mission", noSum.missionPath,
+      "--out", join(noSum.root, "out-ok"), "--allow-missing-digest", "--group", `A1=${ns},${nb}`], noSum.root);
+    expect(cliOk.code).toBe(0);
+    const okSum = readConverge(join(noSum.root, "out-ok")).summary;
+    expect(okSum.missing_digest_runs).toEqual(["S"]);
+    expect(okSum.groups.A1.members[0].run).toBe("S");
+  });
+
+  it("--group before or after --runs, and twice (kills mutants: flag-order, dropped-flag)", async () => {
+    const fx = writeFixture({ fields: ["city"], instruction: "Extract city." }, {
+      S: [{ id: "u1", url: "http://x/1", fields: { city: fVal("Ottawa") } }],
+      B: [{ id: "u2", url: "http://x/2", fields: { city: fVal("Toronto") } }],
+      X: [
+        { id: "u1", url: "http://x/1", fields: { city: fVal("Ottawa") } },
+        { id: "u2", url: "http://x/2", fields: { city: fVal("Toronto") } },
+      ],
+      Y: [{ id: "u3", url: "http://x/3", fields: { city: fVal("Vancouver") } }],
+    });
+    const s = fx.runDirs[0]!, b = fx.runDirs[1]!, x = fx.runDirs[2]!, y = fx.runDirs[3]!;
+    const base = ["scrap", "converge", "--runs", s, b, x, y, "--mission", fx.missionPath];
+    const after = await runCli([...base, "--out", join(fx.root, "out-after"), "--group", `A1=${s},${b}`], fx.root);
+    expect(after.code).toBe(0);
+    const before = await runCli(["scrap", "converge", "--group", `A1=${s},${b}`, "--runs", s, b, x, y,
+      "--mission", fx.missionPath, "--out", join(fx.root, "out-before")], fx.root);
+    expect(before.code).toBe(0);
+    const readBytes = (d: string): string => readFileSync(join(d, "converge.ndjson"), "utf-8");
+    expect(readBytes(join(fx.root, "out-before"))).toBe(readBytes(join(fx.root, "out-after")));
+    const two = await runCli([...base, "--out", join(fx.root, "out-two"), "--group", `A1=${s},${b}`,
+      "--group", `A2=${x},${y}`], fx.root);
+    expect(two.code).toBe(0);
+    expect(readConverge(join(fx.root, "out-two")).summary.runs).toEqual(["A1", "A2"]);
+    const rev = await runCli([...base, "--out", join(fx.root, "out-rev"), "--group", `A2=${x},${y}`,
+      "--group", `A1=${s},${b}`], fx.root);
+    expect(rev.code).toBe(0);
+    expect(readBytes(join(fx.root, "out-rev"))).toBe(readBytes(join(fx.root, "out-two")));
+    expect(Object.keys(readConverge(join(fx.root, "out-rev")).summary.groups)).toEqual(["A1", "A2"]);
   });
 });
