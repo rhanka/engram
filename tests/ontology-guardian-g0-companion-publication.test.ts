@@ -13,7 +13,8 @@ import {
   sealModelGovernance,
   type QualifiedPin,
 } from "../src/model-governance.js";
-import { canonicalBytes } from "../src/ontology-guardian/canonical.js";
+import { isRecord } from "../src/model-schemas.js";
+import { canonicalBytes, tryCanonicalBytes } from "../src/ontology-guardian/canonical.js";
 import type {
   Receipt,
   RegistryAsset,
@@ -68,46 +69,50 @@ const MAP_PIN: Pin = { id: "map", version: "1", contentDigest: "3".repeat(64) };
 const normN = normalizeOntologyProfile(parseOntologyProfile(baseN()));
 const s2 = sealModelGovernance(normN, gov2);
 
-const g3 = baseG2();
-g3.version = "3";
-g3.entities.users.columns.display_name = {
-  pii: { category: "sensitive" },
-  retention: "account",
-  erasure: "delete",
-  protect: { encrypt: true },
-};
-const s3 = sealModelGovernance(normN, g3);
+function sealG(edit: (g: any) => void, profile = normN) {
+  const g = baseG2();
+  edit(g);
+  return sealModelGovernance(profile, g);
+}
 
-const g2Alt = baseG2();
-g2Alt.entities.users.retention.account.days = 180;
-const s2Alt = sealModelGovernance(normN, g2Alt);
-
-const gOtherSeries = baseG2();
-gOtherSeries.id = "other-governance";
-const sOtherSeries = sealModelGovernance(normN, gOtherSeries);
+const s3 = sealG((g) => {
+  g.version = "3";
+  g.entities.users.columns.display_name = {
+    pii: { category: "sensitive" },
+    retention: "account",
+    erasure: "delete",
+    protect: { encrypt: true },
+  };
+});
+const s2Alt = sealG((g) => {
+  g.entities.users.retention.account.days = 180;
+});
+const sOtherSeries = sealG((g) => {
+  g.id = "other-governance";
+});
 
 const altNDoc = baseN();
 altNDoc.id = "other-users-model";
 const altNormN = normalizeOntologyProfile(parseOntologyProfile(altNDoc));
-const altG = baseG2();
-altG.profile = {
-  namespace: "example",
-  pin: { id: altNormN.id, version: altNormN.version, contentDigest: altNormN.profile_hash },
-};
-const sAltN = sealModelGovernance(altNormN, altG);
+const sAltN = sealG((g) => {
+  g.profile = {
+    namespace: "example",
+    pin: { id: altNormN.id, version: altNormN.version, contentDigest: altNormN.profile_hash },
+  };
+}, altNormN);
 
-const altNsG = baseG2();
-altNsG.namespace = "other";
-const sAltNs = sealModelGovernance(normN, altNsG);
-const altIdG = baseG2();
-altIdG.id = "other-id";
-const sAltId = sealModelGovernance(normN, altIdG);
-const altVerG = baseG2();
-altVerG.version = "9";
-const sAltVer = sealModelGovernance(normN, altVerG);
-const altProfNsG = baseG2();
-altProfNsG.profile.namespace = "other";
-const sAltProfNs = sealModelGovernance(normN, altProfNsG);
+const sAltNs = sealG((g) => {
+  g.namespace = "other";
+});
+const sAltId = sealG((g) => {
+  g.id = "other-id";
+});
+const sAltVer = sealG((g) => {
+  g.version = "9";
+});
+const sAltProfNs = sealG((g) => {
+  g.profile.namespace = "other";
+});
 const emptyGBytes = canonicalBytes({
   format: DATA_GOVERNANCE_FORMAT,
   namespace: "example",
@@ -314,6 +319,37 @@ function mutRec(edit: (record: any) => void): () => any {
   };
 }
 
+const mutEnv = (edit: (env: any) => void): (() => any) => mutPub((i) => edit(i.envelope));
+const mutOnt = (edit: (ont: any) => void): (() => any) => mutPub((i) => edit(i.envelope.ontology));
+const mutPrivOnt = (edit: (ont: any) => void): (() => any) => mutPriv((i) => edit(i.envelope.ontology));
+
+function pubWith(
+  gPin: QualifiedPin,
+  bytes: string,
+  opts?: Parameters<typeof mkEnv>[2],
+  profile = normN,
+): CompanionPublishInput {
+  return {
+    envelope: mkEnv("public", gPin, opts),
+    profileRecord: nRec("public"),
+    assets: { [ASSET_PATH]: bytes },
+    profile,
+  };
+}
+
+function pubBytes(bytes: string): CompanionPublishInput {
+  const pin = { id: "users-governance", version: "2", contentDigest: sha256(bytes) };
+  return pubWith({ namespace: "example", pin }, bytes);
+}
+
+function privWithReceipt(
+  over: Record<string, unknown> = {},
+  gPin: QualifiedPin = G2_QPIN,
+  tenant = "tenant-a",
+): CompanionPublishInput {
+  return { ...privInput("public", "private:tenant-a"), tenantReceipt: tReceipt(tenant, gPin, over) };
+}
+
 function policyDigestOf(
   phase: string,
   readinessPolicy: string,
@@ -381,23 +417,9 @@ interface NegativeCase {
   readonly expectedPath?: string;
 }
 
-function tryCanonicalBytes(value: unknown): string | null {
-  try {
-    return canonicalBytes(value);
-  } catch {
-    return null;
-  }
-}
-
-function isPlainObj(value: unknown): value is Record<string, any> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
-  const proto = Object.getPrototypeOf(value);
-  return proto === Object.prototype || proto === null;
-}
-
 function isHashablePin(value: unknown): value is Pin {
   return (
-    isPlainObj(value) &&
+    isRecord(value) &&
     typeof value.id === "string" &&
     typeof value.version === "string" &&
     typeof value.contentDigest === "string" &&
@@ -410,12 +432,12 @@ function recomputeDependentDigests(input: any, skip: readonly DigestSkip[] = [])
   const env = input?.envelope;
   const ont = env?.ontology;
 
-  if (!skipped.has("policyDigest") && isPlainObj(ont) && Array.isArray(ont.ruleSheets)) {
+  if (!skipped.has("policyDigest") && isRecord(ont) && Array.isArray(ont.ruleSheets)) {
     for (const sheet of ont.ruleSheets) {
-      if (!isPlainObj(sheet) || !Array.isArray(sheet.selections)) continue;
+      if (!isRecord(sheet) || !Array.isArray(sheet.selections)) continue;
       for (const sel of sheet.selections) {
         if (
-          isPlainObj(sel) &&
+          isRecord(sel) &&
           typeof sel.phase === "string" &&
           typeof sel.readinessPolicy === "string" &&
           Array.isArray(sel.settings) &&
@@ -429,7 +451,7 @@ function recomputeDependentDigests(input: any, skip: readonly DigestSkip[] = [])
     if (
       typeof firstPolicy === "string" &&
       Array.isArray(ont.receipts) &&
-      isPlainObj(ont.receipts[0]) &&
+      isRecord(ont.receipts[0]) &&
       ont.receipts[0].severityPolicyDigest !== null
     ) {
       ont.receipts[0].severityPolicyDigest = firstPolicy;
@@ -438,8 +460,8 @@ function recomputeDependentDigests(input: any, skip: readonly DigestSkip[] = [])
 
   if (
     !skipped.has("pinsDigest") &&
-    isPlainObj(ont) &&
-    isPlainObj(ont.digests) &&
+    isRecord(ont) &&
+    isRecord(ont.digests) &&
     Array.isArray(ont.stack) &&
     ont.stack.every(isHashablePin) &&
     Array.isArray(ont.ruleSheets)
@@ -447,7 +469,7 @@ function recomputeDependentDigests(input: any, skip: readonly DigestSkip[] = [])
     const sheetPins: Pin[] = [];
     let allSheetPinsOk = true;
     for (const s of ont.ruleSheets) {
-      if (isPlainObj(s) && isHashablePin(s.sheetPin)) {
+      if (isRecord(s) && isHashablePin(s.sheetPin)) {
         sheetPins.push(s.sheetPin);
       } else {
         allSheetPinsOk = false;
@@ -459,14 +481,12 @@ function recomputeDependentDigests(input: any, skip: readonly DigestSkip[] = [])
       const lin = ont.lineage;
       if (
         ont.visibility !== "public" &&
-        isPlainObj(lin) &&
-        isPlainObj(lin.derivationRef) &&
+        isRecord(lin) &&
+        isRecord(lin.derivationRef) &&
         typeof lin.derivationRef.deltaDigest === "string" &&
         tryCanonicalBytes(lin.derivationRef.deltaDigest) !== null
       ) {
-        const mapDig = isPlainObj(lin.derivationRef.mappingRef)
-          ? lin.derivationRef.mappingRef.contentDigest
-          : null;
+        const mapDig = isRecord(lin.derivationRef.mappingRef) ? lin.derivationRef.mappingRef.contentDigest : null;
         if (mapDig === null || (typeof mapDig === "string" && tryCanonicalBytes(mapDig) !== null)) {
           computed = pinsDigestOf({
             layers: ont.stack,
@@ -475,16 +495,12 @@ function recomputeDependentDigests(input: any, skip: readonly DigestSkip[] = [])
             mappingDigest: mapDig,
           });
         }
-      } else if (!isPlainObj(lin) || lin.derivation === undefined) {
+      } else if (!isRecord(lin) || lin.derivation === undefined) {
         computed = pinsDigestOf({ layers: ont.stack, ruleSheets: sheetPins });
       }
       if (computed !== null) {
         ont.digests.pinsDigest = computed;
-        if (
-          Array.isArray(ont.receipts) &&
-          isPlainObj(ont.receipts[0]) &&
-          isPlainObj(ont.receipts[0].evaluatedStack)
-        ) {
+        if (Array.isArray(ont.receipts) && isRecord(ont.receipts[0]) && isRecord(ont.receipts[0].evaluatedStack)) {
           ont.receipts[0].evaluatedStack.stack = structuredClone(ont.stack);
           ont.receipts[0].evaluatedStack.pinsDigest = computed;
         }
@@ -494,10 +510,10 @@ function recomputeDependentDigests(input: any, skip: readonly DigestSkip[] = [])
 
   if (
     !skipped.has("resultingDigests") &&
-    isPlainObj(ont) &&
-    isPlainObj(ont.digests) &&
-    isPlainObj(ont.lineage) &&
-    isPlainObj(ont.lineage.derivation) &&
+    isRecord(ont) &&
+    isRecord(ont.digests) &&
+    isRecord(ont.lineage) &&
+    isRecord(ont.lineage.derivation) &&
     "resultingDigests" in ont.lineage.derivation
   ) {
     ont.lineage.derivation.resultingDigests = structuredClone(ont.digests);
@@ -505,17 +521,15 @@ function recomputeDependentDigests(input: any, skip: readonly DigestSkip[] = [])
 
   if (
     !skipped.has("assetSha256") &&
-    isPlainObj(env) &&
-    isPlainObj(input.assets) &&
+    isRecord(env) &&
+    isRecord(input.assets) &&
     typeof input.assets[ASSET_PATH] === "string" &&
     Array.isArray(env.assets) &&
-    isPlainObj(env.extensions) &&
-    isPlainObj(env.extensions[DATA_GOVERNANCE_FORMAT]) &&
-    isPlainObj(env.extensions[DATA_GOVERNANCE_FORMAT].pin)
+    isRecord(env.extensions) &&
+    isRecord(env.extensions[DATA_GOVERNANCE_FORMAT]) &&
+    isRecord(env.extensions[DATA_GOVERNANCE_FORMAT].pin)
   ) {
-    const govAsset = env.assets.find(
-      (a: unknown) => isPlainObj(a) && a.role === DATA_GOVERNANCE_ASSET_ROLE,
-    );
+    const govAsset = env.assets.find((a: unknown) => isRecord(a) && a.role === DATA_GOVERNANCE_ASSET_ROLE);
     if (govAsset) {
       const digest = sha256(input.assets[ASSET_PATH]);
       govAsset.sha256 = digest;
@@ -525,23 +539,46 @@ function recomputeDependentDigests(input: any, skip: readonly DigestSkip[] = [])
 
   if (
     !skipped.has("receipt") &&
-    isPlainObj(input.tenantReceipt) &&
-    isPlainObj(env) &&
-    isPlainObj(env.extensions) &&
-    isPlainObj(env.extensions[DATA_GOVERNANCE_FORMAT])
+    isRecord(input.tenantReceipt) &&
+    isRecord(env) &&
+    isRecord(env.extensions) &&
+    isRecord(env.extensions[DATA_GOVERNANCE_FORMAT])
   ) {
     input.tenantReceipt.governancePin = structuredClone(env.extensions[DATA_GOVERNANCE_FORMAT]);
   }
 
-  if (!skipped.has("entryDigest") && isPlainObj(env) && !("entryDigest" in env)) {
+  if (!skipped.has("entryDigest") && isRecord(env) && !("entryDigest" in env)) {
     const envBytes = tryCanonicalBytes(env);
-    if (envBytes !== null) {
-      input.expectedEntryDigest = sha256(envBytes);
-    }
+    if (envBytes !== null) input.expectedEntryDigest = sha256(envBytes);
   }
 }
 
+function mkPubSheet(
+  pin: Pin,
+  ruleIds: readonly string[],
+  settings: readonly object[],
+  severityPolicyDigest: string,
+  rules: readonly { readonly ruleId: string; readonly severity: string }[],
+) {
+  return {
+    sheetPin: structuredClone(pin),
+    ruleIds: [...ruleIds],
+    selections: [
+      {
+        phase: "import",
+        readinessPolicy: "accept",
+        settings: structuredClone(settings),
+        severityPolicyDigest,
+        rules: structuredClone(rules),
+      },
+    ],
+  };
+}
+
 function buildBaseline(kind: BaselineKind): any {
+  const r1 = { ruleId: "r1", severity: "error" };
+  const r2 = { ruleId: "r2", severity: "warning" };
+  const verdictOf = (r: { ruleId: string; severity: string }) => ({ ...r, verdict: "pass", parity: "proven" });
   let out: any;
   if (kind === "pub") {
     out = pubInput();
@@ -551,73 +588,19 @@ function buildBaseline(kind: BaselineKind): any {
     out = { ...pubInput(), admission: { qualificationScope: SCOPE } };
   } else if (kind === "pubSheet") {
     out = pubInput();
-    out.envelope.ontology.ruleSheets = [
-      {
-        sheetPin: structuredClone(SHEET_A_PIN),
-        ruleIds: ["r1"],
-        selections: [
-          {
-            phase: "import",
-            readinessPolicy: "accept",
-            settings: structuredClone(SINGLE_SETTINGS),
-            severityPolicyDigest: SINGLE_POLICY,
-            rules: [{ ruleId: "r1", severity: "error" }],
-          },
-        ],
-      },
-    ];
+    out.envelope.ontology.ruleSheets = [mkPubSheet(SHEET_A_PIN, ["r1"], SINGLE_SETTINGS, SINGLE_POLICY, [r1])];
     out.envelope.ontology.receipts = [
-      corpusReceipt("pass", {
-        severityPolicyDigest: SINGLE_POLICY,
-        ruleVerdicts: [{ ruleId: "r1", severity: "error", verdict: "pass", parity: "proven" }],
-      }),
+      corpusReceipt("pass", { severityPolicyDigest: SINGLE_POLICY, ruleVerdicts: [verdictOf(r1)] }),
     ];
   } else if (kind === "pubSheetDual" || kind === "pubSheetOverlap") {
-    const sheet0RuleIds = kind === "pubSheetOverlap" ? ["r1", "r2"] : ["r1"];
-    const sheet0Rules =
-      kind === "pubSheetOverlap"
-        ? [
-            { ruleId: "r1", severity: "error" },
-            { ruleId: "r2", severity: "warning" },
-          ]
-        : [{ ruleId: "r1", severity: "error" }];
+    const overlap = kind === "pubSheetOverlap";
     out = pubInput();
     out.envelope.ontology.ruleSheets = [
-      {
-        sheetPin: structuredClone(SHEET_A_PIN),
-        ruleIds: sheet0RuleIds,
-        selections: [
-          {
-            phase: "import",
-            readinessPolicy: "accept",
-            settings: structuredClone(DUAL_SETTINGS),
-            severityPolicyDigest: DUAL_POLICY,
-            rules: sheet0Rules,
-          },
-        ],
-      },
-      {
-        sheetPin: structuredClone(SHEET_B_PIN),
-        ruleIds: ["r2"],
-        selections: [
-          {
-            phase: "import",
-            readinessPolicy: "accept",
-            settings: structuredClone(DUAL_SETTINGS),
-            severityPolicyDigest: DUAL_POLICY,
-            rules: [{ ruleId: "r2", severity: "warning" }],
-          },
-        ],
-      },
+      mkPubSheet(SHEET_A_PIN, overlap ? ["r1", "r2"] : ["r1"], DUAL_SETTINGS, DUAL_POLICY, overlap ? [r1, r2] : [r1]),
+      mkPubSheet(SHEET_B_PIN, ["r2"], DUAL_SETTINGS, DUAL_POLICY, [r2]),
     ];
     out.envelope.ontology.receipts = [
-      corpusReceipt("pass", {
-        severityPolicyDigest: DUAL_POLICY,
-        ruleVerdicts: [
-          { ruleId: "r1", severity: "error", verdict: "pass", parity: "proven" },
-          { ruleId: "r2", severity: "warning", verdict: "pass", parity: "proven" },
-        ],
-      }),
+      corpusReceipt("pass", { severityPolicyDigest: DUAL_POLICY, ruleVerdicts: [verdictOf(r1), verdictOf(r2)] }),
     ];
   } else if (kind === "privSheet") {
     out = privInput("public", "private:tenant-a");
@@ -648,11 +631,7 @@ function buildBaseline(kind: BaselineKind): any {
     out = privInput("public", "private:tenant-a");
     out.envelope.ontology.lineage = {
       parents: [],
-      derivationRef: {
-        base: structuredClone(N_PIN),
-        deltaDigest: DELTA_D,
-        mappingRef: structuredClone(MAP_PIN),
-      },
+      derivationRef: { base: structuredClone(N_PIN), deltaDigest: DELTA_D, mappingRef: structuredClone(MAP_PIN) },
       mappings: [],
       migrations: [],
     };
@@ -1582,299 +1561,115 @@ it("closes §5.2 envelope, qualified extensions, §1.4 profileRecord, and path h
       () => Object.assign(Object.create({}), pubInput()),
       "invalid-input",
     ],
-    [
-      "null envelope (kills M08_skip_env_isRecord / M54)",
-      mutPub((i) => {
-        i.envelope = null;
-      }),
-      "invalid-envelope",
-    ],
-    [
-      "self-embedded entryDigest",
-      mutPub((i) => {
-        i.envelope.entryDigest = "a".repeat(64);
-      }),
-      "entry-digest-self-embedded",
-    ],
-    [
-      "extra envelope key (kills M09_skip_env_extraKey)",
-      mutPub((i) => {
-        i.envelope.extra = 1;
-      }),
-      "invalid-envelope",
-    ],
+    ["null envelope (kills M08_skip_env_isRecord / M54)", mutPub((i) => { i.envelope = null; }), "invalid-envelope"],
+    ["self-embedded entryDigest", mutEnv((e) => { e.entryDigest = "a".repeat(64); }), "entry-digest-self-embedded"],
+    ["extra envelope key (kills M09_skip_env_extraKey)", mutEnv((e) => { e.extra = 1; }), "invalid-envelope"],
     [
       "bad envelope format (kills M10 / M57_skip_env_format)",
-      mutPub((i) => {
-        i.envelope.format = "other/v1";
-      }),
+      mutEnv((e) => { e.format = "other/v1"; }),
       "invalid-envelope",
     ],
-    [
-      "bad contractVersion",
-      mutPub((i) => {
-        i.envelope.contractVersion = "latest";
-      }),
-      "invalid-envelope",
-    ],
-    [
-      "bad envelope kind",
-      mutPub((i) => {
-        i.envelope.kind = "skill";
-      }),
-      "invalid-envelope",
-    ],
-    [
-      "blank envelope id",
-      mutPub((i) => {
-        i.envelope.id = " ";
-      }),
-      "invalid-envelope",
-    ],
-    [
-      "blank envelope name",
-      mutPub((i) => {
-        i.envelope.name = "";
-      }),
-      "invalid-envelope",
-    ],
-    [
-      "blank envelope description",
-      mutPub((i) => {
-        i.envelope.description = "";
-      }),
-      "invalid-envelope",
-    ],
-    [
-      "floating entryVersion",
-      () => ({ ...pubInput(), envelope: mkEnv("public", G2_QPIN, { entryVersion: "latest" }) }),
-      "invalid-envelope",
-    ],
-    [
-      "bad publisher packageVersion",
-      mutPub((i) => {
-        i.envelope.publisher.packageVersion = "^0.28.0";
-      }),
-      "invalid-envelope",
-    ],
-    [
-      "extra publisher field",
-      mutPub((i) => {
-        i.envelope.publisher.extra = 1;
-      }),
-      "invalid-envelope",
-    ],
-    [
-      "missing compatibility (kills F1.1)",
-      mutPub((i) => {
-        delete i.envelope.compatibility;
-      }),
-      "invalid-envelope",
-    ],
+    ["bad contractVersion", mutEnv((e) => { e.contractVersion = "latest"; }), "invalid-envelope"],
+    ["bad envelope kind", mutEnv((e) => { e.kind = "skill"; }), "invalid-envelope"],
+    ["blank envelope id", mutEnv((e) => { e.id = " "; }), "invalid-envelope"],
+    ["blank envelope name", mutEnv((e) => { e.name = ""; }), "invalid-envelope"],
+    ["blank envelope description", mutEnv((e) => { e.description = ""; }), "invalid-envelope"],
+    ["floating entryVersion", () => pubWith(G2_QPIN, s2.bytes, { entryVersion: "latest" }), "invalid-envelope"],
+    ["bad publisher packageVersion", mutEnv((e) => { e.publisher.packageVersion = "^0.28.0"; }), "invalid-envelope"],
+    ["extra publisher field", mutEnv((e) => { e.publisher.extra = 1; }), "invalid-envelope"],
+    ["missing compatibility (kills F1.1)", mutEnv((e) => { delete e.compatibility; }), "invalid-envelope"],
     [
       "bad compatibility entryContract",
-      mutPub((i) => {
-        i.envelope.compatibility.entryContract = "^1.1.4";
-      }),
+      mutEnv((e) => { e.compatibility.entryContract = "^1.1.4"; }),
       "invalid-envelope",
     ],
     [
       "bad compatibility packages entry",
-      mutPub((i) => {
-        i.envelope.compatibility.packages = [{ name: "a", range: "" }];
-      }),
+      mutEnv((e) => { e.compatibility.packages = [{ name: "a", range: "" }]; }),
       "invalid-envelope",
     ],
-    [
-      "bad compatibility schemaProfiles",
-      mutPub((i) => {
-        i.envelope.compatibility.schemaProfiles = [""];
-      }),
-      "invalid-envelope",
-    ],
+    ["bad compatibility schemaProfiles", mutEnv((e) => { e.compatibility.schemaProfiles = [""]; }), "invalid-envelope"],
     [
       "bad compatibility requiredHostFeatures (kills M17)",
-      mutPub((i) => {
-        i.envelope.compatibility.requiredHostFeatures = [""];
-      }),
+      mutEnv((e) => { e.compatibility.requiredHostFeatures = [""]; }),
       "invalid-envelope",
     ],
     [
       "bad compatibility optionalHostFeatures (kills M18)",
-      mutPub((i) => {
-        i.envelope.compatibility.optionalHostFeatures = [""];
-      }),
+      mutEnv((e) => { e.compatibility.optionalHostFeatures = [""]; }),
       "invalid-envelope",
     ],
-    [
-      "missing parameters (kills F1.1)",
-      mutPub((i) => {
-        delete i.envelope.parameters;
-      }),
-      "invalid-envelope",
-    ],
-    [
-      "bad parameters schemaVersion",
-      mutPub((i) => {
-        i.envelope.parameters.schemaVersion = "latest";
-      }),
-      "invalid-envelope",
-    ],
-    [
-      "bad parameters schema (kills M20)",
-      mutPub((i) => {
-        i.envelope.parameters.schema = [];
-      }),
-      "invalid-envelope",
-    ],
-    [
-      "bad parameters defaults",
-      mutPub((i) => {
-        i.envelope.parameters.defaults = [];
-      }),
-      "invalid-envelope",
-    ],
-    [
-      "missing bindings (kills F1.1)",
-      mutPub((i) => {
-        delete i.envelope.bindings;
-      }),
-      "invalid-envelope",
-    ],
+    ["missing parameters (kills F1.1)", mutEnv((e) => { delete e.parameters; }), "invalid-envelope"],
+    ["bad parameters schemaVersion", mutEnv((e) => { e.parameters.schemaVersion = "latest"; }), "invalid-envelope"],
+    ["bad parameters schema (kills M20)", mutEnv((e) => { e.parameters.schema = []; }), "invalid-envelope"],
+    ["bad parameters defaults", mutEnv((e) => { e.parameters.defaults = []; }), "invalid-envelope"],
+    ["missing bindings (kills F1.1)", mutEnv((e) => { delete e.bindings; }), "invalid-envelope"],
     [
       "bad binding required flag",
-      mutPub((i) => {
-        i.envelope.bindings = [{ key: "k", contract: "c", required: "yes" }];
-      }),
+      mutEnv((e) => { e.bindings = [{ key: "k", contract: "c", required: "yes" }]; }),
       "invalid-envelope",
     ],
-    [
-      "non-array assets",
-      mutPub((i) => {
-        i.envelope.assets = {};
-      }),
-      "invalid-envelope",
-    ],
+    ["non-array assets", mutEnv((e) => { e.assets = {}; }), "invalid-envelope"],
     [
       "non-string asset path (kills isRelPath typeof guard)",
-      mutPub((i) => {
-        i.envelope.assets = [assetOf({ path: 123 as any })];
-      }),
+      mutEnv((e) => { e.assets = [assetOf({ path: 123 as any })]; }),
       "invalid-envelope",
     ],
     [
       "duplicate asset path (kills F4.2)",
-      () => ({
-        ...pubInput(),
-        envelope: mkEnv("public", G2_QPIN, {
-          assets: [
-            assetOf(),
-            assetOf({ role: "notes", mediaType: "text/plain" }),
-          ],
-        }),
-      }),
+      () => pubWith(G2_QPIN, s2.bytes, { assets: [assetOf(), assetOf({ role: "notes", mediaType: "text/plain" })] }),
       "invalid-envelope",
     ],
-    [
-      "missing requiredExtensions",
-      mutPub((i) => {
-        delete i.envelope.requiredExtensions;
-      }),
-      "missing-required-extension",
-    ],
-    [
-      "empty requiredExtensions",
-      mutPub((i) => {
-        i.envelope.requiredExtensions = [];
-      }),
-      "missing-required-extension",
-    ],
+    ["missing requiredExtensions", mutEnv((e) => { delete e.requiredExtensions; }), "missing-required-extension"],
+    ["empty requiredExtensions", mutEnv((e) => { e.requiredExtensions = []; }), "missing-required-extension"],
     [
       "duplicate requiredExtensions (kills M47_skip_reqExt_dup)",
-      mutPub((i) => {
-        i.envelope.requiredExtensions = [DATA_GOVERNANCE_FORMAT, DATA_GOVERNANCE_FORMAT];
-      }),
+      mutEnv((e) => { e.requiredExtensions = [DATA_GOVERNANCE_FORMAT, DATA_GOVERNANCE_FORMAT]; }),
       "missing-required-extension",
     ],
     [
       "unknown requiredExtension",
-      mutPub((i) => {
-        i.envelope.extensions["other.ext/1"] = {};
-        i.envelope.requiredExtensions = [DATA_GOVERNANCE_FORMAT, "other.ext/1"];
+      mutEnv((e) => {
+        e.extensions["other.ext/1"] = {};
+        e.requiredExtensions = [DATA_GOVERNANCE_FORMAT, "other.ext/1"];
       }),
       "missing-required-extension",
     ],
     [
       "wrong single requiredExtension",
-      mutPub((i) => {
-        i.envelope.requiredExtensions = ["other.ext/1"];
-      }),
+      mutEnv((e) => { e.requiredExtensions = ["other.ext/1"]; }),
       "missing-required-extension",
     ],
     [
       "missing extension value",
-      mutPub((i) => {
-        delete i.envelope.extensions[DATA_GOVERNANCE_FORMAT];
-      }),
+      mutEnv((e) => { delete e.extensions[DATA_GOVERNANCE_FORMAT]; }),
       "missing-required-extension",
     ],
     [
       "proto extensions",
-      mutPub((i) => {
-        i.envelope.extensions = Object.create({ [DATA_GOVERNANCE_FORMAT]: G2_QPIN });
-      }),
+      mutEnv((e) => { e.extensions = Object.create({ [DATA_GOVERNANCE_FORMAT]: G2_QPIN }); }),
       "missing-required-extension",
     ],
-    [
-      "unqualified extension key (kills F1.1)",
-      mutPub((i) => {
-        i.envelope.extensions.unqualified = 1;
-      }),
-      "invalid-extension",
-    ],
+    ["unqualified extension key (kills F1.1)", mutEnv((e) => { e.extensions.unqualified = 1; }), "invalid-extension"],
     [
       "slash-only unqualified extension key (kills F1.1)",
-      mutPub((i) => {
-        i.envelope.extensions["other/1"] = 1;
-      }),
+      mutEnv((e) => { e.extensions["other/1"] = 1; }),
       "invalid-extension",
     ],
     [
       "floating G pin version",
-      mutPub((i) => {
-        i.envelope.extensions[DATA_GOVERNANCE_FORMAT].pin.version = "latest";
-      }),
+      mutEnv((e) => { e.extensions[DATA_GOVERNANCE_FORMAT].pin.version = "latest"; }),
       "invalid-extension",
     ],
     [
       "range G pin version",
-      mutPub((i) => {
-        i.envelope.extensions[DATA_GOVERNANCE_FORMAT].pin.version = "^2";
-      }),
+      mutEnv((e) => { e.extensions[DATA_GOVERNANCE_FORMAT].pin.version = "^2"; }),
       "invalid-extension",
     ],
     ["non-record profileRecord", () => ({ ...pubInput(), profileRecord: null }), "invalid-profile-record"],
-    [
-      "extra profileRecord key (kills F4.1)",
-      mutRec((r) => {
-        r.extra = 1;
-      }),
-      "invalid-profile-record",
-    ],
-    [
-      "draft profileRecord (kills F4.1)",
-      mutRec((r) => {
-        r.lifecycle = "draft";
-      }),
-      "invalid-profile-record",
-    ],
-    [
-      "missing profileRecord lifecycle (kills F4.1)",
-      mutRec((r) => {
-        delete r.lifecycle;
-      }),
-      "invalid-profile-record",
-    ],
+    ["extra profileRecord key (kills F4.1)", mutRec((r) => { r.extra = 1; }), "invalid-profile-record"],
+    ["draft profileRecord (kills F4.1)", mutRec((r) => { r.lifecycle = "draft"; }), "invalid-profile-record"],
+    ["missing profileRecord lifecycle (kills F4.1)", mutRec((r) => { delete r.lifecycle; }), "invalid-profile-record"],
     [
       "superseded profileRecord missing migrationRef (kills F4.1)",
       mutRec((r) => {
@@ -1883,55 +1678,25 @@ it("closes §5.2 envelope, qualified extensions, §1.4 profileRecord, and path h
       }),
       "invalid-profile-record",
     ],
-    [
-      "profileRecord missing owner (kills F4.1)",
-      mutRec((r) => {
-        delete r.owner;
-      }),
-      "invalid-profile-record",
-    ],
+    ["profileRecord missing owner (kills F4.1)", mutRec((r) => { delete r.owner; }), "invalid-profile-record"],
     [
       "profileRecord bad completeness (kills F4.1)",
-      mutRec((r) => {
-        r.completeness = "partial";
-      }),
+      mutRec((r) => { r.completeness = "partial"; }),
       "invalid-profile-record",
     ],
     [
       "profileRecord empty profileRef.canonicalRef (kills F4.1)",
-      mutRec((r) => {
-        r.profileRef.canonicalRef = "";
-      }),
+      mutRec((r) => { r.profileRef.canonicalRef = ""; }),
       "invalid-profile-record",
     ],
-    [
-      "profileRecord missing corpusRef (kills F4.1)",
-      mutRec((r) => {
-        delete r.corpusRef;
-      }),
-      "invalid-profile-record",
-    ],
+    ["profileRecord missing corpusRef (kills F4.1)", mutRec((r) => { delete r.corpusRef; }), "invalid-profile-record"],
     [
       "profileRecord unresolved digests (kills F4.1)",
-      mutRec((r) => {
-        r.digests.resultEvidence = { evidenceState: "unresolved" };
-      }),
+      mutRec((r) => { r.digests.resultEvidence = { evidenceState: "unresolved" }; }),
       "invalid-profile-record",
     ],
-    [
-      "profileRecord missing lineage (kills F4.1)",
-      mutRec((r) => {
-        delete r.lineage;
-      }),
-      "invalid-profile-record",
-    ],
-    [
-      "profileRecord bad consumers (kills F4.1)",
-      mutRec((r) => {
-        r.consumers = [""];
-      }),
-      "invalid-profile-record",
-    ],
+    ["profileRecord missing lineage (kills F4.1)", mutRec((r) => { delete r.lineage; }), "invalid-profile-record"],
+    ["profileRecord bad consumers (kills F4.1)", mutRec((r) => { r.consumers = [""]; }), "invalid-profile-record"],
     [
       "N pin digest mismatch vs record",
       mutRec((r) => {
@@ -1940,25 +1705,11 @@ it("closes §5.2 envelope, qualified extensions, §1.4 profileRecord, and path h
       }),
       "pin-mismatch",
     ],
-    [
-      "N namespace swap vs record",
-      mutRec((r) => {
-        r.namespace = "other";
-      }),
-      "pin-mismatch",
-    ],
-    [
-      "N id mismatch vs record (kills M56_skip_nRec_id_version)",
-      mutRec((r) => {
-        r.id = "other-id";
-      }),
-      "pin-mismatch",
-    ],
+    ["N namespace swap vs record", mutRec((r) => { r.namespace = "other"; }), "pin-mismatch"],
+    ["N id mismatch vs record (kills M56_skip_nRec_id_version)", mutRec((r) => { r.id = "other-id"; }), "pin-mismatch"],
     [
       "N version mismatch vs record (kills M56_skip_nRec_id_version)",
-      mutRec((r) => {
-        r.version = "3";
-      }),
+      mutRec((r) => { r.version = "3"; }),
       "pin-mismatch",
     ],
   ]);
@@ -2019,284 +1770,106 @@ it("closes §5.3 OntologyPayload, lifecycle, lineage, pinsDigest, and public/pri
   expect(validateCompanionPublication(supPub).ok, "valid superseded payload").toBe(true);
 
   // kills: rejecting valid public derivation with all 4 DeltaOperation arms
-  const pubDeriv: any = pubInput();
-  pubDeriv.envelope.ontology.lineage = {
-    parents: [{ id: "base", version: "1", contentDigest: "1".repeat(64) }],
-    derivation: {
-      base: { id: "base", version: "1", contentDigest: "1".repeat(64) },
-      operations: [
-        { op: "add", subject: "t1", declaration: { kind: "text" } },
-        { op: "narrow", subject: "t1", constraint: { maxLength: 64 } },
-        { op: "deprecate-term", subject: "t2", reason: "renamed" },
-        {
-          op: "rename-with-mapping",
-          subject: "old_col",
-          newName: "new_col",
-          mappingEntry: { kind: "rename", from: "old_col", to: "new_col" },
-        },
-      ],
-      resultingDigests: structuredClone(pubDeriv.envelope.ontology.digests),
-    },
-    mappings: ["m@1"],
-    migrations: ["mig@1"],
-  };
-  expect(validateCompanionPublication(pubDeriv).ok, "valid public derivation").toBe(true);
+  expect(validateCompanionPublication(buildBaseline("pubDeriv")).ok, "valid public derivation").toBe(true);
 
   // kills: rejecting valid private derivationRef with recomputed pinsDigest
   const privDeriv = buildBaseline("privDeriv");
   expect(validateCompanionPublication(privDeriv).ok, "valid private derivationRef").toBe(true);
 
   const loneSurrogate = '{"x":"\\ud800"}';
-  const lsPin: QualifiedPin = {
-    namespace: "example",
-    pin: { id: "users-governance", version: "2", contentDigest: sha256(loneSurrogate) },
-  };
   const prettyBadG = JSON.stringify({ invalid: true }, null, 2);
-  const prettyBadPin: QualifiedPin = {
-    namespace: "example",
-    pin: { id: "users-governance", version: "2", contentDigest: sha256(prettyBadG) },
-  };
-  const numJson = "123";
-  const numPin: QualifiedPin = {
-    namespace: "example",
-    pin: { id: "users-governance", version: "2", contentDigest: sha256(numJson) },
-  };
 
   assertRefuses([
-    [
-      "non-record ontology",
-      mutPub((i) => {
-        i.envelope.ontology = null;
-      }),
-      "invalid-envelope",
-    ],
-    [
-      "unknown ontology payload field",
-      mutPub((i) => {
-        i.envelope.ontology.governance = gov2;
-      }),
-      "invalid-envelope",
-    ],
-    [
-      "missing canonicalRef (kills F1.2)",
-      mutPub((i) => {
-        delete i.envelope.ontology.canonicalRef;
-      }),
-      "invalid-envelope",
-    ],
-    [
-      "missing owner (kills F1.2)",
-      mutPub((i) => {
-        delete i.envelope.ontology.owner;
-      }),
-      "invalid-envelope",
-    ],
-    [
-      "bad optional domain",
-      mutPub((i) => {
-        i.envelope.ontology.domain = "";
-      }),
-      "invalid-envelope",
-    ],
-    [
-      "bad profileShape",
-      mutPub((i) => {
-        i.envelope.ontology.profileShape = "diagram-profile";
-      }),
-      "invalid-envelope",
-    ],
-    [
-      "bad artifactKind",
-      mutPub((i) => {
-        i.envelope.ontology.artifactKind = "base";
-      }),
-      "invalid-envelope",
-    ],
-    [
-      "empty stack",
-      mutPub((i) => {
-        i.envelope.ontology.stack = [];
-      }),
-      "invalid-envelope",
-    ],
-    [
-      "extra artifactBinding field",
-      mutPub((i) => {
-        i.envelope.ontology.artifactBinding.extra = 1;
-      }),
-      "invalid-envelope",
-    ],
+    ["non-record ontology", mutEnv((e) => { e.ontology = null; }), "invalid-envelope"],
+    ["unknown ontology payload field", mutOnt((o) => { o.governance = gov2; }), "invalid-envelope"],
+    ["missing canonicalRef (kills F1.2)", mutOnt((o) => { delete o.canonicalRef; }), "invalid-envelope"],
+    ["missing owner (kills F1.2)", mutOnt((o) => { delete o.owner; }), "invalid-envelope"],
+    ["bad optional domain", mutOnt((o) => { o.domain = ""; }), "invalid-envelope"],
+    ["bad profileShape", mutOnt((o) => { o.profileShape = "diagram-profile"; }), "invalid-envelope"],
+    ["bad artifactKind", mutOnt((o) => { o.artifactKind = "base"; }), "invalid-envelope"],
+    ["empty stack", mutOnt((o) => { o.stack = []; }), "invalid-envelope"],
+    ["extra artifactBinding field", mutOnt((o) => { o.artifactBinding.extra = 1; }), "invalid-envelope"],
     [
       "public with relationMatrixRef (kills F1.2)",
-      mutPub((i) => {
-        i.envelope.ontology.artifactBinding.relationMatrixRef = "owner:m/1";
-      }),
+      mutOnt((o) => { o.artifactBinding.relationMatrixRef = "owner:m/1"; }),
       "invalid-envelope",
     ],
     [
       "private missing relationMatrixRef (kills F1.2)",
-      mutPriv((i) => {
-        delete i.envelope.ontology.artifactBinding.relationMatrixRef;
-      }),
+      mutPrivOnt((o) => { delete o.artifactBinding.relationMatrixRef; }),
       "invalid-envelope",
     ],
-    [
-      "missing provenance (kills F1.2)",
-      mutPub((i) => {
-        delete i.envelope.ontology.provenance;
-      }),
-      "invalid-envelope",
-    ],
-    [
-      "missing conflictPolicy (kills F1.2)",
-      mutPub((i) => {
-        delete i.envelope.ontology.conflictPolicy;
-      }),
-      "invalid-envelope",
-    ],
-    [
-      "bad completeness (kills F1.2)",
-      mutPub((i) => {
-        i.envelope.ontology.completeness = "bad";
-      }),
-      "invalid-envelope",
-    ],
-    [
-      "missing corpusRef (kills F1.2)",
-      mutPub((i) => {
-        delete i.envelope.ontology.corpusRef;
-      }),
-      "invalid-envelope",
-    ],
-    [
-      "missing migrations (kills F1.2)",
-      mutPub((i) => {
-        delete i.envelope.ontology.migrations;
-      }),
-      "invalid-envelope",
-    ],
-    [
-      "missing consumers (kills F1.2)",
-      mutPub((i) => {
-        delete i.envelope.ontology.consumers;
-      }),
-      "invalid-envelope",
-    ],
-    [
-      "missing compatibility (kills F1.2)",
-      mutPub((i) => {
-        delete i.envelope.ontology.compatibility;
-      }),
-      "invalid-envelope",
-    ],
-    [
-      "missing linkedTools (kills F1.2)",
-      mutPub((i) => {
-        delete i.envelope.ontology.linkedTools;
-      }),
-      "invalid-envelope",
-    ],
+    ["missing provenance (kills F1.2)", mutOnt((o) => { delete o.provenance; }), "invalid-envelope"],
+    ["missing conflictPolicy (kills F1.2)", mutOnt((o) => { delete o.conflictPolicy; }), "invalid-envelope"],
+    ["bad completeness (kills F1.2)", mutOnt((o) => { o.completeness = "bad"; }), "invalid-envelope"],
+    ["missing corpusRef (kills F1.2)", mutOnt((o) => { delete o.corpusRef; }), "invalid-envelope"],
+    ["missing migrations (kills F1.2)", mutOnt((o) => { delete o.migrations; }), "invalid-envelope"],
+    ["missing consumers (kills F1.2)", mutOnt((o) => { delete o.consumers; }), "invalid-envelope"],
+    ["missing compatibility (kills F1.2)", mutOnt((o) => { delete o.compatibility; }), "invalid-envelope"],
+    ["missing linkedTools (kills F1.2)", mutOnt((o) => { delete o.linkedTools; }), "invalid-envelope"],
     [
       "excluded licenceClosure licence",
-      mutPub((i) => {
-        i.envelope.ontology.licenceClosure = {
-          licences: ["GPL-3.0"],
-          closureDigest: "e".repeat(64),
-        };
-      }),
+      mutOnt((o) => { o.licenceClosure = { licences: ["GPL-3.0"], closureDigest: "e".repeat(64) }; }),
       "invalid-envelope",
     ],
     [
       "invalid coverage",
-      mutPub((i) => {
-        i.envelope.ontology.coverage = { declaredLimits: "", coverageDigest: "f".repeat(64) };
-      }),
+      mutOnt((o) => { o.coverage = { declaredLimits: "", coverageDigest: "f".repeat(64) }; }),
       "invalid-envelope",
     ],
-    [
-      "non-object receipt item",
-      mutPub((i) => {
-        i.envelope.ontology.receipts = ["bad"];
-      }),
-      "invalid-envelope",
-    ],
+    ["non-object receipt item", mutOnt((o) => { o.receipts = ["bad"]; }), "invalid-envelope"],
     [
       "published with unresolved resultEvidence (kills F1.2)",
-      mutPub((i) => {
-        i.envelope.ontology.digests.resultEvidence = { evidenceState: "unresolved" };
-      }),
+      mutOnt((o) => { o.digests.resultEvidence = { evidenceState: "unresolved" }; }),
       "invalid-envelope",
     ],
     [
       "draft with unresolved resultEvidence carrying extra digest field",
-      mutPub((i) => {
-        i.envelope.ontology.lifecycle = "draft";
-        i.envelope.ontology.digests.resultEvidence = {
-          evidenceState: "unresolved",
-          digest: N_DIGEST,
-        };
+      mutOnt((o) => {
+        o.lifecycle = "draft";
+        o.digests.resultEvidence = { evidenceState: "unresolved", digest: N_DIGEST };
       }),
       "invalid-envelope",
     ],
-    [
-      "published with deprecatedReason (kills F1.2)",
-      mutPub((i) => {
-        i.envelope.ontology.deprecatedReason = "x";
-      }),
-      "invalid-envelope",
-    ],
+    ["published with deprecatedReason (kills F1.2)", mutOnt((o) => { o.deprecatedReason = "x"; }), "invalid-envelope"],
     [
       "deprecated missing deprecatedAt (kills F1.2)",
-      mutPub((i) => {
-        i.envelope.ontology.lifecycle = "deprecated";
-        i.envelope.ontology.deprecatedReason = "x";
+      mutOnt((o) => {
+        o.lifecycle = "deprecated";
+        o.deprecatedReason = "x";
       }),
       "invalid-envelope",
     ],
     [
       "deprecated bad supersededBy (kills F1.2)",
-      mutPub((i) => {
-        i.envelope.ontology.lifecycle = "deprecated";
-        i.envelope.ontology.deprecatedReason = "x";
-        i.envelope.ontology.deprecatedAt = "2026-11-22";
-        i.envelope.ontology.supersededBy = { id: "x" };
+      mutOnt((o) => {
+        o.lifecycle = "deprecated";
+        o.deprecatedReason = "x";
+        o.deprecatedAt = "2026-11-22";
+        o.supersededBy = { id: "x" };
       }),
       "invalid-envelope",
     ],
     [
       "superseded missing supersededBy (kills F1.2)",
-      mutPub((i) => {
-        i.envelope.ontology.lifecycle = "superseded";
-      }),
+      mutOnt((o) => { o.lifecycle = "superseded"; }),
       "invalid-envelope",
     ],
     [
       "superseded with deprecatedReason (kills F1.2)",
-      mutPub((i) => {
-        i.envelope.ontology.lifecycle = "superseded";
-        i.envelope.ontology.deprecatedReason = "x";
-        i.envelope.ontology.supersededBy = N_PIN;
+      mutOnt((o) => {
+        o.lifecycle = "superseded";
+        o.deprecatedReason = "x";
+        o.supersededBy = N_PIN;
       }),
       "invalid-envelope",
     ],
-    [
-      "unknown lifecycle (kills F1.2)",
-      mutPub((i) => {
-        i.envelope.ontology.lifecycle = "archived";
-      }),
-      "invalid-envelope",
-    ],
-    [
-      "null lineage (kills F1.3)",
-      mutPub((i) => {
-        i.envelope.ontology.lineage = null;
-      }),
-      "invalid-envelope",
-    ],
+    ["unknown lifecycle (kills F1.2)", mutOnt((o) => { o.lifecycle = "archived"; }), "invalid-envelope"],
+    ["null lineage (kills F1.3)", mutOnt((o) => { o.lineage = null; }), "invalid-envelope"],
     [
       "public with PrivateLineage derivationRef (kills F1.3)",
-      mutPub((i) => {
-        i.envelope.ontology.lineage = {
+      mutOnt((o) => {
+        o.lineage = {
           parents: [],
           derivationRef: { base: N_PIN, deltaDigest: "a".repeat(64) },
           mappings: [],
@@ -2307,14 +1880,10 @@ it("closes §5.3 OntologyPayload, lifecycle, lineage, pinsDigest, and public/pri
     ],
     [
       "public derivation empty operations (kills F1.3)",
-      mutPub((i) => {
-        i.envelope.ontology.lineage = {
+      mutOnt((o) => {
+        o.lineage = {
           parents: [],
-          derivation: {
-            base: N_PIN,
-            operations: [],
-            resultingDigests: i.envelope.ontology.digests,
-          },
+          derivation: { base: N_PIN, operations: [], resultingDigests: o.digests },
           mappings: [],
           migrations: [],
         };
@@ -2323,8 +1892,8 @@ it("closes §5.3 OntologyPayload, lifecycle, lineage, pinsDigest, and public/pri
     ],
     [
       "public derivation bad rename mapping (kills assertValidDeltaOperation)",
-      mutPub((i) => {
-        i.envelope.ontology.lineage = {
+      mutOnt((o) => {
+        o.lineage = {
           parents: [],
           derivation: {
             base: N_PIN,
@@ -2336,7 +1905,7 @@ it("closes §5.3 OntologyPayload, lifecycle, lineage, pinsDigest, and public/pri
                 mappingEntry: { kind: "rename", from: "wrong", to: "b" },
               },
             ],
-            resultingDigests: i.envelope.ontology.digests,
+            resultingDigests: o.digests,
           },
           mappings: [],
           migrations: [],
@@ -2346,14 +1915,10 @@ it("closes §5.3 OntologyPayload, lifecycle, lineage, pinsDigest, and public/pri
     ],
     [
       "public derivation unknown delta op",
-      mutPub((i) => {
-        i.envelope.ontology.lineage = {
+      mutOnt((o) => {
+        o.lineage = {
           parents: [],
-          derivation: {
-            base: N_PIN,
-            operations: [{ op: "drop", subject: "a" }],
-            resultingDigests: i.envelope.ontology.digests,
-          },
+          derivation: { base: N_PIN, operations: [{ op: "drop", subject: "a" }], resultingDigests: o.digests },
           mappings: [],
           migrations: [],
         };
@@ -2362,45 +1927,20 @@ it("closes §5.3 OntologyPayload, lifecycle, lineage, pinsDigest, and public/pri
     ],
     [
       "private derivationRef null (kills F1.3)",
-      mutPriv((i) => {
-        i.envelope.ontology.lineage = {
-          parents: [],
-          derivationRef: null,
-          mappings: [],
-          migrations: [],
-        };
-      }),
+      mutPrivOnt((o) => { o.lineage = { parents: [], derivationRef: null, mappings: [], migrations: [] }; }),
       "invalid-envelope",
     ],
     [
       "private lineage derivation leak",
-      mutPriv((i) => {
-        i.envelope.ontology.lineage = {
-          parents: [],
-          derivation: {},
-          mappings: [],
-          migrations: [],
-        };
-      }),
+      mutPrivOnt((o) => { o.lineage = { parents: [], derivation: {}, mappings: [], migrations: [] }; }),
       "private-content-leak",
     ],
     [
       "private lineage operations leak (kills F1.3)",
-      mutPriv((i) => {
-        i.envelope.ontology.lineage = {
-          parents: [],
-          operations: [],
-          mappings: [],
-          migrations: [],
-        };
-      }),
+      mutPrivOnt((o) => { o.lineage = { parents: [], operations: [], mappings: [], migrations: [] }; }),
       "private-content-leak",
     ],
-    [
-      "stale expectedEntryDigest",
-      () => ({ ...pubInput(), expectedEntryDigest: "0".repeat(64) }),
-      "stale-entry-digest",
-    ],
+    ["stale expectedEntryDigest", () => ({ ...pubInput(), expectedEntryDigest: "0".repeat(64) }), "stale-entry-digest"],
     [
       "mutated envelope vs original entryDigest",
       mutPub((i) => {
@@ -2415,35 +1955,20 @@ it("closes §5.3 OntologyPayload, lifecycle, lineage, pinsDigest, and public/pri
       () => ({ ...pubInput(), tenantReceipt: tReceipt("tenant-a", G2_QPIN) }),
       "invalid-tenant-receipt",
     ],
-    [
-      "missing public G asset entry",
-      () => ({ ...pubInput(), envelope: mkEnv("public", G2_QPIN, { assets: [] }) }),
-      "missing-public-asset",
-    ],
+    ["missing public G asset entry", () => pubWith(G2_QPIN, s2.bytes, { assets: [] }), "missing-public-asset"],
     [
       "duplicate public G asset",
-      () => ({
-        ...pubInput(),
-        envelope: mkEnv("public", G2_QPIN, {
-          assets: [assetOf(), assetOf({ path: "governance/dup.json" })],
-        }),
-      }),
+      () => pubWith(G2_QPIN, s2.bytes, { assets: [assetOf(), assetOf({ path: "governance/dup.json" })] }),
       "duplicate-public-asset",
     ],
     [
       "wrong asset mediaType",
-      () => ({
-        ...pubInput(),
-        envelope: mkEnv("public", G2_QPIN, { assets: [assetOf({ mediaType: "text/plain" })] }),
-      }),
+      () => pubWith(G2_QPIN, s2.bytes, { assets: [assetOf({ mediaType: "text/plain" })] }),
       "invalid-public-asset",
     ],
     [
       "asset sha256 mismatch",
-      () => ({
-        ...pubInput(),
-        envelope: mkEnv("public", G2_QPIN, { assets: [assetOf({ sha256: "0".repeat(64) })] }),
-      }),
+      () => pubWith(G2_QPIN, s2.bytes, { assets: [assetOf({ sha256: "0".repeat(64) })] }),
       "substituted-public-asset",
     ],
     ["missing public G asset bytes", () => ({ ...pubInput(), assets: {} }), "missing-public-asset"],
@@ -2454,11 +1979,7 @@ it("closes §5.3 OntologyPayload, lifecycle, lineage, pinsDigest, and public/pri
     ],
     [
       "Object.prototype path in input.assets (kills M51_skip_assets_hasOwn)",
-      () => ({
-        ...pubInput(),
-        envelope: mkEnv("public", G2_QPIN, { assets: [assetOf({ path: "toString" })] }),
-        assets: {},
-      }),
+      () => ({ ...pubWith(G2_QPIN, s2.bytes, { assets: [assetOf({ path: "toString" })] }), assets: {} }),
       "missing-public-asset",
     ],
     [
@@ -2468,42 +1989,18 @@ it("closes §5.3 OntologyPayload, lifecycle, lineage, pinsDigest, and public/pri
     ],
     [
       "lone-surrogate public G JSON (kills F2.1 never-throw)",
-      () => ({
-        envelope: mkEnv("public", lsPin),
-        profileRecord: nRec("public"),
-        assets: { [ASSET_PATH]: loneSurrogate },
-        profile: normN,
-      }),
+      () => pubBytes(loneSurrogate),
       "substituted-public-asset",
     ],
-    [
-      "non-object JSON public G asset",
-      () => ({
-        envelope: mkEnv("public", numPin),
-        profileRecord: nRec("public"),
-        assets: { [ASSET_PATH]: numJson },
-        profile: normN,
-      }),
-      "substituted-public-asset",
-    ],
+    ["non-object JSON public G asset", () => pubBytes("123"), "substituted-public-asset"],
     [
       "non-canonical pretty invalid G (kills parsed.canonical !== bytes)",
-      () => ({
-        envelope: mkEnv("public", prettyBadPin),
-        profileRecord: nRec("public"),
-        assets: { [ASSET_PATH]: prettyBadG },
-        profile: normN,
-      }),
+      () => pubBytes(prettyBadG),
       "substituted-public-asset",
     ],
     [
       "mismatched G body profile.pin via alt N (kills M50_skip_gDoc_profile)",
-      () => ({
-        envelope: mkEnv("public", sAltN.pin),
-        profileRecord: nRec("public"),
-        assets: { [ASSET_PATH]: sAltN.bytes },
-        profile: altNormN,
-      }),
+      () => pubWith(sAltN.pin, sAltN.bytes, {}, altNormN),
       "substituted-public-asset",
     ],
     [
@@ -2511,17 +2008,7 @@ it("closes §5.3 OntologyPayload, lifecycle, lineage, pinsDigest, and public/pri
       () => {
         const g = baseG2();
         delete g.entities.users.cdc;
-        const b = canonicalBytes(g);
-        const gp: QualifiedPin = {
-          namespace: "example",
-          pin: { id: "users-governance", version: "2", contentDigest: sha256(b) },
-        };
-        return {
-          envelope: mkEnv("public", gp),
-          profileRecord: nRec("public"),
-          assets: { [ASSET_PATH]: b },
-          profile: normN,
-        };
+        return pubBytes(canonicalBytes(g));
       },
       "invalid-governance",
     ],
@@ -2551,66 +2038,21 @@ it("closes §5.3 OntologyPayload, lifecycle, lineage, pinsDigest, and public/pri
       () => ({ ...privInput("public", "private:tenant-a"), tenantReceipt: undefined }),
       "invalid-tenant-receipt",
     ],
-    [
-      "failing tenant receipt",
-      () => ({
-        ...privInput("public", "private:tenant-a"),
-        tenantReceipt: tReceipt("tenant-a", G2_QPIN, { verdict: "fail" }),
-      }),
-      "invalid-tenant-receipt",
-    ],
-    [
-      "wrong-tenant receipt",
-      () => ({
-        ...privInput("public", "private:tenant-a"),
-        tenantReceipt: tReceipt("tenant-b", G2_QPIN),
-      }),
-      "invalid-tenant-receipt",
-    ],
-    [
-      "empty receiptRef",
-      () => ({
-        ...privInput("public", "private:tenant-a"),
-        tenantReceipt: tReceipt("tenant-a", G2_QPIN, { receiptRef: " " }),
-      }),
-      "invalid-tenant-receipt",
-    ],
+    ["failing tenant receipt", () => privWithReceipt({ verdict: "fail" }), "invalid-tenant-receipt"],
+    ["wrong-tenant receipt", () => privWithReceipt({}, G2_QPIN, "tenant-b"), "invalid-tenant-receipt"],
+    ["empty receiptRef", () => privWithReceipt({ receiptRef: " " }), "invalid-tenant-receipt"],
     [
       "wrong N pin in receipt",
-      () => ({
-        ...privInput("public", "private:tenant-a"),
-        tenantReceipt: tReceipt("tenant-a", G2_QPIN, {
-          profilePin: { namespace: "other", pin: N_PIN },
-        }),
-      }),
+      () => privWithReceipt({ profilePin: { namespace: "other", pin: N_PIN } }),
       "invalid-tenant-receipt",
     ],
     [
       "extra field on receipt profilePin (kills isQPin on receipt)",
-      () => ({
-        ...privInput("public", "private:tenant-a"),
-        tenantReceipt: tReceipt("tenant-a", G2_QPIN, {
-          profilePin: { namespace: "example", pin: N_PIN, extra: 1 },
-        }),
-      }),
+      () => privWithReceipt({ profilePin: { namespace: "example", pin: N_PIN, extra: 1 } }),
       "invalid-tenant-receipt",
     ],
-    [
-      "stale G pin in receipt",
-      () => ({
-        ...privInput("public", "private:tenant-a"),
-        tenantReceipt: tReceipt("tenant-a", G3_QPIN),
-      }),
-      "invalid-tenant-receipt",
-    ],
-    [
-      "private body leaked in receipt",
-      () => ({
-        ...privInput("public", "private:tenant-a"),
-        tenantReceipt: tReceipt("tenant-a", G2_QPIN, { body: gov2 }),
-      }),
-      "invalid-tenant-receipt",
-    ],
+    ["stale G pin in receipt", () => privWithReceipt({}, G3_QPIN), "invalid-tenant-receipt"],
+    ["private body leaked in receipt", () => privWithReceipt({ body: gov2 }), "invalid-tenant-receipt"],
   ]);
 
   // kills: uncaught throw on hostile throwing getter input (F2 never-throw)
@@ -2625,15 +2067,7 @@ it("closes §5.3 OntologyPayload, lifecycle, lineage, pinsDigest, and public/pri
     code: "invalid-input",
   });
   // kills: M55i_skip_pub_parsed_ok (preserves lone-surrogate parse failure reason)
-  expect(
-    validateCompanionPublication({
-      envelope: mkEnv("public", lsPin),
-      profileRecord: nRec("public"),
-      assets: { [ASSET_PATH]: loneSurrogate },
-      profile: normN,
-    }),
-    "lone-surrogate public G JSON reason",
-  ).toMatchObject({
+  expect(validateCompanionPublication(pubBytes(loneSurrogate)), "lone-surrogate public G JSON reason").toMatchObject({
     ok: false,
     code: "substituted-public-asset",
     reason: "invalid-unicode:lone-surrogate",
@@ -2641,169 +2075,90 @@ it("closes §5.3 OntologyPayload, lifecycle, lineage, pinsDigest, and public/pri
 });
 
 it("projects ruleSheets into checkAdmission like app-context-registry (F2.2)", () => {
-  const scope = {
-    libraries: [{ id: "engram-validator", version: "1.0.0" }],
-    proofSets: [] as const,
-    selections: [{ phase: "import", readinessPolicy: "accept" }],
-  };
-
   // Sheetless baseline admission (public + private) + failing receipt + requireReference + family
   expect(
-    validateCompanionPublication({ ...pubInput(), admission: { qualificationScope: scope } }).ok,
+    validateCompanionPublication(buildBaseline("pubAdmission")).ok,
     "sheetless public admission",
   ).toBe(true);
   expect(
     validateCompanionPublication({
       ...privInput("public", "private:tenant-a"),
-      admission: { qualificationScope: scope },
+      admission: { qualificationScope: SCOPE },
     }).ok,
     "sheetless private admission",
   ).toBe(true);
   expect(
     validateCompanionPublication({
-      ...pubInput(),
-      envelope: mkEnv("public", G2_QPIN, { receipts: [corpusReceipt("fail")] }),
-      admission: { qualificationScope: scope },
+      ...pubWith(G2_QPIN, s2.bytes, { receipts: [corpusReceipt("fail")] }),
+      admission: { qualificationScope: SCOPE },
     }),
     "failing receipt refuses",
   ).toMatchObject({ ok: false, code: "missing-receipt" });
   expect(
-    validateCompanionPublication({
-      ...pubInput(),
-      admission: { qualificationScope: scope, requireReference: true },
-    }),
+    validateCompanionPublication({ ...pubInput(), admission: { qualificationScope: SCOPE, requireReference: true } }),
     "requireReference refuses retained-check",
   ).toMatchObject({ ok: false, code: "missing-receipt" });
   expect(
-    validateCompanionPublication({
-      ...pubInput(),
-      admission: { family: "EXT", qualificationScope: scope },
-    }),
+    validateCompanionPublication({ ...pubInput(), admission: { family: "EXT", qualificationScope: SCOPE } }),
     "EXT family refuses ENG receipt",
   ).toMatchObject({ ok: false, code: "missing-receipt" });
   expect(
-    validateCompanionPublication({
-      ...pubInput(),
-      admission: { family: "DIA" as any, qualificationScope: scope },
-    }),
+    validateCompanionPublication({ ...pubInput(), admission: { family: "DIA" as any, qualificationScope: SCOPE } }),
     "invalid admission family refuses",
   ).toMatchObject({ ok: false, code: "invalid-input" });
 
   // Non-empty ruleSheets (single sheet + two composed sheets)
-  const singleSettings = [{ rule: "r1", severity: "error" }];
-  const singlePolicy = policyDigestOf("import", "accept", singleSettings);
-  const singlePinsD = pinsDigestOf({ layers: [N_PIN], ruleSheets: [SHEET_A_PIN] });
-
-  const pubSheetEnv: any = mkEnv("public", G2_QPIN, {
-    receipts: [
-      corpusReceipt("pass", {
-        evaluatedStack: {
-          stack: [N_PIN],
-          pinsDigest: singlePinsD,
-          resultEvidence: { evidenceState: "resolved", digest: N_DIGEST },
-        },
-        severityPolicyDigest: singlePolicy,
-        ruleVerdicts: [{ ruleId: "r1", severity: "error", verdict: "pass", parity: "proven" }],
-      }),
-    ],
-  });
-  pubSheetEnv.ontology.digests.pinsDigest = singlePinsD;
-  pubSheetEnv.ontology.ruleSheets = [
-    {
-      sheetPin: SHEET_A_PIN,
-      ruleIds: ["r1"],
-      selections: [
-        {
-          phase: "import",
-          readinessPolicy: "accept",
-          settings: singleSettings,
-          severityPolicyDigest: singlePolicy,
-          rules: [{ ruleId: "r1", severity: "error" }],
-        },
-      ],
-    },
-  ];
+  const pubSheetBase = buildBaseline("pubSheet");
   // kills: F2.2 wrongly refusing valid public entry with ruleSheets
   expect(
-    validateCompanionPublication({
-      envelope: pubSheetEnv,
-      profileRecord: nRec("public"),
-      assets: { [ASSET_PATH]: s2.bytes },
-      profile: normN,
-      admission: { qualificationScope: scope },
-    }).ok,
+    validateCompanionPublication({ ...pubSheetBase, admission: { qualificationScope: SCOPE } }).ok,
     "valid public ruleSheets admits",
   ).toBe(true);
 
   // kills: F2.2 public ruleSheets null-policy receipt bypass
-  const nullPolicyBypass: any = structuredClone(pubSheetEnv);
-  nullPolicyBypass.ontology.receipts[0].severityPolicyDigest = null;
-  nullPolicyBypass.ontology.receipts[0].ruleVerdicts = [];
+  const nullPolicyBypass = buildBaseline("pubSheet");
+  nullPolicyBypass.envelope.ontology.receipts[0].severityPolicyDigest = null;
+  nullPolicyBypass.envelope.ontology.receipts[0].ruleVerdicts = [];
+  recomputeDependentDigests(nullPolicyBypass);
   expect(
-    validateCompanionPublication({
-      envelope: nullPolicyBypass,
-      profileRecord: nRec("public"),
-      assets: { [ASSET_PATH]: s2.bytes },
-      profile: normN,
-      admission: { qualificationScope: scope },
-    }),
+    validateCompanionPublication({ ...nullPolicyBypass, admission: { qualificationScope: SCOPE } }),
     "public ruleSheets null-policy bypass refuses",
   ).toMatchObject({ ok: false, code: "missing-receipt" });
 
   // Two composed public ruleSheets
   const dualBase = buildBaseline("pubSheetDual");
   expect(
-    validateCompanionPublication({
-      ...dualBase,
-      admission: { qualificationScope: scope },
-    }).ok,
+    validateCompanionPublication({ ...dualBase, admission: { qualificationScope: SCOPE } }).ok,
     "two composed public ruleSheets admit",
   ).toBe(true);
 
   // Private ruleSheets + ownerSelections (F2.2)
-  const privSheetEnv: any = mkEnv("private:tenant-a", G2_QPIN, {
-    receipts: [
-      corpusReceipt("pass", {
-        evaluatedStack: {
-          stack: [N_PIN],
-          pinsDigest: singlePinsD,
-          resultEvidence: { evidenceState: "resolved", digest: N_DIGEST },
-        },
-        severityPolicyDigest: singlePolicy,
-        ruleVerdicts: [{ ruleId: "r1", severity: "error", verdict: "pass", parity: "proven" }],
-      }),
-    ],
-  });
-  privSheetEnv.ontology.digests.pinsDigest = singlePinsD;
-  privSheetEnv.ontology.ruleSheets = [{ sheetPin: SHEET_A_PIN, ruleIds: ["r1"] }];
+  const privSheetBase = buildBaseline("privSheet");
+  privSheetBase.envelope.ontology.receipts = [
+    corpusReceipt("pass", {
+      severityPolicyDigest: SINGLE_POLICY,
+      ruleVerdicts: [{ ruleId: "r1", severity: "error", verdict: "pass", parity: "proven" }],
+    }),
+  ];
+  recomputeDependentDigests(privSheetBase);
   const ownerSelections = [
     {
       ownerReceiptRef: "owner:sel/1",
       phase: "import",
       readinessPolicy: "accept",
-      severityPolicyDigest: singlePolicy,
+      severityPolicyDigest: SINGLE_POLICY,
       rules: [{ ruleId: "r1", severity: "error" }],
     },
   ];
   // kills: F2.2 wrongly refusing valid private entry with ruleSheets + ownerSelections
   expect(
-    validateCompanionPublication({
-      envelope: privSheetEnv,
-      profileRecord: nRec("public"),
-      tenantReceipt: tReceipt("tenant-a", G2_QPIN),
-      admission: { qualificationScope: scope, ownerSelections },
-    }).ok,
+    validateCompanionPublication({ ...privSheetBase, admission: { qualificationScope: SCOPE, ownerSelections } }).ok,
     "valid private ruleSheets + ownerSelections admits",
   ).toBe(true);
 
   // kills: admitting private ruleSheets without ownerSelections
   expect(
-    validateCompanionPublication({
-      envelope: privSheetEnv,
-      profileRecord: nRec("public"),
-      tenantReceipt: tReceipt("tenant-a", G2_QPIN),
-      admission: { qualificationScope: scope },
-    }),
+    validateCompanionPublication({ ...privSheetBase, admission: { qualificationScope: SCOPE } }),
     "private ruleSheets without ownerSelections refuses",
   ).toMatchObject({ ok: false, code: "missing-receipt" });
 });
@@ -3058,50 +2413,25 @@ it("enforces cross-tenant deny-as-missing and G-only revision rules in the trust
 
   // kills: M37_skip_bySeries_only (different catalog id, SAME G series + reused entryVersion)
   expect(
-    idx.publish({
-      envelope: mkEnv("public", G3_QPIN, {
-        id: "engram.users-governance-different-cat-id",
-        entryVersion: "2",
-      }),
-      profileRecord: nRec("public"),
-      assets: { [ASSET_PATH]: s3.bytes },
-      profile: normN,
-    }),
+    idx.publish(pubWith(G3_QPIN, s3.bytes, { id: "engram.users-governance-different-cat-id", entryVersion: "2" })),
     "bySeries blocks reused entryVersion across distinct catalog id",
   ).toMatchObject({ ok: false, code: "reused-entry-version" });
 
   // kills: deleting byCat check (DIFFERENT G series, SAME catalog id + reused entryVersion)
   expect(
-    idx.publish({
-      envelope: mkEnv("public", sOtherSeries.pin, {
-        id: "engram.users-governance",
-        entryVersion: "2",
-      }),
-      profileRecord: nRec("public"),
-      assets: { [ASSET_PATH]: sOtherSeries.bytes },
-      profile: normN,
-    }),
+    idx.publish(pubWith(sOtherSeries.pin, sOtherSeries.bytes, { id: "engram.users-governance", entryVersion: "2" })),
     "byCat blocks reused (kind, id, entryVersion) across distinct G series",
   ).toMatchObject({ ok: false, code: "reused-entry-version" });
 
   // kills: allowing reused G identity with different bytes
-  expect(
-    idx.publish({
-      envelope: mkEnv("public", s2Alt.pin, { entryVersion: "4" }),
-      profileRecord: nRec("public"),
-      assets: { [ASSET_PATH]: s2Alt.bytes },
-      profile: normN,
-    }),
-  ).toMatchObject({ ok: false, code: "reused-governance-identity" });
+  expect(idx.publish(pubWith(s2Alt.pin, s2Alt.bytes, { entryVersion: "4" }))).toMatchObject({
+    ok: false,
+    code: "reused-governance-identity",
+  });
 
   // kills: unchanged P-ENTRY digest on G-only revision
   const env3 = mkEnv("public", G3_QPIN, { entryVersion: "3" });
-  const p3 = idx.publish({
-    envelope: env3,
-    profileRecord: nRec("public"),
-    assets: { [ASSET_PATH]: s3.bytes },
-    profile: normN,
-  });
+  const p3 = idx.publish({ ...pubWith(G3_QPIN, s3.bytes), envelope: env3 });
   expect(p3.ok && pPub.ok).toBe(true);
   if (!p3.ok || !pPub.ok) throw new Error("unreachable");
   expect(p3.entryDigest).toBe(sha256(canonicalBytes(env3)));

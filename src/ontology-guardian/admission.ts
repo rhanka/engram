@@ -1,5 +1,6 @@
 // §5.5 admission gate as a pure function. Refuses unresolved or mismatching
 // result evidence explicitly; never falls back to latest.
+import { isRecord, isTrimmedStr } from "../model-schemas.js";
 import { canonicalBytes } from "./canonical.js";
 import { severityPolicyDigestOf } from "./digests.js";
 import {
@@ -239,13 +240,33 @@ function evidenceEqual(a: DigestEvidence, b: DigestEvidence): boolean {
 }
 
 export function pinProblem(pin: Pin, what: string): string | null {
-  if (typeof pin !== "object" || pin === null) return `${what} pin not an object`;
+  if (!isRecord(pin)) return `${what} pin not an object`;
   if (Object.keys(pin).sort().join(",") !== "contentDigest,id,version") return `${what} pin fields malformed`;
   if (!isExactVersion(pin.version)) return `${what} floating or unknown version`;
-  if (typeof pin.id !== "string" || pin.id === "" || typeof pin.version !== "string" || pin.version === "") {
+  if (!isTrimmedStr(pin.id) || typeof pin.version !== "string" || pin.version === "") {
     return `${what} pin identity malformed`;
   }
   if (!isDigest(pin.contentDigest)) return `${what} pin digest malformed`;
+  return null;
+}
+
+/** §1.3 ordered, duplicate-free, canonical Pin list check. */
+export function pinListProblem(pins: unknown, what: string, allowEmpty = false): string | null {
+  if (!Array.isArray(pins)) return `${what} must be an array`;
+  if (!allowEmpty && pins.length === 0) return `${what} must contain at least one layer`;
+  const seen = new Set<string>();
+  for (const pin of pins) {
+    const problem = pinProblem(pin as Pin, what);
+    if (problem !== null) return problem;
+    let key: string;
+    try {
+      key = canonicalBytes(pin);
+    } catch {
+      return `${what} pin is not canonical JSON`;
+    }
+    if (seen.has(key)) return `${what} contains duplicate pin`;
+    seen.add(key);
+  }
   return null;
 }
 
@@ -951,70 +972,35 @@ export function checkEntrySelections(entry: AdmissionEntry): string | null {
  * and `digests.contentDigest === profilePin.contentDigest`.
  */
 export function checkProfilePayloadCoherence(payload: unknown): string | null {
-  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
-    return "payload must be an object";
+  if (!isRecord(payload)) return "payload must be an object";
+  if (payload.profileShape !== "engram-profile") {
+    return `profileShape mismatch: expected engram-profile, got ${String(payload.profileShape)}`;
   }
-  const p = payload as Record<string, unknown>;
-  if (p.profileShape !== "engram-profile") {
-    return `profileShape mismatch: expected engram-profile, got ${String(p.profileShape)}`;
-  }
-  const binding = p.artifactBinding as Record<string, unknown> | undefined;
-  if (
-    p.artifactKind !== "profile" ||
-    typeof binding !== "object" ||
-    binding === null ||
-    Array.isArray(binding) ||
-    binding.artifactKind !== "profile"
-  ) {
+  const binding = payload.artifactBinding;
+  if (payload.artifactKind !== "profile" || !isRecord(binding) || binding.artifactKind !== "profile") {
     return "artifactKind and artifactBinding.artifactKind must be 'profile'";
   }
-  const outerPinProblem = pinProblem(p.profilePin as Pin, "profilePin");
+  const outerPinProblem = pinProblem(payload.profilePin as Pin, "profilePin");
   if (outerPinProblem !== null) return outerPinProblem;
   const bindingPinProblem = pinProblem(binding.profilePin as Pin, "artifactBinding.profilePin");
   if (bindingPinProblem !== null) return bindingPinProblem;
-  const profilePin = p.profilePin as Pin;
-  const bindingPin = binding.profilePin as Pin;
-  if (!pinsEqual([profilePin], [bindingPin])) {
+  const profilePin = payload.profilePin as Pin;
+  if (!pinsEqual([profilePin], [binding.profilePin as Pin])) {
     return "outer profilePin does not equal artifactBinding.profilePin";
   }
-  if (!Array.isArray(p.stack) || !Array.isArray(binding.stack)) {
-    return "stack and artifactBinding.stack must be arrays";
-  }
-  const stack = p.stack as readonly Pin[];
-  const bindingStack = binding.stack as readonly Pin[];
-  if (stack.length === 0) {
-    return "stack must contain at least one layer";
-  }
-  const seen = new Set<string>();
-  for (const layer of stack) {
-    const problem = pinProblem(layer, "stack");
-    if (problem !== null) return problem;
-    let key: string;
-    try {
-      key = canonicalBytes(layer);
-    } catch {
-      return "stack pin is not canonical JSON";
-    }
-    if (seen.has(key)) return "stack contains duplicate pin";
-    seen.add(key);
-  }
-  for (const layer of bindingStack) {
-    const problem = pinProblem(layer, "artifactBinding.stack");
-    if (problem !== null) return problem;
-  }
-  if (!pinsEqual(stack, bindingStack)) {
+  const stackProblem = pinListProblem(payload.stack, "stack");
+  if (stackProblem !== null) return stackProblem;
+  const bindingStackProblem = pinListProblem(binding.stack, "artifactBinding.stack", true);
+  if (bindingStackProblem !== null) return bindingStackProblem;
+  const stack = payload.stack as readonly Pin[];
+  if (!pinsEqual(stack, binding.stack as readonly Pin[])) {
     return "outer stack does not equal artifactBinding.stack";
   }
   if (!pinsEqual([stack[stack.length - 1]!], [profilePin])) {
     return "top of stack does not equal profilePin";
   }
-  const digests = p.digests as Record<string, unknown> | undefined;
-  if (
-    typeof digests !== "object" ||
-    digests === null ||
-    Array.isArray(digests) ||
-    digests.contentDigest !== profilePin.contentDigest
-  ) {
+  const digests = payload.digests;
+  if (!isRecord(digests) || digests.contentDigest !== profilePin.contentDigest) {
     return "digests.contentDigest does not equal profilePin.contentDigest";
   }
   return null;

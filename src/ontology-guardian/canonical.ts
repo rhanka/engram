@@ -61,6 +61,33 @@ export function canonicalBytes(value: unknown): string {
   return canonicalStringify(value);
 }
 
+/** Fail-closed RFC 8785 canonicalization returning null on non-canonical input. */
+export function tryCanonicalBytes(value: unknown): string | null {
+  try {
+    return canonicalStringify(value);
+  } catch {
+    return null;
+  }
+}
+
+/** Parses JSON bytes and verifies a plain object already in RFC 8785 canonical form. */
+export function parseCanonicalJsonObject(
+  bytes: string,
+): { readonly ok: true; readonly value: Record<string, unknown> } | { readonly ok: false; readonly reason: string } {
+  try {
+    const parsed: unknown = JSON.parse(bytes);
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      return { ok: false, reason: "canonical JSON must be a plain object" };
+    }
+    if (canonicalStringify(parsed) !== bytes) {
+      return { ok: false, reason: "bytes are not RFC 8785 canonical" };
+    }
+    return { ok: true, value: parsed as Record<string, unknown> };
+  } catch (error) {
+    return { ok: false, reason: (error as Error).message };
+  }
+}
+
 /** SHA-256 over exact UTF-8 bytes, rendered as 64 lowercase hex digits. */
 export function sha256Hex(bytes: string): string {
   return createHash("sha256").update(bytes, "utf8").digest("hex");
