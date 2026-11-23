@@ -291,7 +291,7 @@ describe("scrap mesh Claude seat + cross-family & failover guards", () => {
     const probe = vi.fn(async () => VALID_CAPS);
     const seen = { plans: 0 };
 
-    // 1. Built-in 0.38.6 gateway aliases (claude-opus-5-5-max, claude-sonnet-5-5-low, claude-haiku-5-5-low)
+    // 1. Built-in 0.38.9 gateway aliases (claude-opus-5-5-max, claude-sonnet-5-5-low, claude-haiku-5-5-low)
     for (const alias of ["claude-opus-5-5-max", "claude-sonnet-5-5-low", "claude-haiku-5-5-low"]) {
       let err: unknown;
       try {

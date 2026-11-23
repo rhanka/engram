@@ -134,7 +134,7 @@ function parseMeshAlias(
   }
   throw new Error(`scrap extract: unknown mesh alias "mesh:${alias}" (no mesh catalog profile; use mesh:<catalog-model-id> such as mesh:gemini-4-hydrogen-high)`);
 }
-// In-process seats via @sentropic/llm-mesh 0.38.6: dist/service/facade.d.ts:98,129,133, dist/service/local-account-transport-service.js:84,89,
+// In-process seats via @sentropic/llm-mesh 0.38.9: dist/service/facade.d.ts:98,129,133, dist/service/local-account-transport-service.js:84,89,
 // dist/node/claude-code-cli-runner.d.ts:16,48,54 & .js:194,532,576 (NodeClaudeCodeCliRunner, probe, seat client); no gateway, no port.
 export function resolveMeshAlias(alias: string, opts?: { normalize?: (id: string) => string }): { provider: ProviderId; model: string; effort?: ReasoningEffort } {
   const resolved = parseMeshAlias(alias, requireMeshSync(alias), opts?.normalize);
