@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createDirectTextJsonClient, directProviderCredentialEnv, parseJsonFromLlmText, type DirectLlmProvider } from "../llm-execution.js";
-import { getMeshErrorAttempts, isRoutePlanError, isSeatAcquisitionError } from "../llm-mesh-bridge.js";
+import { getMeshErrorAttempts, isRoutePlanError, isSeatAcquisitionError } from "../llm-mesh-errors.js";
 export interface RecordSubField { name: string; instruction?: string }
 export interface MissionField { name: string; kind?: "scalar" | "record"; max_values?: number; fields?: RecordSubField[] }
 export interface PriceTable { source: string; as_of: string; per_million: { input: number; output: number; reasoning?: number } }
@@ -21,7 +21,7 @@ export interface MeshClientDeps {
 // Usage errors the CLI maps to exit 2 (bad invocation, unknown model, no
 // credentials, no mesh seat): raised before any provider request is made.
 export function isExtractUsageError(e: unknown): boolean {
-  return /cannot infer provider|missing credentials|unknown mesh alias|no usable mesh seat|no seat executor|cross-family alias routing|claude CLI probe|invalid mission/.test(String(e));
+  return /cannot infer provider|missing credentials|unknown mesh alias|no usable mesh seat|no seat executor|cross-family alias routing|claude CLI probe|invalid mission|optional peer package "@sentropic\/llm-mesh"/.test(String(e));
 }
 type FieldSpec = { name: string; kind: "scalar" | "record"; maxValues: number; subFields?: RecordSubField[] };
 type TokenCounts = { input: number; output: number; reasoning: number; total: number };

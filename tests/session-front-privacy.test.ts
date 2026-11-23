@@ -1,6 +1,8 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, dirname, posix, relative, resolve } from "node:path";
+import { basename, dirname, join, posix, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { expect, it } from "vitest";
@@ -283,10 +285,12 @@ it("any import of src/llm-execution.ts from src/llm-mesh.ts fails", () => {
   expect(edgesToLlmExecution).toEqual([]);
   // Kills a mutant that reaches src/llm-execution.ts anywhere in the src/llm-mesh.ts module graph.
   expect(closure.visited).not.toContain("src/llm-execution.ts");
-  // Kills a mutant that fails to isolate src/llm-mesh.ts onto exactly src/llm-mesh-bridge.ts and src/llm-json-port.ts.
+  // Kills a mutant that fails to isolate src/llm-mesh.ts onto exactly src/llm-mesh-bridge.ts, src/llm-mesh-core.ts, src/llm-mesh-errors.ts, and src/llm-json-port.ts.
   expect(closure.visited).toEqual([
     "src/llm-json-port.ts",
     "src/llm-mesh-bridge.ts",
+    "src/llm-mesh-core.ts",
+    "src/llm-mesh-errors.ts",
     "src/llm-mesh.ts",
   ]);
 
@@ -297,9 +301,39 @@ it("any import of src/llm-execution.ts from src/llm-mesh.ts fails", () => {
     "src/llm-mesh-bridge.ts",
   ]);
 
-  const directFromBridge = closure.localEdges.filter((e) => e.from === "src/llm-mesh-bridge.ts").map((e) => e.to).sort();
-  // Kills a mutant that keeps ./llm-execution.js in src/llm-mesh-bridge.ts instead of ./llm-json-port.js.
-  expect(directFromBridge).toEqual(["src/llm-json-port.ts"]);
+  const directFromBridge = [...new Set(closure.localEdges.filter((e) => e.from === "src/llm-mesh-bridge.ts").map((e) => e.to))].sort();
+  // Kills a mutant that keeps ./llm-execution.js in src/llm-mesh-bridge.ts instead of ./llm-mesh-core.js and ./llm-mesh-errors.js.
+  expect(directFromBridge).toEqual(["src/llm-mesh-core.ts", "src/llm-mesh-errors.ts"]);
+
+  const directFromCore = [...new Set(closure.localEdges.filter((e) => e.from === "src/llm-mesh-core.ts").map((e) => e.to))].sort();
+  // Kills a mutant that pulls ./llm-execution.js or ./llm-mesh-bridge.js into mesh-free src/llm-mesh-core.ts.
+  expect(directFromCore).toEqual(["src/llm-json-port.ts", "src/llm-mesh-errors.ts"]);
+
+  const coreSf = parseSource("src/llm-mesh-core.ts");
+  const coreStaticExternalRuntime: string[] = [];
+  for (const stmt of coreSf.statements) {
+    if (ts.isImportDeclaration(stmt) && ts.isStringLiteral(stmt.moduleSpecifier)) {
+      const isTypeOnly = Boolean(stmt.importClause?.isTypeOnly) || (
+        Boolean(stmt.importClause?.namedBindings) &&
+        ts.isNamedImports(stmt.importClause!.namedBindings!) &&
+        stmt.importClause!.namedBindings!.elements.every((el) => el.isTypeOnly) &&
+        !stmt.importClause?.name
+      );
+      if (!isTypeOnly && !stmt.moduleSpecifier.text.startsWith(".")) {
+        coreStaticExternalRuntime.push(stmt.moduleSpecifier.text);
+      }
+    }
+  }
+  // Kills a mutant that adds a runtime import of @sentropic/llm-mesh (or any non-node external) into src/llm-mesh-core.ts.
+  expect(coreStaticExternalRuntime).toEqual(["node:crypto"]);
+
+  const directFromErrors = closure.localEdges.filter((e) => e.from === "src/llm-mesh-errors.ts");
+  // Kills a mutant that adds any local import inside src/llm-mesh-errors.ts.
+  expect(directFromErrors).toEqual([]);
+
+  const externalFromErrors = closure.externalEdges.filter((e) => e.from === "src/llm-mesh-errors.ts");
+  // Kills a mutant that introduces @sentropic/llm-mesh or any external import into mesh-free src/llm-mesh-errors.ts.
+  expect(externalFromErrors).toEqual([]);
 
   const directFromPort = closure.localEdges.filter((e) => e.from === "src/llm-json-port.ts");
   // Kills a mutant that adds any local import inside src/llm-json-port.ts.
@@ -442,9 +476,15 @@ it("JSON-port symbols are moved (never copied) into src/llm-json-port.ts and kee
   // Kills a mutant that copies a JSON-port symbol inside src/llm-mesh-bridge.ts.
   expect(duplicatedInBridge).toEqual([]);
 
-  const bridgePortImports = collectNamedImports(bridgeSf, "./llm-json-port.js");
-  // Kills a mutant that drops or mis-types the ./llm-json-port.js type imports in src/llm-mesh-bridge.ts.
-  expect(bridgePortImports).toEqual({
+  const coreSfForPort = parseSource("src/llm-mesh-core.ts");
+  const coreLocalDecls = collectLocalExportedDecls(coreSfForPort);
+  const duplicatedInCore = EXPECTED_PORT_SYMBOLS.filter((name) => coreLocalDecls.has(name));
+  // Kills a mutant that copies a JSON-port symbol inside src/llm-mesh-core.ts.
+  expect(duplicatedInCore).toEqual([]);
+
+  const corePortImports = collectNamedImports(coreSfForPort, "./llm-json-port.js");
+  // Kills a mutant that drops or mis-types the ./llm-json-port.js type imports in src/llm-mesh-core.ts.
+  expect(corePortImports).toEqual({
     values: [],
     types: ["TextJsonGenerationClient", "TextJsonGenerationInput", "TextJsonGenerationResult"],
   });
@@ -799,3 +839,268 @@ it("AST edge walker captures backtick dynamic specifiers and flags unresolved dy
     { from: "src/virtual-bridge.ts", kind: "require", expression: "p" },
   ]);
 });
+
+function parseSemverTriple(version: string): readonly [number, number, number] {
+  const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
+  if (!match) throw new Error(`invalid semver triple: ${version}`);
+  return [Number(match[1]), Number(match[2]), Number(match[3])];
+}
+
+function compareSemverTriple(a: readonly [number, number, number], b: readonly [number, number, number]): number {
+  if (a[0] !== b[0]) return a[0] - b[0];
+  if (a[1] !== b[1]) return a[1] - b[1];
+  return a[2] - b[2];
+}
+
+function satisfiesHalfOpenRange(range: string, version: string): boolean {
+  const match = /^>=(\d+\.\d+\.\d+)\s+<(\d+\.\d+\.\d+)$/.exec(range.trim());
+  if (!match) return false;
+  const target = parseSemverTriple(version);
+  const lower = parseSemverTriple(match[1]!);
+  const upper = parseSemverTriple(match[2]!);
+  return compareSemverTriple(target, lower) >= 0 && compareSemverTriple(target, upper) < 0;
+}
+
+it(
+  "the mesh is an optional peer admitting 0.39.x and remains an exact development dependency; the installed consumer with no mesh refuses the mesh entry by name",
+  { timeout: 180_000 },
+  () => {
+    const pkg = JSON.parse(readFileSync(resolve(ROOT, "package.json"), "utf8")) as {
+      name?: string;
+      version?: string;
+      dependencies?: Record<string, string>;
+      optionalDependencies?: Record<string, string>;
+      peerDependencies?: Record<string, string>;
+      peerDependenciesMeta?: Record<string, { optional?: boolean }>;
+      devDependencies?: Record<string, string>;
+    };
+
+    // Kills a mutant that leaves @sentropic/llm-mesh in runtime dependencies.
+    expect(pkg.dependencies?.["@sentropic/llm-mesh"]).toBeUndefined();
+    // Kills a mutant that moves @sentropic/llm-mesh into optionalDependencies instead of optional peerDependencies.
+    expect(pkg.optionalDependencies?.["@sentropic/llm-mesh"]).toBeUndefined();
+
+    const peerRange = pkg.peerDependencies?.["@sentropic/llm-mesh"];
+    // Kills a mutant that omits @sentropic/llm-mesh from peerDependencies or narrows/widens its range away from >=0.38.0 <0.40.0.
+    expect(peerRange).toBe(">=0.38.0 <0.40.0");
+    // Kills a mutant whose peer range rejects 0.38.0 floor.
+    expect(satisfiesHalfOpenRange(peerRange!, "0.38.0")).toBe(true);
+    // Kills a mutant whose peer range rejects 0.38.6.
+    expect(satisfiesHalfOpenRange(peerRange!, "0.38.6")).toBe(true);
+    // Kills a mutant whose peer range fails to admit 0.39.0 (0.39.x line).
+    expect(satisfiesHalfOpenRange(peerRange!, "0.39.0")).toBe(true);
+    // Kills a mutant whose peer range fails to admit 0.39.99 (upper 0.39.x).
+    expect(satisfiesHalfOpenRange(peerRange!, "0.39.99")).toBe(true);
+    // Kills a mutant whose peer range admits unsupported 0.37.x versions.
+    expect(satisfiesHalfOpenRange(peerRange!, "0.37.99")).toBe(false);
+    // Kills a mutant whose peer range admits breaking 0.40.0+.
+    expect(satisfiesHalfOpenRange(peerRange!, "0.40.0")).toBe(false);
+
+    // Kills a mutant that drops optional: true from peerDependenciesMeta["@sentropic/llm-mesh"].
+    expect(pkg.peerDependenciesMeta?.["@sentropic/llm-mesh"]).toEqual({ optional: true });
+
+    const devVersion = pkg.devDependencies?.["@sentropic/llm-mesh"];
+    // Kills a mutant that removes @sentropic/llm-mesh from devDependencies or uses a range/non-0.38.x specifier instead of an exact published 0.38.x pin.
+    expect(devVersion).toMatch(/^0\.38\.\d+$/);
+
+    const rootLock = JSON.parse(readFileSync(resolve(ROOT, "package-lock.json"), "utf8")) as {
+      packages?: Record<string, {
+        version?: string;
+        dev?: boolean;
+        integrity?: string;
+        dependencies?: Record<string, string>;
+        peerDependencies?: Record<string, string>;
+        peerDependenciesMeta?: Record<string, { optional?: boolean }>;
+        devDependencies?: Record<string, string>;
+      }>;
+    };
+    const rootLockSelf = rootLock.packages?.[""];
+    // Kills a mutant that fails to refresh package-lock.json after removing @sentropic/llm-mesh from dependencies.
+    expect(rootLockSelf?.dependencies?.["@sentropic/llm-mesh"]).toBeUndefined();
+    // Kills a mutant that omits peerDependencies["@sentropic/llm-mesh"] in package-lock.json.
+    expect(rootLockSelf?.peerDependencies?.["@sentropic/llm-mesh"]).toBe(">=0.38.0 <0.40.0");
+    // Kills a mutant that omits peerDependenciesMeta["@sentropic/llm-mesh"].optional in package-lock.json.
+    expect(rootLockSelf?.peerDependenciesMeta?.["@sentropic/llm-mesh"]).toEqual({ optional: true });
+    // Kills a mutant that fails to pin devDependencies["@sentropic/llm-mesh"] in package-lock.json to match package.json.
+    expect(rootLockSelf?.devDependencies?.["@sentropic/llm-mesh"]).toBe(devVersion);
+
+    const rootLockMesh = rootLock.packages?.["node_modules/@sentropic/llm-mesh"];
+    // Kills a mutant that resolves a different @sentropic/llm-mesh version in package-lock.json than the exact devDependency pin.
+    expect(rootLockMesh?.version).toBe(devVersion);
+    // Kills a mutant that leaves node_modules/@sentropic/llm-mesh as a non-dev production dependency in package-lock.json.
+    expect(rootLockMesh?.dev).toBe(true);
+    // Kills a mutant that drops integrity on node_modules/@sentropic/llm-mesh in package-lock.json.
+    expect(rootLockMesh?.integrity).toMatch(/^sha512-/);
+
+    const consumerLock = JSON.parse(
+      readFileSync(resolve(ROOT, "scripts/fixtures/substrate-consumer/package-lock.json"), "utf8"),
+    ) as {
+      packages?: Record<string, {
+        version?: string;
+        integrity?: string;
+        dependencies?: Record<string, string>;
+        peerDependencies?: Record<string, string>;
+        peerDependenciesMeta?: Record<string, { optional?: boolean }>;
+      }>;
+    };
+    const consumerEngram = consumerLock.packages?.["node_modules/@sentropic/engram"];
+    // Kills a mutant that leaves @sentropic/llm-mesh in the offline consumer fixture's engram dependencies.
+    expect(consumerEngram?.dependencies?.["@sentropic/llm-mesh"]).toBeUndefined();
+    // Kills a mutant that omits @sentropic/llm-mesh optional peer metadata in the offline consumer fixture.
+    expect(consumerEngram?.peerDependencies?.["@sentropic/llm-mesh"]).toBe(">=0.38.0 <0.40.0");
+    // Kills a mutant that drops optional: true for @sentropic/llm-mesh in the offline consumer fixture.
+    expect(consumerEngram?.peerDependenciesMeta?.["@sentropic/llm-mesh"]).toEqual({ optional: true });
+    // Kills a mutant that retains node_modules/@sentropic/llm-mesh inside the offline consumer fixture closure.
+    expect(consumerLock.packages?.["node_modules/@sentropic/llm-mesh"]).toBeUndefined();
+
+    const workflowText = readFileSync(resolve(ROOT, ".github/workflows/typescript-ci.yml"), "utf8");
+    const packedScriptText = readFileSync(resolve(ROOT, "scripts/check-packed-surface.sh"), "utf8");
+    // Kills a mutant that omits installing the @sentropic/llm-mesh peer in the CI smoke-test clean consumer.
+    expect(workflowText).toMatch(/@sentropic\/llm-mesh@/);
+    // Kills a mutant that omits installing the @sentropic/llm-mesh peer in scripts/check-packed-surface.sh.
+    expect(packedScriptText).toMatch(/@sentropic\/llm-mesh@/);
+
+    // Real installed peer-absent consumer: pack candidate tarball, install offline using the committed consumer lock.
+    const npmBin = process.env.SUBSTRATE_NPM_BIN ?? "npm";
+    const packDir = mkdtempSync(join(tmpdir(), "engram-nomesh-pack-"));
+    const consumerDir = mkdtempSync(join(tmpdir(), "engram-nomesh-consumer-"));
+    try {
+      const packOut = execFileSync(
+        npmBin,
+        ["pack", "--offline", "--ignore-scripts", "--silent", "--pack-destination", packDir],
+        { cwd: ROOT, encoding: "utf8" },
+      );
+      const tarballName = packOut.split("\n").map((l) => l.trim()).filter((l) => l.endsWith(".tgz")).pop();
+      // Kills a mutant where npm pack fails to emit a candidate tarball for the peer-absent consumer check.
+      expect(tarballName).toBeDefined();
+      const tarballPath = join(packDir, tarballName!);
+
+      copyFileSync(tarballPath, join(consumerDir, "engram.tgz"));
+      copyFileSync(
+        resolve(ROOT, "scripts/fixtures/substrate-consumer/package.json"),
+        join(consumerDir, "package.json"),
+      );
+      const patchedLock = JSON.parse(
+        readFileSync(resolve(ROOT, "scripts/fixtures/substrate-consumer/package-lock.json"), "utf8"),
+      ) as { packages: Record<string, { integrity?: string }> };
+      patchedLock.packages["node_modules/@sentropic/engram"]!.integrity =
+        `sha512-${createHash("sha512").update(readFileSync(tarballPath)).digest("base64")}`;
+      writeFileSync(join(consumerDir, "package-lock.json"), JSON.stringify(patchedLock));
+
+      execFileSync(
+        npmBin,
+        ["ci", "--offline", "--ignore-scripts", "--no-audit", "--no-fund"],
+        { cwd: consumerDir, encoding: "utf8", stdio: "pipe" },
+      );
+
+      // Kills a mutant where installing @sentropic/engram without peer args still pulls @sentropic/llm-mesh into node_modules.
+      expect(existsSync(join(consumerDir, "node_modules", "@sentropic", "llm-mesh"))).toBe(false);
+
+      // Non-mesh public entries must load cleanly without @sentropic/llm-mesh installed.
+      const nonMeshCheck = spawnSync(
+        process.execPath,
+        [
+          "--input-type=module",
+          "-e",
+          [
+            'const rootMod = await import("@sentropic/engram");',
+            'const sfcMod = await import("@sentropic/engram/session-front-contracts");',
+            'const subMod = await import("@sentropic/engram/memory-substrate");',
+            'if (typeof rootMod.buildFromJson !== "function") throw new Error("missing root buildFromJson");',
+            'if (typeof sfcMod.createEngramSessionIngestFront !== "function") throw new Error("missing session-front-contracts");',
+            'if (typeof subMod.createMemoryPortV2 !== "function") throw new Error("missing memory-substrate");',
+            'console.log("non-mesh-ok");',
+          ].join("\n"),
+        ],
+        { cwd: consumerDir, encoding: "utf8" },
+      );
+      // Kills a mutant where removing @sentropic/llm-mesh breaks root, session-front-contracts, or memory-substrate imports.
+      expect(nonMeshCheck.status, nonMeshCheck.stderr).toBe(0);
+      // Kills a mutant where the non-mesh probe exits 0 without executing its verification body.
+      expect(nonMeshCheck.stdout.trim()).toBe("non-mesh-ok");
+
+      // Importing @sentropic/engram/llm-mesh without the optional peer MUST fail and name @sentropic/llm-mesh.
+      const meshEntryRefusal = spawnSync(
+        process.execPath,
+        [
+          "--input-type=module",
+          "-e",
+          [
+            "try {",
+            '  await import("@sentropic/engram/llm-mesh");',
+            '  console.log("UNEXPECTED_SUCCESS");',
+            "  process.exit(0);",
+            "} catch (err) {",
+            "  const code = err && typeof err === 'object' && 'code' in err ? String(err.code) : '';",
+            "  const msg = err instanceof Error ? err.message : String(err);",
+            "  console.error(JSON.stringify({ code, msg }));",
+            "  process.exit(42);",
+            "}",
+          ].join("\n"),
+        ],
+        { cwd: consumerDir, encoding: "utf8" },
+      );
+      // Kills a mutant where @sentropic/engram/llm-mesh silently resolves or bundles @sentropic/llm-mesh without the peer installed.
+      expect(meshEntryRefusal.status).toBe(42);
+      const refusalPayload = JSON.parse(meshEntryRefusal.stderr.trim()) as { code: string; msg: string };
+      // Kills a mutant where the refusal of @sentropic/engram/llm-mesh fails for an unrelated reason instead of missing module resolution.
+      expect(refusalPayload.code).toBe("ERR_MODULE_NOT_FOUND");
+      // Kills a mutant where the refusal of @sentropic/engram/llm-mesh omits naming @sentropic/llm-mesh.
+      expect(refusalPayload.msg).toContain("@sentropic/llm-mesh");
+
+      // Installed CLI works without @sentropic/llm-mesh for general commands and direct scrap extract,
+      // and refuses `engram scrap extract --model mesh:...` with exit 2 naming @sentropic/llm-mesh before any request.
+      const cliBin = join(consumerDir, "node_modules", "@sentropic", "engram", "dist", "cli.js");
+      const versionRun = spawnSync(process.execPath, [cliBin, "--version"], { cwd: consumerDir, encoding: "utf8" });
+      // Kills a mutant where dist/cli.js hoists a top-level static import of @sentropic/llm-mesh and crashes on --version.
+      expect(versionRun.status, versionRun.stderr).toBe(0);
+      // Kills a mutant where the installed CLI reports a mismatched package version.
+      expect(versionRun.stdout.trim()).toBe(pkg.version);
+
+      const scrapWork = join(consumerDir, "scrap-work");
+      const snapHtml = "<html><body><p>alpha street number one brighton</p></body></html>";
+      const snapSha = createHash("sha256").update(snapHtml).digest("hex");
+      mkdirSync(join(scrapWork, "snapshots"), { recursive: true });
+      writeFileSync(join(scrapWork, "snapshots", `${snapSha}.html`), snapHtml);
+      writeFileSync(
+        join(scrapWork, "state.jsonl"),
+        `${JSON.stringify({ id: "a1", url: "http://x/1", status: "ok", pages: [{ url: "http://x/1", final_url: "http://x/1", status: 200, bytes: snapHtml.length, sha256: snapSha }] })}\n`,
+      );
+      const missionPath = join(scrapWork, "mission.json");
+      writeFileSync(missionPath, JSON.stringify({ fields: ["f"], instruction: "Extract." }));
+
+      const meshScrapRun = spawnSync(
+        process.execPath,
+        [cliBin, "scrap", "extract", "--out", scrapWork, "--mission", missionPath, "--model", "mesh:gemini-4-hydrogen-high"],
+        { cwd: consumerDir, encoding: "utf8" },
+      );
+      // Kills a mutant where `engram scrap extract --model mesh:...` exits with a non-2 code when @sentropic/llm-mesh is absent.
+      expect(meshScrapRun.status, meshScrapRun.stderr).toBe(2);
+      // Kills a mutant where the peer-absent scrap refusal omits naming the missing optional package @sentropic/llm-mesh.
+      expect(meshScrapRun.stderr).toContain("@sentropic/llm-mesh");
+      // Kills a mutant where the peer-absent scrap refusal omits explaining that the package is an optional peer.
+      expect(meshScrapRun.stderr).toMatch(/optional peer package/i);
+      // Kills a mutant that writes results.ndjson or starts extraction before refusing on missing @sentropic/llm-mesh.
+      expect(existsSync(join(scrapWork, "results.ndjson"))).toBe(false);
+
+      const directEmptyDir = join(consumerDir, "scrap-direct-empty");
+      mkdirSync(directEmptyDir, { recursive: true });
+      writeFileSync(
+        join(directEmptyDir, "state.jsonl"),
+        `${JSON.stringify({ id: "skip1", url: "http://x/skip", status: "dns", pages: [] })}\n`,
+      );
+      const directEmptyRun = spawnSync(
+        process.execPath,
+        [cliBin, "scrap", "extract", "--out", directEmptyDir, "--mission", missionPath, "--model", "openai:gpt-5-mini"],
+        { cwd: consumerDir, encoding: "utf8" },
+      );
+      // Kills a mutant where direct `engram scrap extract` fails without @sentropic/llm-mesh installed.
+      expect(directEmptyRun.status, directEmptyRun.stderr).toBe(0);
+      // Kills a mutant where direct `engram scrap extract` fails to print its summary without @sentropic/llm-mesh installed.
+      expect(directEmptyRun.stdout).toContain("scrap extract summary: ok=0 failed=0");
+    } finally {
+      rmSync(packDir, { recursive: true, force: true });
+      rmSync(consumerDir, { recursive: true, force: true });
+    }
+  },
+);

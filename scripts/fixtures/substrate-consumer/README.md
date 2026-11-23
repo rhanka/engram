@@ -1,11 +1,12 @@
-This consumer pins the third-party dependency closure for the local 0.22.1
+This consumer pins the third-party dependency closure for the local 0.28.0
 tarball. The runner substitutes only that tarball's SHA-512 integrity, then
 runs `npm ci --offline --ignore-scripts`. Missing required cache entries fail;
 the runner never regenerates the lock or fetches a replacement version.
 The remaining `tree-sitter` override is repeated here because npm applies
 overrides from the consumer root. Optional dependencies retain npm's optional
-semantics; `officeparser` is an optional peer dependency of engram, so the
-consumer closure carries no office/pdfjs/tesseract entries at all.
+semantics; `officeparser` and `@sentropic/llm-mesh` (`>=0.38.0 <0.40.0`) are
+optional peer dependencies of engram, so the consumer closure carries neither
+office/pdfjs/tesseract entries nor `@sentropic/llm-mesh`.
 
 The lock is refreshed using offline npm 11, the local packed
 artifact and the committed consumer manifest, seeded from the root lockfile

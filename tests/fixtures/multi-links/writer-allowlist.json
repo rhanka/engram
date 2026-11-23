@@ -2385,8 +2385,8 @@
     "count": 1
   },
   {
-    "file": "src/llm-mesh-bridge.ts",
-    "line": 608,
+    "file": "src/llm-mesh-core.ts",
+    "line": 503,
     "owner": "generateJson",
     "kind": "raw-graph-writer",
     "fingerprint": "308a672db605814ffec09f9bd604c105f0612533be495186b04c1a386a876e66",
