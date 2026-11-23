@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createDirectTextJsonClient, directProviderCredentialEnv, parseJsonFromLlmText, type DirectLlmProvider } from "../llm-execution.js";
+import { quoteMatches } from "./quote-match.js";
 import { getMeshErrorAttempts, isRoutePlanError, isSeatAcquisitionError } from "../llm-mesh-errors.js";
 export interface RecordSubField { name: string; instruction?: string }
 export interface MissionField { name: string; kind?: "scalar" | "record"; max_values?: number; fields?: RecordSubField[] }
@@ -188,7 +189,7 @@ export function fieldsOf(
           }
           const e = isObj(rawSub) && "value" in rawSub ? rawSub : undefined;
           const q = quoteOf(e?.quote);
-          const hit = q ? texts.find((t) => t.text.includes(q)) : undefined;
+          const hit = q ? texts.find((t) => quoteMatches(t.text, q)) : undefined;
           if (!e || !q || !hit) {
             rec[sf.name] = { value: null, quote: null, sha256: null, reason: "unverified_quote" };
             failedSubs++;
@@ -207,14 +208,14 @@ export function fieldsOf(
         if (!isObj(item) || !("value" in item)) { dropped++; continue; }
         if (item.value == null) continue;
         const q = quoteOf(item.quote);
-        const hit = q ? texts.find((t) => t.text.includes(q)) : undefined;
+        const hit = q ? texts.find((t) => quoteMatches(t.text, q)) : undefined;
         if (!q || !hit) dropped++;
         else if (values.length < f.maxValues) values.push({ value: item.value, quote: q, sha256: hit.sha });
       }
       fields[f.name] = { values, unverified_dropped: dropped };
     } else {
       const e = isObj(raw) ? raw : undefined, q = quoteOf(e?.quote);
-      const hit = q ? texts.find((t) => t.text.includes(q)) : undefined;
+      const hit = q ? texts.find((t) => quoteMatches(t.text, q)) : undefined;
       if (!e || e.value == null) fields[f.name] = { value: null, quote: null, sha256: null };
       else if (!q || !hit) fields[f.name] = { value: null, quote: null, sha256: null, reason: "unverified_quote" };
       else fields[f.name] = { value: e.value, quote: q, sha256: hit.sha };
