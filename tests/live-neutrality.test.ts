@@ -52,6 +52,7 @@ function liveBuildIsFresh(): boolean {
     "registration.ts",
     "factory-history.ts",
     "factory-local.ts",
+    "derived-worktree-graph.ts",
     "integration.ts",
     "line-attribution.ts",
     "symbol-history.ts",
@@ -77,9 +78,25 @@ function liveBuildIsFresh(): boolean {
     languages?: Record<string, { file?: string; bytes?: number }>;
   };
   if (!manifest.languages || typeof manifest.languages !== "object") return false;
+  const corePackedModules = [
+    "facts",
+    "batch-codec",
+    "generation",
+    "symbol-history",
+    "code-analysis",
+    "analysis-cache",
+    "comparisons",
+    "parse-adapter",
+    "factory-history",
+    "factory-local",
+    "derived-worktree-graph",
+  ];
   const requiredOutputs = [
-    ...["facts", "batch-codec", "generation", "symbol-history", "code-analysis", "analysis-cache", "comparisons", "parse-adapter", "factory-history", "factory-local", ...ENGINE_AND_SCHEDULER_MODULES].flatMap(name =>
-      [`${name}.js`, `${name}.d.ts`, `${name}.d.ts.map`]),
+    ...[...corePackedModules, ...ENGINE_AND_SCHEDULER_MODULES].flatMap((name) => [
+      `${name}.js`,
+      `${name}.d.ts`,
+      `${name}.d.ts.map`,
+    ]),
     "index.js",
     "index.d.ts",
     "index.d.ts.map",
@@ -868,9 +885,25 @@ const EXPECTED_ENGINES = { node: "^20.0.0 || ^22.0.0 || ^24.0.0" };
 const EXPECTED_OS = ["linux"];
 
 function expectedPackedPaths(manifestLanguages: Record<string, { file: string }>): string[] {
+  const corePackedModules = [
+    "facts",
+    "batch-codec",
+    "generation",
+    "symbol-history",
+    "code-analysis",
+    "analysis-cache",
+    "comparisons",
+    "parse-adapter",
+    "factory-history",
+    "factory-local",
+    "derived-worktree-graph",
+  ];
   return [
-    ...["facts", "batch-codec", "generation", "symbol-history", "code-analysis", "analysis-cache", "comparisons", "parse-adapter", "factory-history", "factory-local", ...ENGINE_AND_SCHEDULER_MODULES].flatMap(name =>
-      [`dist/${name}.js`, `dist/${name}.d.ts`, `dist/${name}.d.ts.map`]),
+    ...[...corePackedModules, ...ENGINE_AND_SCHEDULER_MODULES].flatMap((name) => [
+      `dist/${name}.js`,
+      `dist/${name}.d.ts`,
+      `dist/${name}.d.ts.map`,
+    ]),
     "package.json",
     "grammar-manifest.json",
     "dist/index.js",
@@ -1207,7 +1240,24 @@ describe("live neutrality", () => {
     expect(source.map((file) => file.path)).toContain("engram-live/symbol-history.ts");
     expect(source.map((file) => file.path)).toContain("engram-live/factory-history.ts");
     expect(source.map((file) => file.path)).toContain("engram-live/factory-local.ts");
-    for (const name of ["facts", "batch-codec", "generation", "line-attribution", "git-executor", "symbol-history", "code-analysis", "analysis-cache", "comparisons", "parse-adapter", "factory-history", "factory-local", ...ENGINE_AND_SCHEDULER_MODULES]) {
+    expect(source.map((file) => file.path)).toContain("engram-live/derived-worktree-graph.ts");
+    const packedCheckedModules = [
+      "facts",
+      "batch-codec",
+      "generation",
+      "line-attribution",
+      "git-executor",
+      "symbol-history",
+      "code-analysis",
+      "analysis-cache",
+      "comparisons",
+      "parse-adapter",
+      "factory-history",
+      "factory-local",
+      "derived-worktree-graph",
+      ...ENGINE_AND_SCHEDULER_MODULES,
+    ];
+    for (const name of packedCheckedModules) {
       for (const extension of ["js", "d.ts", "d.ts.map"]) {
         expect(packedPaths).toContain(`dist/${name}.${extension}`);
       }
@@ -1432,7 +1482,23 @@ describe("live neutrality", () => {
     singleMutationRejected((w) => ({ ...w, packedPaths: [...w.packedPaths, "dist/fetch-grammars.py"] }), /Python/);
     singleMutationRejected((w) => ({ ...w, packedPaths: [...w.packedPaths, "node_modules/web-tree-sitter/index.js"] }), /node_modules/);
     singleMutationRejected((w) => ({ ...w, packedPaths: w.packedPaths.filter((path) => path !== "dist/integration.js") }), /missing from the packed closure/);
-    for (const name of ["facts", "batch-codec", "generation", "line-attribution", "git-executor", "symbol-history", "code-analysis", "analysis-cache", "comparisons", "parse-adapter", "factory-history", "factory-local", ...ENGINE_AND_SCHEDULER_MODULES]) {
+    const singleMissingModules = [
+      "facts",
+      "batch-codec",
+      "generation",
+      "line-attribution",
+      "git-executor",
+      "symbol-history",
+      "code-analysis",
+      "analysis-cache",
+      "comparisons",
+      "parse-adapter",
+      "factory-history",
+      "factory-local",
+      "derived-worktree-graph",
+      ...ENGINE_AND_SCHEDULER_MODULES,
+    ];
+    for (const name of singleMissingModules) {
       for (const extension of ["js", "d.ts", "d.ts.map"]) {
         const missing = `dist/${name}.${extension}`;
         singleMutationRejected((w) => ({ ...w, packedPaths: w.packedPaths.filter((path) => path !== missing) }), /missing from the packed closure/);
