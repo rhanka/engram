@@ -1200,7 +1200,7 @@ describe("scrap converge", () => {
       fxNoSum.missionPath, "--out", fxNoSum.outDir, "--allow-missing-digest"], fxNoSum.root);
     expect(cliNoSum.code).toBe(2);
     expect(cliNoSum.err).toContain(fxNoSum.runDirs[1]);
-    expect(cliNoSum.err).toMatch(/requires --allow-transport|missing summary/);
+    expect(cliNoSum.err).toMatch(/requires --allow-transport/);
 
     const fxMixed = writeFixture(mission, {
       runA: [{ id: "u1", url: "http://x/1", fields: { city: fVal("Ottawa") } }, bRow("u2", "Toronto")],
