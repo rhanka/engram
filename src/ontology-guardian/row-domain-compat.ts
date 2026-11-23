@@ -72,9 +72,51 @@ export function classifyRowAttributes(oldRow: unknown, newRow: unknown, path: st
   }
   return out;
 }
+export function classifyReferences(oldR: unknown, newR: unknown, path: string,
+  subject: string): RowDomainChange[] {
+  const o: any[] = Array.isArray(oldR) ? oldR : [], n: any[] = Array.isArray(newR) ? newR : [];
+  const at = `${path}.references`, out: RowDomainChange[] = [];
+  if (canon(o) === canon(n)) return out;
+  if (o.length === n.length && canon(o.map(canon).sort()) === canon(n.map(canon).sort()))
+    return [change("non-breaking", "reordered_references", at, subject, o, n)];
+  for (let i = 0; i < Math.max(o.length, n.length); i++) {
+    if (i >= o.length) out.push(change("breaking", "added_reference", at, subject, undefined, n[i]));
+    else if (i >= n.length) out.push(change("breaking", "removed_reference", at, subject, o[i], undefined));
+    else if (canon(o[i]) !== canon(n[i]))
+      out.push(change("breaking", "changed_reference", at, subject, o[i], n[i]));
+  }
+  return out;
+}
+export function classifyEndpoints(oldE: unknown, newE: unknown, path: string,
+  subject: string): RowDomainChange[] {
+  const o: any = oldE ?? null, n: any = newE ?? null, at = `${path}.endpoints`;
+  if (canon(o) === canon(n)) return [];
+  if (o && n) {
+    const out: RowDomainChange[] = [];
+    for (const side of ["source", "target"])
+      if (canon(o[side]) !== canon(n[side]))
+        out.push(change("breaking", "changed_endpoint_mapping", `${at}.${side}`, subject, o[side], n[side]));
+    return out;
+  }
+  return [change("breaking", "changed_endpoint_mapping", at, subject, oldE ?? null, newE ?? null)];
+}
+export function classifyCardinality(oldC: unknown, newC: unknown, path: string,
+  subject: string): RowDomainChange[] {
+  const out: RowDomainChange[] = [];
+  for (const dir of ["in", "out"]) {
+    const b: any = (oldC as any)?.[dir] ?? { min: 0, max: "many" };
+    const a: any = (newC as any)?.[dir] ?? { min: 0, max: "many" };
+    const oMax = b.max === "many" ? Infinity : b.max, nMax = a.max === "many" ? Infinity : a.max;
+    if (a.min === b.min && nMax === oMax) continue;
+    const narrow = a.min > b.min || nMax < oMax;
+    const code = narrow ? "narrowed_cardinality" : "widened_cardinality";
+    out.push(change(narrow ? "breaking" : "non-breaking", code, `${path}.${dir}`, subject, b, a));
+  }
+  return out;
+}
 export function classifyKeyTuples(oldRow: unknown, newRow: unknown, path: string, subject: string): RowDomainChange[] {
   const o: any = oldRow ?? {}, n: any = newRow ?? {}, out: RowDomainChange[] = [];
-  if (canon(o.key) !== canon(n.key))
+  if (canon(o.key ?? null) !== canon(n.key ?? null))
     out.push(change("breaking", "changed_primary_key", `${path}.key`, subject, o.key, n.key));
   const ou: unknown[] = Array.isArray(o.unique) ? o.unique : [];
   const nu: unknown[] = Array.isArray(n.unique) ? n.unique : [];
@@ -84,30 +126,26 @@ export function classifyKeyTuples(oldRow: unknown, newRow: unknown, path: string
   out.push(change(same ? "non-breaking" : "breaking", code, upath, subject, ou, nu));
   return out;
 }
-const classifyRow = (o: any, n: any, path: string, subject: string, residual: string): RowDomainChange[] => {
-  const out = [...classifyRowAttributes(o, n, path, subject), ...classifyKeyTuples(o, n, path, subject)];
-  const kept = o?.[residual] ?? null;
-  if (canon(kept) !== canon(n?.[residual] ?? null))
-    out.push(change("breaking", "changed_modeled_field", `${path}.${residual}`, subject, kept, n?.[residual]));
-  return out;
-};
+const classifyNodeRow = (o: any, n: any, path: string, subject: string): RowDomainChange[] =>
+  [...classifyRowAttributes(o, n, path, subject), ...classifyKeyTuples(o, n, path, subject),
+    ...classifyReferences(o?.references, n?.references, path, subject)];
+const classifyRelationRow = (o: any, n: any, path: string, subject: string): RowDomainChange[] =>
+  [...classifyRowAttributes(o, n, path, subject), ...classifyKeyTuples(o, n, path, subject),
+    ...classifyEndpoints(o?.endpoints, n?.endpoints, path, subject),
+    ...classifyCardinality(o?.cardinality, n?.cardinality, `${path}.cardinality`, subject)];
 export function classifyRowDomainDelta(oldDoc: Record<string, unknown>,
   newDoc: Record<string, unknown>): RowDomainChange[] {
   const out: RowDomainChange[] = [];
-  out.push(...classifyNamedEnums((oldDoc.data_model as any)?.enums, (newDoc.data_model as any)?.enums));
+  out.push(...classifyNamedEnums((oldDoc.data_model as any)?.enums ?? {}, (newDoc.data_model as any)?.enums ?? {}));
   const oN = rowsOf(oldDoc, "node_types"), nN = rowsOf(newDoc, "node_types");
   for (const id of Object.keys(oN)) {
     if (!Object.hasOwn(nN, id)) continue;
-    out.push(...classifyRow(oN[id], nN[id], `node_types.${id}`, id, "references"));
+    out.push(...classifyNodeRow(oN[id], nN[id], `node_types.${id}`, id));
   }
   const oR = rowsOf(oldDoc, "relation_types"), nR = rowsOf(newDoc, "relation_types");
   for (const id of Object.keys(oR)) {
     if (!Object.hasOwn(nR, id)) continue;
-    if (oR[id]?.endpoints === undefined && nR[id]?.endpoints === undefined) continue;
-    out.push(...classifyRow(oR[id], nR[id], `relation_types.${id}`, id, "endpoints"));
+    out.push(...classifyRelationRow(oR[id], nR[id], `relation_types.${id}`, id));
   }
-  if (canon(oldDoc.data_model) !== canon(newDoc.data_model) && !out.some((c) => c.path.startsWith("data_model")))
-    out.push(change("breaking", "changed_modeled_field", "data_model", "data_model",
-      oldDoc.data_model, newDoc.data_model));
   return out;
 }
