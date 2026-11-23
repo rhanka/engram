@@ -1155,4 +1155,88 @@ describe("scrap converge", () => {
     expect(cliBadEvenAllowed.code).toBe(2);
     expect(cliBadEvenAllowed.err).toMatch(/mission digest mismatch/);
   });
+
+  it("refuses browser runs without --allow-transport and accepts them with it (kills mutants: transport-marker-ignored, allow-transport-unchecked)", async () => {
+    const mission = { fields: ["city"], instruction: "Extract city." };
+    const digest = sha256(JSON.stringify(mission));
+    const bRow = (id: string, city: string): Record<string, unknown> => ({
+      id, url: `http://x/${id}`, fields: { city: fVal(city) }, transport: "browser",
+    });
+    const bSum = { type: "summary", transport: "browser", mission_digest: digest, ok: 1, failed: 0 };
+    const fx = writeFixture(mission, {
+      runA: [bRow("u1", "Ottawa"), bSum],
+      runB: [bRow("u1", "Ottawa"), bSum],
+    });
+    let apiErr: unknown;
+    try { await runConverge({ runs: fx.runDirs, mission: fx.missionPath, out: fx.outDir }); }
+    catch (e) { apiErr = e; }
+    expect(String(apiErr)).toMatch(/requires --allow-transport/);
+    expect(isConvergeUsageError(apiErr)).toBe(true);
+    const cliRefused = await runCli(["scrap", "converge", "--runs", ...fx.runDirs,
+      "--mission", fx.missionPath, "--out", fx.outDir], fx.root);
+    expect(cliRefused.code).toBe(2);
+    expect(cliRefused.err).toMatch(/requires --allow-transport/);
+    expect(cliRefused.err).toContain(fx.runDirs[0]!);
+    const cliOk = await runCli(["scrap", "converge", "--runs", ...fx.runDirs, "--mission", fx.missionPath,
+      "--out", join(fx.root, "out-ok"), "--allow-transport", "browser"], fx.root);
+    expect(cliOk.code).toBe(0);
+    const allowed = readConverge(join(fx.root, "out-ok")).summary;
+    expect(allowed.allow_transports).toEqual(["browser"]);
+    expect(allowed.run_transports).toEqual({ runA: "browser", runB: "browser" });
+  });
+
+  it("still refuses a browser run without its summary under --allow-missing-digest, and refuses mixed or unlisted transports with no override (kills mutants: missing-summary-browser-passes, mixed-transport-passes, unlisted-transport-passes)", async () => {
+    const mission = { fields: ["city"], instruction: "Extract city." };
+    const digest = sha256(JSON.stringify(mission));
+    const bRow = (id: string, city: string): Record<string, unknown> => ({
+      id, url: `http://x/${id}`, fields: { city: fVal(city) }, transport: "browser",
+    });
+    const fxNoSum = writeFixture(mission, {
+      runA: [{ id: "u1", url: "http://x/1", fields: { city: fVal("Ottawa") } },
+        { type: "summary", mission_digest: digest }],
+      runB: [bRow("u1", "Ottawa")],
+    }, { omitSummary: ["runB"] });
+    const cliNoSum = await runCli(["scrap", "converge", "--runs", ...fxNoSum.runDirs, "--mission",
+      fxNoSum.missionPath, "--out", fxNoSum.outDir, "--allow-missing-digest"], fxNoSum.root);
+    expect(cliNoSum.code).toBe(2);
+    expect(cliNoSum.err).toContain(fxNoSum.runDirs[1]);
+    expect(cliNoSum.err).toMatch(/requires --allow-transport|missing summary/);
+
+    const fxMixed = writeFixture(mission, {
+      runA: [{ id: "u1", url: "http://x/1", fields: { city: fVal("Ottawa") } }, bRow("u2", "Toronto")],
+      runB: [bRow("u1", "Ottawa"), bRow("u2", "Toronto"),
+        { type: "summary", transport: "browser", mission_digest: digest }],
+    });
+    const cliMixed = await runCli(["scrap", "converge", "--runs", ...fxMixed.runDirs, "--mission",
+      fxMixed.missionPath, "--out", fxMixed.outDir, "--allow-transport", "browser"], fxMixed.root);
+    expect(cliMixed.code).toBe(2);
+    expect(isConvergeUsageError(cliMixed.err)).toBe(true);
+    const cliMixedBare = await runCli(["scrap", "converge", "--runs", ...fxMixed.runDirs, "--mission",
+      fxMixed.missionPath, "--out", fxMixed.outDir], fxMixed.root);
+    expect(cliMixedBare.code).toBe(2);
+
+    const fxOther = writeFixture(mission, {
+      runA: [{ ...bRow("u1", "Ottawa"), transport: "pigeon" },
+        { type: "summary", transport: "pigeon", mission_digest: digest }],
+      runB: [bRow("u1", "Ottawa"), { type: "summary", transport: "browser", mission_digest: digest }],
+    });
+    const cliOther = await runCli(["scrap", "converge", "--runs", ...fxOther.runDirs, "--mission",
+      fxOther.missionPath, "--out", fxOther.outDir, "--allow-transport", "browser"], fxOther.root);
+    expect(cliOther.code).toBe(2);
+    expect(cliOther.err).toMatch(/pigeon/);
+  });
+
+  it("records null run_transports for extract runs alongside an allowed browser run (kills mutants: unmarked-run-misclassified)", async () => {
+    const mission = { fields: ["city"], instruction: "Extract city." };
+    const digest = sha256(JSON.stringify(mission));
+    const fx = writeFixture(mission, {
+      runA: [{ id: "u1", url: "http://x/1", fields: { city: fVal("Ottawa") } }],
+      runB: [{ id: "u1", url: "http://x/1", fields: { city: fVal("Ottawa") }, transport: "browser" },
+        { type: "summary", transport: "browser", mission_digest: digest }],
+    });
+    const res = await runConverge({ runs: fx.runDirs, mission: fx.missionPath, out: fx.outDir,
+      allowTransports: ["browser", "browser"] });
+    expect(res.summary.run_transports).toEqual({ runA: null, runB: "browser" });
+    expect(res.summary.allow_transports).toEqual(["browser", "browser"]);
+  });
 });
