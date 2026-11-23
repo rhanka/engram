@@ -16,6 +16,7 @@ import { toJsonValue, type JsonValue } from "./json-value.js";
 import { tryCanonicalBytes } from "./ontology-guardian/canonical.js";
 import { DATA_MODEL_FORMAT, extraKey, isTrimmedStr } from "./model-schemas.js";
 import { hashOntologyProfile } from "./ontology-profile.js";
+import { classifyRowDomainDelta } from "./ontology-guardian/row-domain-compat.js";
 import { validateModelGovernance, type ModelGovernance, type QualifiedPin } from "./model-governance.js";
 export type { Digest, Pin } from "./ontology-guardian/types.js";
 export type { Cardinality, EnumDomain, FieldPair, LogicalType, ModelAttribute, ModelEdge, ModelEndpoints, ModelHeader, ModelNode, ModelRow, Names, Reference, TextDomain } from "./model-schemas.js";
@@ -128,6 +129,8 @@ const MODELED_REL_KEYS = new Set([
   "assertion_basis", "derivation_method", "derivation_methods", "description",
 ]);
 const UNBOUNDED_CARDINALITY: OntologyCardinalityBound = { min: 0, max: "many" };
+const TAGGED_ROW_KEYS = ["attributes", "key", "unique", "references", "endpoints"];
+const TAGGED_ROW_SKIP = new Set([...MODELED_NODE_KEYS, ...MODELED_REL_KEYS, ...TAGGED_ROW_KEYS]);
 const GRAN_RANK: Record<string, number> = { file: 0, page: 1, section: 2, paragraph: 3 };
 
 function asRec(v: unknown): Record<string, unknown> {
@@ -940,7 +943,12 @@ export function checkProfileCompatibility(
   if (oldP.default_language !== newP.default_language) pushB("changed_default_language", "default_language", "default_language", canonicalBytes(oldP.default_language), canonicalBytes(newP.default_language));
   if (oldP.version !== newP.version) pushNB("bumped_profile_version", "version", "version", canonicalBytes(oldP.version), canonicalBytes(newP.version));
   checkResidual("metamodel_version", "metamodel_version", oldP.metamodel_version, newP.metamodel_version);
-  checkResidual("data_model", "data_model", oldP.data_model, newP.data_model);
+  const taggedPair = oldP.data_model !== undefined && newP.data_model !== undefined;
+  const nodeSkip = taggedPair ? TAGGED_ROW_SKIP : MODELED_NODE_KEYS;
+  const relSkip = taggedPair ? TAGGED_ROW_SKIP : MODELED_REL_KEYS;
+  if (!taggedPair) checkResidual("data_model", "data_model", oldP.data_model, newP.data_model);
+  else for (const c of classifyRowDomainDelta(oldDoc, newDoc))
+    (c.kind === "breaking" ? pushB : pushNB)(c.code, c.path, c.subject, c.before, c.after);
   if (v1) {
     const before = renderCanon(oldP.presentation), after = renderCanon(newP.presentation);
     if (before !== after) pushNB("changed_presentation", "presentation", "presentation", before, after);
@@ -1012,8 +1020,8 @@ export function checkProfileCompatibility(
     }
 
     const oRem: Record<string, unknown> = {}, nRem: Record<string, unknown> = {};
-    for (const k of Object.keys(oRaw)) if (!MODELED_NODE_KEYS.has(k)) setProp(oRem, k, oRaw[k]);
-    for (const k of Object.keys(nRaw)) if (!MODELED_NODE_KEYS.has(k)) setProp(nRem, k, nRaw[k]);
+    for (const k of Object.keys(oRaw)) if (!nodeSkip.has(k)) setProp(oRem, k, oRaw[k]);
+    for (const k of Object.keys(nRaw)) if (!nodeSkip.has(k)) setProp(nRem, k, nRaw[k]);
     if (renderCanon(oRem) !== renderCanon(nRem)) {
       pushB("changed_unmodeled_block", `node_types.${t}`, t, renderTrunc(renderCanon(oRem)), renderTrunc(renderCanon(nRem)));
     }
@@ -1066,8 +1074,8 @@ export function checkProfileCompatibility(
     }
 
     const oRem: Record<string, unknown> = {}, nRem: Record<string, unknown> = {};
-    for (const k of Object.keys(oRaw)) if (!MODELED_REL_KEYS.has(k) && !(v1 && k === "cardinality")) setProp(oRem, k, oRaw[k]);
-    for (const k of Object.keys(nRaw)) if (!MODELED_REL_KEYS.has(k) && !(v1 && k === "cardinality")) setProp(nRem, k, nRaw[k]);
+    for (const k of Object.keys(oRaw)) if (!relSkip.has(k) && !(v1 && k === "cardinality")) setProp(oRem, k, oRaw[k]);
+    for (const k of Object.keys(nRaw)) if (!relSkip.has(k) && !(v1 && k === "cardinality")) setProp(nRem, k, nRaw[k]);
     if (renderCanon(oRem) !== renderCanon(nRem)) {
       pushB("changed_unmodeled_block", `relation_types.${r}`, r, renderTrunc(renderCanon(oRem)), renderTrunc(renderCanon(nRem)));
     } else if (renderCanon(oRaw.description) !== renderCanon(nRaw.description)) {

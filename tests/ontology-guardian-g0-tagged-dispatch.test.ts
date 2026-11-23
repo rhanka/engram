@@ -51,7 +51,6 @@ it.each([{}, { enums: undefined }])("accepts an exact major-2 triple and omits u
 
 const untagged = { ...example, data_model: undefined };
 it.each([
-  [example, { ...example, data_model: { ...example.data_model, enums: { ...example.data_model.enums, extra: example.data_model.enums.locale } } }],
   [example, untagged],
   [untagged, example],
 ])("fails closed on data_model change %#", (before, after) => {
