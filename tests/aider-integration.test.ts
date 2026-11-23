@@ -61,6 +61,7 @@ describe("Aider integration contract", () => {
       const skill = readFileSync(skillPath, "utf-8");
       expect(skill).toContain("sequential extraction on Aider");
       expect(skill).toContain("Semantic extraction: N files (sequential - Aider)");
+      expect(skill).toContain("Scrap annotation in assistant mode");
       expect(skill).not.toContain("MANDATORY: You MUST use the Agent tool here.");
     } finally {
       process.argv = previousArgv;

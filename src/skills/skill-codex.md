@@ -697,3 +697,121 @@ Commit recommendation workflow: `engram recommend-commits` is advisory-only. It 
 CRG review workflow: `$engram minimal-context` is the first review call. Keep graph review context within `<=5 graph tool calls` and `<=800` graph-context tokens. If `.engram/needs_update` exists or `.engram/branch.json` has `stale=true`, warn and update before trusting semantic review output. Then follow only the compact route: `engram detect-changes` for risk, `engram affected-flows` for flow impact, and `engram review-context` for snippets or radius detail. If `.engram/flows.json` is missing and flows are needed, run `engram flows build` first. Explicit `--files`, `--base`, `--head`, or `--staged` inputs override unrelated dirty worktree noise; mention dirty worktrees as a warning and never mutate git state.
 
 Review analysis workflow: `engram review-analysis` adds blast radius, bridge nodes, test-gap hints, impacted communities, and multimodal/doc safety. `engram review-eval` is the deterministic evaluation harness for token savings, impacted-file recall, review summary precision, and multimodal regression safety.
+
+## Scrap annotation in assistant mode
+
+Assistant transport records harness annotations without a browser seat.
+Two roles. The orchestrator is the long-lived session: it runs engram
+commands, stamps times, writes `answers.jsonl` and runs `scrap import`;
+it never annotates. The annotator is one fresh context per packet attempt:
+it receives only a message text and returns only the JSON answer text.
+
+Surfaces in this version form a closed list: `claude-code`, `codex`, `agy`.
+Mapping: `claude-code` installs from `skill.md` (`skill-windows.md` on
+Windows); `codex` installs from `skill-codex.md` to
+`.agents/skills/engram/SKILL.md`; `agy` installs from `skill.md`
+(`skill-windows.md` on Windows). `muse` is absent: no platform, skill file
+or install destination exists, so a `muse` line is an unknown surface and
+refuses. A harness outside the list stops and reports instead of declaring
+another surface; import refuses an unknown surface and a false declaration
+would be recorded as declared.
+
+`fresh_context` must be `true`. It declares that the annotator context
+received no packet-relevant information except this attempt's `scrap prompt`
+message: no other packet's prompt or answer, no other annotator's run,
+answer file or converge output, no gold or golden file, and not its own
+attempt-1 context when answering an attempt-2 repair message. Between
+receiving the message and emitting the answer it made no tool call and read
+nothing: no file (including capture snapshots, `state.jsonl`, the mission
+file, any `results.ndjson` or `answers.jsonl`, graph files under
+`.engram/` or `.graphify/`, or git history), no web or memory lookup, no
+MCP call. Harness boilerplate every context carries (system prompt, tool
+definitions, the engram skill text itself, project instruction files) does
+not breach the declaration; acting on any of it to fetch packet-relevant
+content does. Same role as `temporary_chat` for browser: declared, not
+verifiable, and recorded as declared.
+
+Loop. For each packet id, in order:
+
+- a. Orchestrator: run `engram scrap prompt --capture <capture-dir>`
+  `--mission <m> --id <id> --json`. Take `message`, `prompt_sha256` and
+  `snapshot_sha256` from that one JSON line. Never derive either hash from
+  `state.jsonl`, from snapshot files, or by hashing anything yourself.
+- b. Orchestrator: record `started_at` (ISO 8601 UTC), hand `message` and
+  nothing else packet-related to a fresh annotator context, collect its
+  reply verbatim as `raw_response`, record `finished_at`. Do not trim,
+  fence, or repair the reply. The message is handed over unchanged, byte
+  for byte: never summarised, shortened, reflowed or re-encoded. In the
+  process path the reply is captured to a file, and the answer line is
+  built from that file and the `--json` line by a JSON encoder (for example
+  `node -e`), which also stamps both timestamps; the reply is never
+  re-typed.
+- c. Orchestrator: append one `answers.jsonl` line with exactly the eleven
+  assistant keys `id`, `attempt`, `snapshot_sha256`, `prompt_sha256`,
+  `model_declared`, `effort_declared`, `transport`, `assistant`,
+  `started_at`, `finished_at`, `raw_response` (`attempt: 1`; the hashes from
+  step a; `transport: "assistant"`;
+  `assistant: { surface, fresh_context: true }`; the declared model and
+  effort; the two timestamps from step b).
+- d. After the packet batch (or per packet), orchestrator: run
+  `engram scrap import --out <run-dir> --capture <capture-dir> --mission <m>`
+  `--from <answers.jsonl> --model <surface>:<model_declared>-<effort_declared>`.
+  Import exits 0 even when it records a failed row; read the row's `error`
+  from `<run-dir>/results.ndjson` (orchestrator only, never show it to a
+  later annotator).
+- e. Repair, only when the attempt-1 row's `error` is `parse_error`:
+  orchestrator runs `engram scrap prompt --capture <capture-dir>`
+  `--mission <m> --id <id> --repair --from <answers.jsonl> --json`, repeats
+  steps b to c in a new fresh annotator context with `attempt: 2` and the
+  repair hashes, then re-runs step d. No other failure is repaired this way;
+  a failed row is retried only as a new `attempt: 1` under `--retry-failed`,
+  exactly as for browser.
+
+The fresh annotator context may be a sub-agent, a new session, or a new
+process of the same CLI. A process annotator starts from an empty working
+directory, with tool use disabled where the CLI offers it. Where the CLI
+reads a prompt from a stream, the orchestrator writes the annotator rules
+into the stream first and the unchanged `scrap prompt` stdout after them
+(for example `{ cat <rules-file>; engram scrap prompt …; } | <cli>`), or
+passes the rules through the CLI's system-prompt option; the message bytes
+are never edited, and hashes still come only from the `--json` line
+(step a). Re-typing the message and the reply is permitted where a process
+cannot be fed. `prompt_sha256` covers the message
+that `scrap prompt` printed and import recomputes it from the capture;
+neither shows what the annotator context received, nor that `raw_response`
+is the reply as given. Both hand-over copies are unverified under re-typing.
+
+Annotator rules: answer with only the JSON the message asks for (no prose,
+no tools, no file, web or memory access, no questions back); never read any
+run dir or answer file (the current run's included), converge output, gold
+file, the capture dir or the mission file; never annotate a second packet
+or a repair in a context
+that already answered; never self-repair output the orchestrator reports as
+unparseable: repair happens only through a fresh context answering
+`scrap prompt --repair` as `attempt: 2`. If the harness cannot start a
+context meeting the `fresh_context` definition, the orchestrator stops and
+reports it instead of annotating in a contaminated context.
+
+The orchestrator gives the annotator rules to each annotator context as
+framing around the message. They are skill text, not packet-relevant, and
+the only thing the orchestrator adds. While a run is in progress, the
+orchestrator reads no gold file, no converge output, and no other
+annotator's run or answer file. `model_declared` and `effort_declared`
+are those of the annotator context, which the orchestrator sets or reads when
+it starts that context. `started_at` and `finished_at` are stamped by the
+orchestrator around the annotator call, never self-reported by the annotator.
+`effort_declared` takes `low`, `medium`, `high`, `xhigh` or `max`.
+
+Answer lines: one transport per file and per run dir; a mixed file refuses
+the whole import before anything is written. `--model` must match
+`^(claude-code|codex|agy):[a-z0-9][a-z0-9.-]*-(low|medium|high|xhigh|max)$`,
+its prefix must equal `assistant.surface` and its tail must equal
+`<model_declared>-<effort_declared>` on every line. A new run dir takes the
+transport of its first import. Converge needs `--allow-transport assistant`
+to read an assistant run. Engram itself spawns nothing, opens no network and
+uses no credential in this flow.
+
+Before starting a run, confirm the installed skill contains
+`Scrap annotation in assistant mode` (re-run `engram install <platform>`
+(`claude`, `windows`, `codex`, `antigravity` or `antigravity-windows`; add
+`--project` for a project-scoped install) after upgrading).

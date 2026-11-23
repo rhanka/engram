@@ -660,3 +660,265 @@ describe("scrap import rows", () => {
     expect(j.prompt_sha256).toBe("b2bd9c04bc9385600ae362540958f095f1272755204508185814ef2024e1e639");
   });
 });
+
+describe("scrap import assistant transport", () => {
+  const ASSIST_LABEL = "claude-code:carbon-high";
+  const ASSIST_TS = { start: "2026-11-22T10:00:00Z", end: "2026-11-22T10:01:00Z" };
+  function validAssist(h: Hashes, raw: string, attempt: 1 | 2 = 1): Record<string, unknown> {
+    return {
+      id: "p1", attempt, snapshot_sha256: h.snaps, prompt_sha256: h.promptSha,
+      model_declared: "carbon", effort_declared: "high", transport: "assistant",
+      assistant: { surface: "claude-code", fresh_context: true },
+      started_at: ASSIST_TS.start, finished_at: ASSIST_TS.end, raw_response: raw,
+    };
+  }
+  async function importAssist(out: string, capture: string, from: string, model = ASSIST_LABEL,
+    extra: string[] = []): Promise<CliResult> {
+    return runCli(["scrap", "import", "--out", out, "--capture", capture, "--mission",
+      join(capture, "mission.json"), "--from", from, "--model", model, ...extra]);
+  }
+
+  it("imports a valid assistant line (kills mutant: assistant-row-shape-moved)", async () => {
+    const d = makeCapture(MISSION_TEXT, [okRow("p1", [S1])]);
+    const j = await promptJson(d, "p1");
+    const out = mkdtempSync(join(tmpdir(), "scrap-assist-"));
+    const from = join(d, "a.jsonl");
+    writeAnswers(from, [answerLine(validAssist(j, FIXED))]);
+    const r = await importAssist(out, d, from);
+    expect(r.code).toBe(0);
+    const lines = readResults(out);
+    expect(lines).toHaveLength(2);
+    const row = JSON.parse(lines[0]!);
+    const summary = JSON.parse(lines[1]!);
+    expect(row.transport).toBe("assistant");
+    expect(row.transport_label).toBe(ASSIST_LABEL);
+    expect(row.assistant).toEqual({ surface: "claude-code", fresh_context: true });
+    expect(row).not.toHaveProperty("ui");
+    expect(summary.transport).toBe("assistant");
+    expect(summary).not.toHaveProperty("assistant");
+    expect(summary).not.toHaveProperty("ui");
+    const keys = Object.keys(row);
+    expect(keys).toEqual(["id", "url", "fields", "transport", "transport_label", "attempt",
+      "model_declared", "effort_declared", "assistant", "started_at", "finished_at",
+      "prompt_sha256", "raw_response_sha256"]);
+    for (const parsed of [row, summary]) {
+      for (const k of ["tokens", "cost", "mesh", "routed", "routed_mismatch", "resolved", "calls_total",
+        "calls_by_window", "calls_by_model", "quote_status"]) {
+        expect(parsed[k], k).toBeUndefined();
+      }
+    }
+    expect(Object.keys(summary).sort()).toEqual(["attempts_total", "failed", "mission_digest",
+      "ok", "source_sha256", "transport", "transport_label", "type"]);
+    expect(row.fields).toEqual({ company: { value: "Acme Canada Inc.", quote: "Acme Canada Inc.", sha256: S1 } });
+  });
+
+  it("refuses fresh_context false (kills mutant: fresh-context-false-accepted)", async () => {
+    const d = makeCapture(MISSION_TEXT, [okRow("p1", [S1])]);
+    const j = await promptJson(d, "p1");
+    const out = mkdtempSync(join(tmpdir(), "scrap-assist-"));
+    const line = validAssist(j, FIXED);
+    (line.assistant as Record<string, unknown>).fresh_context = false;
+    const from = join(d, "fresh-false.jsonl");
+    writeAnswers(from, [answerLine(line)]);
+    const before = readResultsRaw(out);
+    const r = await importAssist(out, d, from);
+    expect(r.code).toBe(2);
+    expect(r.err).toMatch(/fresh_context/);
+    expect(readResultsRaw(out)).toBe(before);
+  });
+
+  it("refuses unknown and muse surfaces (kills mutant: unknown-surface-accepted)", async () => {
+    const d = makeCapture(MISSION_TEXT, [okRow("p1", [S1])]);
+    const j = await promptJson(d, "p1");
+    for (const surface of ["muse", "chatgpt-web"]) {
+      const out = mkdtempSync(join(tmpdir(), "scrap-assist-"));
+      const line = validAssist(j, FIXED);
+      (line.assistant as Record<string, unknown>).surface = surface;
+      const from = join(d, `surface-${surface}.jsonl`);
+      writeAnswers(from, [answerLine(line)]);
+      const r = await importAssist(out, d, from);
+      expect(r.code).toBe(2);
+      expect(r.err).toMatch(/invalid assistant\.surface/);
+      expect(readResultsRaw(out)).toBe(null);
+    }
+  });
+
+  it("refuses unknown keys top and inside (kills mutant: assistant-extra-key-accepted)", async () => {
+    const d = makeCapture(MISSION_TEXT, [okRow("p1", [S1])]);
+    const j = await promptJson(d, "p1");
+    const top = validAssist(j, FIXED) as Record<string, unknown>;
+    (top as Record<string, unknown>).zzz = 1;
+    const inner = validAssist(j, FIXED) as Record<string, unknown>;
+    (inner.assistant as Record<string, unknown>).zzz = 1;
+    for (const [name, bad] of [["top", top], ["inner", inner]] as const) {
+      const out = mkdtempSync(join(tmpdir(), "scrap-assist-"));
+      const from = join(d, `unknown-${name}.jsonl`);
+      writeAnswers(from, [answerLine(bad)]);
+      const r = await importAssist(out, d, from);
+      expect(r.code).toBe(2);
+      expect(r.err).toMatch(/unknown.*key/);
+      expect(readResultsRaw(out)).toBe(null);
+    }
+  });
+
+  it("refuses effort_declared outside the closed set (kills mutant: assistant-bad-effort-accepted-D1)", async () => {
+    const d = makeCapture(MISSION_TEXT, [okRow("p1", [S1])]);
+    const j = await promptJson(d, "p1");
+    const out = mkdtempSync(join(tmpdir(), "scrap-assist-"));
+    const line = validAssist(j, FIXED);
+    line.effort_declared = "5-5-max";
+    line.model_declared = "claude-opus";
+    const from = join(d, "bad-effort.jsonl");
+    writeAnswers(from, [answerLine(line)]);
+    const r = await importAssist(out, d, from, "claude-code:claude-opus-5-5-max");
+    expect(r.code).toBe(2);
+    expect(r.err).toMatch(/effort_declared/);
+    expect(readResultsRaw(out)).toBe(null);
+  });
+
+  it("refuses assistant labels outside its grammar (kills mutant: assistant-label-grammar-ignored)", async () => {
+    const d = makeCapture(MISSION_TEXT, [okRow("p1", [S1])]);
+    const j = await promptJson(d, "p1");
+    for (const [name, label] of [["web", "gemini-web:carbon-high"], ["muse", "muse:carbon-high"],
+      ["noeffort", "claude-code:carbon"]] as const) {
+      const out = mkdtempSync(join(tmpdir(), "scrap-assist-"));
+      const from = join(d, `label-${name}.jsonl`);
+      writeAnswers(from, [answerLine(validAssist(j, FIXED))]);
+      const r = await importAssist(out, d, from, label);
+      expect(r.code).toBe(2);
+      expect(r.err).toMatch(/--model/);
+      expect(readResultsRaw(out)).toBe(null);
+    }
+    const outCap = mkdtempSync(join(tmpdir(), "scrap-assist-"));
+    const badModel = validAssist(j, FIXED);
+    badModel.model_declared = "Carbon";
+    const fromCap = join(d, "label-capital.jsonl");
+    writeAnswers(fromCap, [answerLine(badModel)]);
+    const rCap = await importAssist(outCap, d, fromCap, "claude-code:Carbon-high");
+    expect(rCap.code).toBe(2);
+    expect(rCap.err).toMatch(/invalid --model label/);
+    expect(readResultsRaw(outCap)).toBe(null);
+  });
+
+  it("refuses an assistant label on a browser file (kills mutant: cross-label-accepted)", async () => {
+    const d = makeCapture(MISSION_TEXT, [okRow("p1", [S1])]);
+    const j = await promptJson(d, "p1");
+    const out = mkdtempSync(join(tmpdir(), "scrap-assist-"));
+    const from = join(d, "browser-with-assist-label.jsonl");
+    writeAnswers(from, [answerLine(validLine(j, FIXED))]);
+    const r = await importAssist(out, d, from);
+    expect(r.code).toBe(2);
+    expect(r.err).toMatch(/--model/);
+    expect(readResultsRaw(out)).toBe(null);
+  });
+
+  it("refuses surface prefix and tail mismatches (kills mutant: assistant-binding-unchecked)", async () => {
+    const d = makeCapture(MISSION_TEXT, [okRow("p1", [S1])]);
+    const j = await promptJson(d, "p1");
+    const outP = mkdtempSync(join(tmpdir(), "scrap-assist-"));
+    const fromP = join(d, "prefix.jsonl");
+    writeAnswers(fromP, [answerLine(validAssist(j, FIXED))]);
+    const lineP = JSON.parse(readFileSync(fromP, "utf-8").split("\n")[0]!) as Record<string, unknown>;
+    (lineP.assistant as Record<string, unknown>).surface = "codex";
+    writeAnswers(fromP, [JSON.stringify(lineP)]);
+    const rP = await importAssist(outP, d, fromP);
+    expect(rP.code).toBe(2);
+    expect(rP.err).toMatch(/surface/);
+    expect(readResultsRaw(outP)).toBe(null);
+    const outT = mkdtempSync(join(tmpdir(), "scrap-assist-"));
+    const fromT = join(d, "tail.jsonl");
+    const lineT = validAssist(j, FIXED);
+    lineT.model_declared = "other";
+    writeAnswers(fromT, [answerLine(lineT)]);
+    const rT = await importAssist(outT, d, fromT);
+    expect(rT.code).toBe(2);
+    expect(rT.err).toMatch(/does not match/);
+    expect(readResultsRaw(outT)).toBe(null);
+  });
+
+  it("refuses a second transport into a run dir (kills mutant: cross-transport-appended)", async () => {
+    const d = makeCapture(MISSION_TEXT, [okRow("p1", [S1]), okRow("p2", [S1])]);
+    const j1 = await promptJson(d, "p1");
+    const j2 = await promptJson(d, "p2");
+    const out = mkdtempSync(join(tmpdir(), "scrap-assist-"));
+    const fromB = join(d, "b.jsonl");
+    writeAnswers(fromB, [answerLine(validLine(j1, FIXED))]);
+    expect((await importCli(out, d, fromB)).code).toBe(0);
+    const before = readResultsRaw(out);
+    const fromA = join(d, "a.jsonl");
+    writeAnswers(fromA, [answerLine({ ...validAssist(j2, FIXED), id: "p2" })]);
+    const r = await importAssist(out, d, fromA);
+    expect(r.code).toBe(2);
+    expect(r.err).toMatch(/transport/);
+    expect(readResultsRaw(out)).toBe(before);
+    const out2 = mkdtempSync(join(tmpdir(), "scrap-assist-"));
+    const fromA2 = join(d, "a2.jsonl");
+    writeAnswers(fromA2, [answerLine(validAssist(j1, FIXED))]);
+    expect((await importAssist(out2, d, fromA2)).code).toBe(0);
+    const before2 = readResultsRaw(out2);
+    const fromB2 = join(d, "b2.jsonl");
+    writeAnswers(fromB2, [answerLine({ ...validLine(j2, FIXED), id: "p2" })]);
+    const r2 = await importCli(out2, d, fromB2);
+    expect(r2.code).toBe(2);
+    expect(r2.err).toMatch(/transport/);
+    expect(readResultsRaw(out2)).toBe(before2);
+  });
+
+  it("refuses both-objects, wrong-object and unknown transport (kills mutant: transport-shape-confused)", async () => {
+    const d = makeCapture(MISSION_TEXT, [okRow("p1", [S1])]);
+    const j = await promptJson(d, "p1");
+    const baseA = validAssist(j, FIXED) as Record<string, unknown>;
+    const baseB = validLine(j, FIXED) as unknown as Record<string, unknown>;
+    const both = { ...baseB, assistant: { surface: "claude-code", fresh_context: true } };
+    const browserWithAssist = { ...baseB, assistant: { surface: "codex", fresh_context: true } };
+    const assistWithUi = { ...baseA, ui: { surface: "x", temporary_chat: true } };
+    const unknownT = { ...baseA, transport: "seat" };
+    for (const [name, bad, model] of [["both", both, ASSIST_LABEL], ["b-assist", browserWithAssist, LABEL],
+      ["a-ui", assistWithUi, ASSIST_LABEL], ["unknown", unknownT, ASSIST_LABEL]] as const) {
+      const out = mkdtempSync(join(tmpdir(), "scrap-assist-"));
+      const from = join(d, `shape-${name}.jsonl`);
+      writeAnswers(from, [answerLine(bad)]);
+      const r = model === LABEL ? await importCli(out, d, from) : await importAssist(out, d, from);
+      expect(r.code).toBe(2);
+      if (name === "unknown") expect(r.err).toMatch(/transport/);
+      else expect(r.err).toMatch(/unknown key/);
+      expect(readResultsRaw(out)).toBe(null);
+    }
+  });
+
+  it("refuses a mixed-transport file with nothing written (kills mutant: mixed-file-partial-write)", async () => {
+    const d = makeCapture(MISSION_TEXT, [okRow("p1", [S1]), okRow("p2", [S1])]);
+    const j1 = await promptJson(d, "p1");
+    const d2cap = d;
+    const j2 = { promptSha: j1.promptSha, snaps: j1.snaps };
+    void d2cap;
+    const out = mkdtempSync(join(tmpdir(), "scrap-assist-"));
+    const lineB = { ...validLine(j1, FIXED), id: "p1" };
+    const lineA = { ...validAssist({ promptSha: j1.promptSha, snaps: j1.snaps }, FIXED), id: "p2" };
+    void j2;
+    const from = join(d, "mixed.jsonl");
+    writeAnswers(from, [answerLine(lineB), answerLine(lineA)]);
+    const r = await importAssist(out, d, from);
+    expect(r.code).toBe(2);
+    expect(r.err).toMatch(/transport/);
+    expect(readResultsRaw(out)).toBe(null);
+  });
+
+  it("repairs an unparseable assistant answer (kills mutant: assistant-repair-missing)", async () => {
+    const d = makeCapture(MISSION_TEXT, [okRow("p1", [S1])]);
+    const j = await promptJson(d, "p1");
+    const from = join(d, "answers.jsonl");
+    writeAnswers(from, [answerLine(validAssist(j, '{"broken":'))]);
+    const j2raw = await promptJson(d, "p1", ["--repair", "--from", from]);
+    expect(j2raw.attempt).toBe(2);
+    const j2 = { promptSha: j2raw.prompt_sha256 as string, snaps: j2raw.snapshot_sha256 as string[] };
+    const out = mkdtempSync(join(tmpdir(), "scrap-assist-"));
+    writeAnswers(from, [answerLine(validAssist(j, '{"broken":')), answerLine(validAssist(j2, FIXED, 2))]);
+    const r = await importAssist(out, d, from);
+    expect(r.code).toBe(0);
+    const rows = readResults(out).map((l) => JSON.parse(l)).filter((x) => x.type !== "summary");
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({ error: "parse_error", attempt: 1, transport: "assistant" });
+    expect(rows[1]).toMatchObject({ attempt: 2, transport: "assistant" });
+  });
+});

@@ -320,6 +320,43 @@ describe("skill cache examples", () => {
     expect(content).not.toContain(".graphify_step_");
   });
 
+  it("ships scrap annotation in assistant mode (kills mutant: assistant-section-missing)", () => {
+    const docs = [
+      "../src/skills/skill.md",
+      "../src/skills/skill-windows.md",
+      "../src/skills/skill-codex.md",
+    ];
+    for (const relativePath of docs) {
+      const content = readFileSync(new URL(relativePath, import.meta.url), "utf-8");
+      const start = content.indexOf("## Scrap annotation in assistant mode");
+      expect(start, relativePath).toBeGreaterThan(-1);
+      const rest = content.slice(start);
+      const ends = ["\n## ", "<!-- multi-links portable begin -->"]
+        .map((m) => rest.indexOf(m, 1)).filter((i) => i !== -1);
+      const section = rest.slice(0, ends.length > 0 ? Math.min(...ends) : rest.length);
+      for (const needle of ["Scrap annotation in assistant mode", "scrap prompt", "scrap import",
+        "fresh_context", "claude-code", "codex", "agy", "stops and reports",
+        "converge output", "gold", "writes the annotator rules", "engram install <platform>"]) {
+        expect(section, `${relativePath} ${needle}`).toContain(needle);
+      }
+      expect(section).not.toContain("~/.codex");
+    }
+  });
+
+  it("keeps the assistant section outside the Aider span (kills mutant: aider-render-drops-section)", () => {
+    const content = readFileSync(new URL("../src/skills/skill.md", import.meta.url), "utf-8");
+    const heading = "Scrap annotation in assistant mode";
+    expect(content).toContain(heading);
+    const partB = "#### Part B - Semantic extraction (parallel subagents)";
+    const partC = "#### Part C - Merge AST + semantic into final extraction";
+    const iH = content.indexOf(heading);
+    const iB = content.indexOf(partB);
+    const iC = content.indexOf(partC);
+    expect(iB).toBeGreaterThan(-1);
+    expect(iC).toBeGreaterThan(iB);
+    expect(iH === -1 ? false : iH < iB || iH > iC).toBe(true);
+  });
+
   it("marks uv and pipx Python detection as not applicable for the TypeScript Windows skill", () => {
     const content = readFileSync(new URL("../src/skills/skill-windows.md", import.meta.url), "utf-8");
 
