@@ -9,9 +9,21 @@
  *   `dist/registry/`;
  * - the complete `MemoryPublisherAssetsV1` receipt at
  *   `registry/publisher-assets.v1.json` (kept OUT of the packed files: it
- *   binds the packed closure to its tarball, so the tarball hash it carries
- *   is backfilled post-pack by `scripts/refresh-candidate-manifest.mjs`;
- *   every other field is final at build time).
+ *   binds the packed closure to its tarball and source commit, so its
+ *   tarball hash and `executableProvenance.sourceHead` are backfilled
+ *   post-pack by `scripts/refresh-candidate-manifest.mjs` and never stamped
+ *   from the current checkout's `HEAD` during `npm run build`).
+ *
+ * Provenance staleness contract (review finding 2): the four provenance
+ * fields (`tarballSha256`, `tarballIntegrity`,
+ * `executableProvenance.sourceHead`, `executableProvenance.codeArchiveSha256`)
+ * carry the values of the LAST `npm run refresh:candidate-manifest` until it
+ * runs again. The build reuses that binding only while
+ * `candidate-manifest.json` is present, valid, and its recorded
+ * `registryArtifacts.registryEntryDigest` still matches the freshly built
+ * entry; otherwise it emits the `pending-pack-refresh`/zero placeholders.
+ * A present-but-unusable manifest fails the build (exit 1) instead of
+ * silently rebinding provenance (review finding 1).
  *
  * Verification (fails the build on drift):
  * - manifest tools deep-equal the frozen platform tools, field by field;
@@ -26,7 +38,6 @@
  * frozen ids and protocol versions at the SDK-advertised list. Anything
  * else belongs in the candidate manifest `unverified` list, not here.
  */
-import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -39,6 +50,7 @@ const ENTRIES_PATH = join(ROOT, 'registry', 'entries.v1.json');
 const RECEIPT_PATH = join(ROOT, 'registry', 'publisher-assets.v1.json');
 const CANDIDATE_MANIFEST_PATH = join(ROOT, 'candidate-manifest.json');
 const ZERO_SHA = '0'.repeat(64);
+const PENDING_REFRESH = 'pending-pack-refresh';
 
 function sha256(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
@@ -66,32 +78,59 @@ export function canonicalEntryDigest(entry) {
   return sha256(Buffer.from(canonicalize(entry), 'utf8'));
 }
 
-function writeJson(path, value) {
+function writeTextIfChanged(path, text) {
+  if (existsSync(path) && readFileSync(path, 'utf8') === text) {
+    return false;
+  }
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
+  writeFileSync(path, text, 'utf8');
+  return true;
 }
 
-function gitHead() {
-  try {
-    return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).trim();
-  } catch {
-    return 'unknown';
-  }
+function writeJson(path, value) {
+  return writeTextIfChanged(path, `${JSON.stringify(value, null, 2)}\n`);
 }
 
-function previousTarballBinding() {
+function previousReleaseBinding() {
+  // Absent manifest: placeholders (the receipt is born unbound and the
+  // refresh binds it post-pack). Present manifest: fail closed — a manifest
+  // that does not parse or does not carry a 64-hex tarball sha256, a sha512-
+  // integrity and a 40-hex engramSourceCommit aborts the build (exit 1)
+  // instead of silently rebinding provenance (review finding 1).
+  if (!existsSync(CANDIDATE_MANIFEST_PATH)) return null;
+  let manifest;
   try {
-    if (!existsSync(CANDIDATE_MANIFEST_PATH)) return null;
-    const manifest = JSON.parse(readFileSync(CANDIDATE_MANIFEST_PATH, 'utf8'));
-    const sha = manifest?.tarball?.sha256;
-    const integrity = manifest?.tarball?.integrity;
-    if (typeof sha === 'string' && /^[0-9a-f]{64}$/.test(sha) && typeof integrity === 'string' && integrity.length > 0) {
-      return { sha256: sha, integrity };
-    }
-    return null;
+    manifest = JSON.parse(readFileSync(CANDIDATE_MANIFEST_PATH, 'utf8'));
   } catch {
-    return null;
+    throw new Error(
+      'candidate-manifest.json exists but does not parse; refusing to rebind provenance ' +
+        '(run npm run refresh:candidate-manifest)',
+    );
   }
+  const sha = manifest?.tarball?.sha256;
+  const integrity = manifest?.tarball?.integrity;
+  const sourceHead = manifest?.engramSourceCommit;
+  const problems = [];
+  if (typeof sha !== 'string' || !/^[0-9a-f]{64}$/.test(sha)) problems.push('tarball.sha256 must be 64-hex');
+  if (typeof integrity !== 'string' || !integrity.startsWith('sha512-') || integrity.length <= 7) {
+    problems.push('tarball.integrity must be a sha512- integrity');
+  }
+  if (typeof sourceHead !== 'string' || !/^[0-9a-f]{40}$/.test(sourceHead)) {
+    problems.push('engramSourceCommit must be 40-hex');
+  }
+  if (problems.length > 0) {
+    throw new Error(
+      `candidate-manifest.json exists but is unusable (${problems.join('; ')}); refusing to rebind provenance ` +
+        '(run npm run refresh:candidate-manifest)',
+    );
+  }
+  const registryEntryDigest = manifest?.registryArtifacts?.registryEntryDigest;
+  return {
+    sha256: sha,
+    integrity,
+    sourceHead,
+    registryEntryDigest: typeof registryEntryDigest === 'string' ? registryEntryDigest : null,
+  };
 }
 
 export async function generateAssets() {
@@ -145,13 +184,16 @@ export async function generateAssets() {
   writeJson(join(DIST_REGISTRY, 'elicitation-request.json'), withdraw.requestSchema);
   writeJson(join(DIST_REGISTRY, 'elicitation-response.json'), withdraw.responseSchema);
   // Loadable provider manifest is distinct from the registry-package wrapper.
-  writeFileSync(join(DIST_REGISTRY, 'provider-manifest.js'),
+  writeTextIfChanged(join(DIST_REGISTRY, 'provider-manifest.js'),
     'export const manifest = ' + JSON.stringify(MEMORY_PROVIDER_MANIFEST, null, 2) + ';\nexport default manifest;\n');
   // Base-manifest asset: the canonical provider manifest bytes.
   writeJson(join(DIST_REGISTRY, 'base-manifest.json'), MEMORY_PROVIDER_MANIFEST);
 
   const entries = JSON.parse(readFileSync(ENTRIES_PATH, 'utf8'));
   const entry = entries.entries[0];
+  // Fail closed before any tracked write: a present-but-unusable candidate
+  // manifest aborts here, so the build never silently rebinds provenance.
+  const previous = previousReleaseBinding();
   writeJson(join(DIST_REGISTRY, 'parameter-schema.json'), entry.parameters.schema);
   for (const [name, key] of [['wire-profile', 'wireProfileSha256'], ['tool-schema-profile', 'toolSchemaProfileSha256'], ['parameter-schema', 'parameterProfileSha256']]) {
     if (sha256(readFileSync(join(DIST_REGISTRY, name + '.json'))) !== MEMORY_FROZEN_PROFILE_BINDINGS_V1[key]) {
@@ -199,15 +241,21 @@ export async function generateAssets() {
     mediaType: path.endsWith('.json') ? 'application/schema+json' : 'application/javascript',
     sha256: sha256(readFileSync(join(ROOT, path))),
   }));
-  writeFileSync(ENTRIES_PATH, `${JSON.stringify(entries, null, 2)}\n`);
+  writeJson(ENTRIES_PATH, entries);
   const entryDigest = canonicalEntryDigest(entry);
 
-  // Complete publisher receipt. The tarball/code-archive binding is a
-  // placeholder until the post-pack refresh (a packed file cannot contain its
-  // own pack's hash); every other field is final at build time.
-  const previous = previousTarballBinding();
-  const tarballSha256 = previous?.sha256 ?? ZERO_SHA;
-  const tarballIntegrity = previous?.integrity ?? 'pending-pack-refresh';
+  // Complete publisher receipt. The tarball/code-archive binding and source
+  // commit provenance are owned by the post-pack refresh (`refresh-candidate-manifest.mjs`)
+  // and carried over from `candidate-manifest.json` (never stamped from the
+  // current checkout's `HEAD` during a build). The binding is reused only
+  // while it still describes these exact assets; any drift between the
+  // freshly built entry and the recorded `registryEntryDigest` (or a missing
+  // manifest) emits the placeholders until the refresh rebinds all four
+  // fields (review finding 2).
+  const fresh = previous !== null && previous.registryEntryDigest === entryDigest ? previous : null;
+  const tarballSha256 = fresh?.sha256 ?? ZERO_SHA;
+  const tarballIntegrity = fresh?.integrity ?? PENDING_REFRESH;
+  const sourceHead = fresh?.sourceHead ?? PENDING_REFRESH;
   const assetByRole = (role) => entry.assets.find((a) => a.role === role);
   const assetByPath = (path) => entry.assets.find((a) => a.path === path);
   const receipt = {
@@ -232,7 +280,7 @@ export async function generateAssets() {
     parameterProfile: { id: 'sentropic.parameters/2020-12-bounded-v1', version: '1.0.0', sha256: assetByRole('parameter-schema').sha256 },
     validator: { id: 'sentropic.engram.memory-publisher-validator/v1', version: entry.entryVersion, sha256: assetByRole('validator').sha256 },
     executableProvenance: {
-      sourceHead: gitHead(),
+      sourceHead,
       codeArchiveSha256: tarballSha256,
       dependencyClosureSha256: sha256(readFileSync(join(ROOT, 'package-lock.json'))),
     },
