@@ -1,0 +1,48 @@
+#!/bin/sh
+#
+# pre-push -- anti-attribution-trailer guard.
+#
+# Reads the ref-update list from STDIN (per githooks(5)), one line each:
+#     <local ref> <local sha> <remote ref> <remote sha>
+# For every non-deletion update it inspects the commits that would be pushed
+# and refuses the push if any commit message carries a forbidden attribution
+# trailer (Co-Authored-By / Claude-Session / Generated with ...).
+#
+# No third-party dependency; POSIX sh + git only. graphify-neutral: no
+# application or h2a import.
+
+set -u
+
+z40=0000000000000000000000000000000000000000
+status=0
+
+# The four fields arrive on STDIN, NOT as positional arguments ($1/$2 are the
+# remote name and URL, which this hook deliberately ignores).
+while read -r local_ref local_sha remote_ref remote_sha; do
+	# Defensive: skip blank lines.
+	[ -z "$local_ref" ] && continue
+
+	# Deletion of a remote ref (local sha all-zero): nothing to inspect.
+	if [ "$local_sha" = "$z40" ]; then
+		continue
+	fi
+
+	if [ "$remote_sha" = "$z40" ]; then
+		# New branch on the remote: only commits not already on any remote.
+		range="$local_sha --not --remotes"
+	else
+		# Updated branch: only the newly pushed commits.
+		range="$remote_sha..$local_sha"
+	fi
+
+	# $range is intentionally unquoted so "--not --remotes" splits into args.
+	if git log $range --format='%B' | grep -qiE '^(co-authored-by|claude-session|generated with)'; then
+		echo "pre-push: forbidden attribution trailer found in commits pushed to $remote_ref." >&2
+		echo "  Inspected range: $range" >&2
+		echo "  Rewrite history to remove any Co-Authored-By / Claude-Session /" >&2
+		echo "  'Generated with Claude Code' line before pushing." >&2
+		status=1
+	fi
+done
+
+exit $status
