@@ -189,7 +189,9 @@ jobs:
         run: |
           mkdir /tmp/smoke-test && cd /tmp/smoke-test
           npm init -y --silent
-          npm install "${{ github.workspace }}/${{ env.TARBALL }}" typescript@6.0.3 @types/node@25.8.0
+          MESH_VERSION="$(node -p "require('${{ github.workspace }}/package.json').devDependencies['@sentropic/llm-mesh']")"
+          test -n "$MESH_VERSION"
+          npm install "${{ github.workspace }}/${{ env.TARBALL }}" "@sentropic/llm-mesh@${MESH_VERSION}" typescript@6.0.3 @types/node@25.8.0
 
       - name: Verify CLI from installed package
         run: |

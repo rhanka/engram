@@ -37,9 +37,15 @@ else
   fi
   tarball_name="$(npm pack --pack-destination "$temporary_root" 2>/dev/null | tail -1)"
 
+  mesh_version="$(node -p "require('$repository_root/package.json').devDependencies['@sentropic/llm-mesh'] || ''")"
+  if [[ -z "$mesh_version" ]]; then
+    echo "error: devDependencies['@sentropic/llm-mesh'] missing in $repository_root/package.json" >&2
+    exit 1
+  fi
+
   cd "$installed_dir"
   npm init -y --silent
-  npm install "$temporary_root/$tarball_name" typescript@6.0.3 @types/node@25.8.0
+  npm install "$temporary_root/$tarball_name" "@sentropic/llm-mesh@${mesh_version}" typescript@6.0.3 @types/node@25.8.0
 fi
 
 check_dir="$installed_dir/.packed-surface-check"
