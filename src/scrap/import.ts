@@ -29,17 +29,32 @@ const isObj = (v: unknown): v is Record<string, unknown> =>
   Boolean(v && typeof v === "object" && !Array.isArray(v));
 const HEX64 = /^[0-9a-f]{64}$/;
 const ISO_Z = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?Z$/;
-const ANSWER_KEYS = ["id", "attempt", "snapshot_sha256", "prompt_sha256", "model_declared",
+const BROWSER_KEYS = ["id", "attempt", "snapshot_sha256", "prompt_sha256", "model_declared",
   "effort_declared", "transport", "ui", "started_at", "finished_at", "raw_response"];
+const ASSIST_KEYS = ["id", "attempt", "snapshot_sha256", "prompt_sha256", "model_declared",
+  "effort_declared", "transport", "assistant", "started_at", "finished_at", "raw_response"];
 const MODEL_LABEL = /^[a-z0-9]+(-[a-z0-9]+)*-web:[a-z0-9][a-z0-9.-]*-(low|medium|high|xhigh|max)$/;
+const ASSIST_MODEL_LABEL =
+  /^(claude-code|codex|agy):[a-z0-9][a-z0-9.-]*-(low|medium|high|xhigh|max)$/;
+const ASSIST_SURFACES = ["claude-code", "codex", "agy"];
+const ASSIST_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
 const sha256 = (s: string | Buffer): string => createHash("sha256").update(s).digest("hex");
 
 export interface BrowserAnswer {
   id: string; attempt: 1 | 2; snapshot_sha256: string[]; prompt_sha256: string;
-  model_declared: string; effort_declared: string;
+  model_declared: string; effort_declared: string; transport: "browser";
   ui: { surface: string; temporary_chat: boolean };
   started_at: string; finished_at: string; raw_response: string;
 }
+
+export interface AssistantAnswer {
+  id: string; attempt: 1 | 2; snapshot_sha256: string[]; prompt_sha256: string;
+  model_declared: string; effort_declared: string; transport: "assistant";
+  assistant: { surface: string; fresh_context: boolean };
+  started_at: string; finished_at: string; raw_response: string;
+}
+
+export type AnswerLine = BrowserAnswer | AssistantAnswer;
 
 type Cmd = "prompt" | "import";
 const refusal = (cmd: Cmd, lineNo: number, reason: string): Error =>
@@ -53,7 +68,7 @@ const isUtcIso = (s: unknown): s is string => {
   return new Date(t).toISOString() === s.replace(/(\.\d{1,9})?Z$/, `.${frac.slice(0, 3)}Z`);
 };
 
-export function decodeAnswerLine(cmd: Cmd, text: string, lineNo: number): BrowserAnswer {
+export function decodeAnswerLine(cmd: Cmd, text: string, lineNo: number): AnswerLine {
   let v: unknown;
   try {
     v = JSON.parse(text);
@@ -61,10 +76,14 @@ export function decodeAnswerLine(cmd: Cmd, text: string, lineNo: number): Browse
     throw refusal(cmd, lineNo, `not JSON (${e instanceof Error ? e.message : String(e)})`);
   }
   if (!isObj(v)) throw refusal(cmd, lineNo, "not a JSON object");
-  for (const k of Object.keys(v)) {
-    if (!ANSWER_KEYS.includes(k)) throw refusal(cmd, lineNo, `unknown key ${JSON.stringify(k)}`);
+  if (v.transport !== "browser" && v.transport !== "assistant") {
+    throw refusal(cmd, lineNo, `invalid transport (requires "browser" or "assistant")`);
   }
-  for (const k of ANSWER_KEYS) {
+  const wantKeys = v.transport === "browser" ? BROWSER_KEYS : ASSIST_KEYS;
+  for (const k of Object.keys(v)) {
+    if (!wantKeys.includes(k)) throw refusal(cmd, lineNo, `unknown key ${JSON.stringify(k)}`);
+  }
+  for (const k of wantKeys) {
     if (!(k in v)) throw refusal(cmd, lineNo, `missing key ${JSON.stringify(k)}`);
   }
   if (typeof v.id !== "string" || v.id.length === 0) {
@@ -87,34 +106,63 @@ export function decodeAnswerLine(cmd: Cmd, text: string, lineNo: number): Browse
       throw refusal(cmd, lineNo, `invalid ${k} (requires a non-empty string)`);
     }
   }
-  if (v.transport !== "browser") {
-    throw refusal(cmd, lineNo, `invalid transport (requires the literal "browser")`);
-  }
-  if (!isObj(v.ui)) throw refusal(cmd, lineNo, "invalid ui (requires an object)");
-  for (const k of Object.keys(v.ui)) {
-    if (k !== "surface" && k !== "temporary_chat") throw refusal(cmd, lineNo, `unknown ui key ${JSON.stringify(k)}`);
-  }
-  if (typeof v.ui.surface !== "string" || v.ui.surface.length === 0) {
-    throw refusal(cmd, lineNo, "invalid ui.surface (requires a non-empty string)");
-  }
-  if (typeof v.ui.temporary_chat !== "boolean") {
-    throw refusal(cmd, lineNo, "invalid ui.temporary_chat (requires a boolean)");
-  }
-  if (v.ui.temporary_chat !== true) {
-    throw refusal(cmd, lineNo, "ui.temporary_chat must be true (a chat with history is not a blind annotator)");
+  if (v.transport === "browser") {
+    if (!isObj(v.ui)) throw refusal(cmd, lineNo, "invalid ui (requires an object)");
+    for (const k of Object.keys(v.ui)) {
+      if (k !== "surface" && k !== "temporary_chat") {
+        throw refusal(cmd, lineNo, `unknown ui key ${JSON.stringify(k)}`);
+      }
+    }
+    if (typeof v.ui.surface !== "string" || v.ui.surface.length === 0) {
+      throw refusal(cmd, lineNo, "invalid ui.surface (requires a non-empty string)");
+    }
+    if (typeof v.ui.temporary_chat !== "boolean") {
+      throw refusal(cmd, lineNo, "invalid ui.temporary_chat (requires a boolean)");
+    }
+    if (v.ui.temporary_chat !== true) {
+      throw refusal(cmd, lineNo, "ui.temporary_chat must be true (a chat with history is not a blind annotator)");
+    }
+  } else {
+    if (!isObj(v.assistant)) throw refusal(cmd, lineNo, "invalid assistant (requires an object)");
+    for (const k of Object.keys(v.assistant)) {
+      if (k !== "surface" && k !== "fresh_context") {
+        throw refusal(cmd, lineNo, `unknown assistant key ${JSON.stringify(k)}`);
+      }
+    }
+    if (typeof v.assistant.surface !== "string" || !ASSIST_SURFACES.includes(v.assistant.surface as string)) {
+      throw refusal(cmd, lineNo, `invalid assistant.surface (requires "claude-code", "codex" or "agy")`);
+    }
+    if (typeof v.assistant.fresh_context !== "boolean") {
+      throw refusal(cmd, lineNo, "invalid assistant.fresh_context (requires a boolean)");
+    }
+    if (v.assistant.fresh_context !== true) {
+      throw refusal(cmd, lineNo, "assistant.fresh_context must be true (a context with history is not blind)");
+    }
+    if (typeof v.effort_declared !== "string" || !ASSIST_EFFORTS.includes(v.effort_declared as string)) {
+      throw refusal(cmd, lineNo, "invalid effort_declared (requires one of low, medium, high, xhigh, max)");
+    }
   }
   if (!isUtcIso(v.started_at)) throw refusal(cmd, lineNo, "invalid started_at (requires ISO 8601 UTC)");
   if (!isUtcIso(v.finished_at)) throw refusal(cmd, lineNo, "invalid finished_at (requires ISO 8601 UTC)");
-  if (Date.parse(v.finished_at) < Date.parse(v.started_at)) {
+  if (Date.parse(v.finished_at as string) < Date.parse(v.started_at as string)) {
     throw refusal(cmd, lineNo, "finished_at is before started_at");
   }
   if (typeof v.raw_response !== "string") throw refusal(cmd, lineNo, "invalid raw_response (requires a string)");
-  return {
+  const base = {
     id: v.id, attempt: v.attempt as 1 | 2, snapshot_sha256: [...v.snapshot_sha256] as string[],
-    prompt_sha256: v.prompt_sha256,
+    prompt_sha256: v.prompt_sha256 as string,
     model_declared: v.model_declared as string, effort_declared: v.effort_declared as string,
-    ui: { surface: v.ui.surface as string, temporary_chat: true },
-    started_at: v.started_at, finished_at: v.finished_at, raw_response: v.raw_response,
+    started_at: v.started_at as string, finished_at: v.finished_at as string,
+    raw_response: v.raw_response as string,
+  };
+  if (v.transport === "browser") {
+    const ui = v.ui as Record<string, unknown>;
+    return { ...base, transport: "browser", ui: { surface: ui.surface as string, temporary_chat: true } };
+  }
+  const assistant = v.assistant as Record<string, unknown>;
+  return {
+    ...base, transport: "assistant",
+    assistant: { surface: assistant.surface as string, fresh_context: true },
   };
 }
 
@@ -195,13 +243,15 @@ export interface ScrapImportOptions {
   out: string; capture: string; mission: string; from: string; model: string; retryFailed?: boolean;
 }
 
-const rowTail = (label: string, line: BrowserAnswer): Record<string, unknown> => ({
-  transport: "browser",
+const rowTail = (label: string, line: AnswerLine): Record<string, unknown> => ({
+  transport: line.transport,
   transport_label: label,
   attempt: line.attempt,
   model_declared: line.model_declared,
   effort_declared: line.effort_declared,
-  ui: { ...line.ui },
+  ...(line.transport === "browser"
+    ? { ui: { ...line.ui } }
+    : { assistant: { ...(line as AssistantAnswer).assistant } }),
   started_at: line.started_at,
   finished_at: line.finished_at,
   prompt_sha256: line.prompt_sha256,
@@ -211,10 +261,6 @@ const rowTail = (label: string, line: BrowserAnswer): Record<string, unknown> =>
 export async function runScrapImport(o: ScrapImportOptions): Promise<void> {
   if (!o.out || !o.capture || !o.mission || !o.from || !o.model) {
     throw new Error("scrap import: missing flag (--out, --capture, --mission, --from and --model are required)");
-  }
-  if (!MODEL_LABEL.test(o.model)) {
-    throw new Error(`scrap import: invalid --model label ${JSON.stringify(o.model)}`
-      + " (expected like gemini-web:carbon-high; never a mesh: alias or provider:model id)");
   }
   if (existsSync(join(o.out, "state.jsonl"))) {
     throw new Error(`scrap import: run dir ${o.out} contains state.jsonl (import into a run dir without one)`);
@@ -238,12 +284,39 @@ export async function runScrapImport(o: ScrapImportOptions): Promise<void> {
     throw asCmdError("import", e, "cannot read --from file");
   }
   const sourceSha256 = sha256(fromBytes);
-  const tail = o.model.slice(o.model.lastIndexOf(":") + 1);
-  const lines: { line: BrowserAnswer; no: number }[] = [];
+  const lines: { line: AnswerLine; no: number }[] = [];
   fromBytes.toString("utf-8").split("\n").forEach((t, i) => {
     if (t.trim()) lines.push({ line: decodeAnswerLine("import", t, i + 1), no: i + 1 });
   });
+  const fileTransports = new Set(lines.map(({ line }) => line.transport));
+  if (fileTransports.size > 1) {
+    throw new Error("scrap import: --from file mixes transports \"browser\" and \"assistant\"");
+  }
+  const fileTransport = lines.length > 0 ? lines[0]!.line.transport : null;
+  if (fileTransport === "browser" && !MODEL_LABEL.test(o.model)) {
+    throw new Error(`scrap import: invalid --model label ${JSON.stringify(o.model)}`
+      + " (expected like gemini-web:carbon-high; never a mesh: alias or provider:model id)");
+  }
+  if (fileTransport === "assistant" && !ASSIST_MODEL_LABEL.test(o.model)) {
+    throw new Error(`scrap import: invalid --model label ${JSON.stringify(o.model)}`
+      + " (expected like claude-code:<model>-<effort>; effort is low, medium, high, xhigh or max)");
+  }
+  if (fileTransport === null) {
+    if (!MODEL_LABEL.test(o.model) && !ASSIST_MODEL_LABEL.test(o.model)) {
+      throw new Error(`scrap import: invalid --model label ${JSON.stringify(o.model)}`
+        + " (expected a browser *-web: label or an assistant claude-code|codex|agy: label)");
+    }
+  }
+  const tail = o.model.slice(o.model.lastIndexOf(":") + 1);
+  const prefix = o.model.slice(0, o.model.indexOf(":"));
   for (const { line, no } of lines) {
+    if (line.transport === "assistant") {
+      const surface = (line as AssistantAnswer).assistant.surface;
+      if (prefix !== surface) {
+        throw new Error(`scrap import: line ${no}: --model ${JSON.stringify(o.model)}`
+          + ` does not match assistant.surface ${JSON.stringify(surface)}`);
+      }
+    }
     const declared = `${line.model_declared}-${line.effort_declared}`;
     if (declared !== tail) {
       throw new Error(`scrap import: line ${no}: --model ${JSON.stringify(o.model)}`
@@ -258,6 +331,7 @@ export async function runScrapImport(o: ScrapImportOptions): Promise<void> {
   const resPath = join(o.out, "results.ndjson");
   const existingLines = new Set<string>();
   const lastRow = new Map<string, string>();
+  const existingTransports = new Set<string>();
   if (existsSync(resPath)) {
     for (const t of readFileSync(resPath, "utf-8").split("\n")) {
       if (!t.trim()) continue;
@@ -267,11 +341,23 @@ export async function runScrapImport(o: ScrapImportOptions): Promise<void> {
       } catch {
         v = null;
       }
-      if (!isObj(v) || v.transport !== "browser") {
-        throw new Error("scrap import: existing results.ndjson has a line without transport: \"browser\"");
+      if (!isObj(v) || (v.transport !== "browser" && v.transport !== "assistant")) {
+        throw new Error("scrap import: existing results.ndjson has a line without transport"
+      + " \"browser\" or \"assistant\"");
       }
+      existingTransports.add(v.transport as string);
       existingLines.add(t);
       if (typeof v.id === "string" && v.type !== "summary") lastRow.set(v.id, t);
+    }
+  }
+  if (existingTransports.size > 1) {
+    throw new Error("scrap import: existing results.ndjson mixes transports");
+  }
+  if (existingTransports.size === 1 && fileTransport !== null) {
+    const existingTransport = [...existingTransports][0]!;
+    if (existingTransport !== fileTransport) {
+      throw new Error(`scrap import: run dir ${o.out} contains transport`
+        + ` "${existingTransport}" (cannot mix with "${fileTransport}")`);
     }
   }
   const cap = loaded.mission.tokenCap ?? SCRAP_PACKET_BUDGET;
@@ -375,7 +461,8 @@ export async function runScrapImport(o: ScrapImportOptions): Promise<void> {
   }
   mkdirSync(o.out, { recursive: true });
   appendFileSync(resPath, `${staged.join("\n")}\n${JSON.stringify({
-    type: "summary", transport: "browser", transport_label: o.model, mission_digest: loaded.digest,
-    ok, failed, attempts_total: staged.length, source_sha256: sourceSha256,
+    type: "summary", transport: fileTransport ?? "browser", transport_label: o.model,
+    mission_digest: loaded.digest, ok, failed, attempts_total: staged.length,
+    source_sha256: sourceSha256,
   })}\n`, "utf-8");
 }

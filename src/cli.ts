@@ -6203,17 +6203,17 @@ export async function main(): Promise<void> {
       } catch (e) { if (usageErr(e)) { console.error(String(e)); process.exit(2); } throw e; }
     });
   scrap.command("import")
-    .description("Import browser-transport answers: each answer line requires attempt (1 or 2);"
-      + " ui accepts only surface and temporary_chat (temporary_chat must be true);"
+    .description("Import browser- or assistant-transport answers: each line needs attempt (1 or 2);"
+      + " browser lines carry ui, assistant lines carry assistant;"
+      + " ui.temporary_chat and assistant.fresh_context must be true;"
       + " --model must equal <surface>:<model_declared>-<effort_declared>"
-      + " (e.g. gemini-web:carbon-high)")
+      + " (e.g. gemini-web:carbon-high, claude-code:carbon-high)")
     .option("--out <dir>").option("--capture <dir>").option("--mission <file>")
     .option("--from <file>").option("--model <label>").option("--retry-failed").action(async (o) => {
       if (!o.out || !o.capture || !o.mission || !o.from || !o.model) {
         console.error("usage: engram scrap import --out DIR --capture DIR --mission FILE --from FILE"
           + " --model <surface>:<model_declared>-<effort_declared> [--retry-failed]"
-          + " (each answer line requires attempt 1|2;"
-          + " ui accepts only surface and temporary_chat)");
+          + " (browser: ui + *-web: label; assistant: assistant + claude-code|codex|agy: label)");
         process.exit(2);
       }
       const { runScrapImport, isScrapImportUsageError } = await import("./scrap/import.js");

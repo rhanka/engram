@@ -1791,4 +1791,48 @@ describe("scrap converge", () => {
     expect(readBytes(join(fx.root, "out-rev"))).toBe(readBytes(join(fx.root, "out-two")));
     expect(Object.keys(readConverge(join(fx.root, "out-rev")).summary.groups)).toEqual(["A1", "A2"]);
   });
+
+  it("refuses assistant runs without flag (kills mutant: assistant-without-flag-passes)", async () => {
+    const mission = { fields: ["city"], instruction: "Extract city." };
+    const digest = sha256(JSON.stringify(mission));
+    const aRow = { id: "u1", url: "http://x/1", fields: { city: fVal("Ottawa") }, transport: "assistant" };
+    const aSum = { type: "summary", transport: "assistant", mission_digest: digest };
+    const fx = writeFixture(mission, { runA: [aRow, aSum], runB: [aRow, aSum] });
+    let apiErr: unknown;
+    try {
+      await runConverge({ runs: fx.runDirs, mission: fx.missionPath, out: fx.outDir });
+    } catch (e) { apiErr = e; }
+    expect(String(apiErr)).toMatch(/requires --allow-transport/);
+    expect(isConvergeUsageError(apiErr)).toBe(true);
+    const cliRefused = await runCli(["scrap", "converge", "--runs", ...fx.runDirs,
+      "--mission", fx.missionPath, "--out", fx.outDir], fx.root);
+    expect(cliRefused.code).toBe(2);
+    expect(cliRefused.err).toMatch(/requires --allow-transport/);
+  });
+
+  it("accepts assistant runs with flag (kills mutant: assistant-with-flag-refused)", async () => {
+    const mission = { fields: ["city"], instruction: "Extract city." };
+    const digest = sha256(JSON.stringify(mission));
+    const aRow = { id: "u1", url: "http://x/1", fields: { city: fVal("Ottawa") }, transport: "assistant" };
+    const aSum = { type: "summary", transport: "assistant", mission_digest: digest, ok: 1, failed: 0 };
+    const fx = writeFixture(mission, { runA: [aRow, aSum], runB: [aRow, aSum] });
+    const cliOk = await runCli(["scrap", "converge", "--runs", ...fx.runDirs, "--mission", fx.missionPath,
+      "--out", join(fx.root, "out-ok"), "--allow-transport", "assistant"], fx.root);
+    expect(cliOk.code).toBe(0);
+    const allowed = readConverge(join(fx.root, "out-ok")).summary;
+    expect(allowed.allow_transports).toEqual(["assistant"]);
+    expect(allowed.run_transports).toEqual({ runA: "assistant", runB: "assistant" });
+  });
+
+  it("does not admit assistant under browser flag (kills mutant: assistant-under-browser-passes)", async () => {
+    const mission = { fields: ["city"], instruction: "Extract city." };
+    const digest = sha256(JSON.stringify(mission));
+    const aRow = { id: "u1", url: "http://x/1", fields: { city: fVal("Ottawa") }, transport: "assistant" };
+    const aSum = { type: "summary", transport: "assistant", mission_digest: digest };
+    const fx = writeFixture(mission, { runA: [aRow, aSum], runB: [aRow, aSum] });
+    const cliOther = await runCli(["scrap", "converge", "--runs", ...fx.runDirs, "--mission",
+      fx.missionPath, "--out", fx.outDir, "--allow-transport", "browser"], fx.root);
+    expect(cliOther.code).toBe(2);
+    expect(cliOther.err).toMatch(/assistant/);
+  });
 });
