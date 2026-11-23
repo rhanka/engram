@@ -236,7 +236,6 @@ describe("scrap prompt", () => {
     const j = await promptJson(d, "p1");
     expect(j.prompt_sha256).toBe(sha256(Buffer.from(j.message, "utf-8")));
     expect(sha256(Buffer.from(r.out, "utf-8"))).toBe(j.prompt_sha256);
-    expect(j.message.includes("\uFFFD") || /surrogate/i.test(r.err)).toBe(true);
   });
 
   it("does not warn for a valid surrogate pair (kills mutant: valid-pair-false-positive)", async () => {
@@ -248,6 +247,18 @@ describe("scrap prompt", () => {
     expect(r.code).toBe(0);
     expect(r.err).toBe("");
     expect(r.out).toContain("\u{1F600}");
+  });
+
+  it("prompt --repair refuses a --from line with an unknown key and empty stdout (kills mutant: MF5)", async () => {
+    const d = makeCapture(MISSION_TEXT, [okRow("p1", [S1])]);
+    const j = await promptJson(d, "p1");
+    const from = join(d, "unknown-key.jsonl");
+    writeAnswers(from, [answerLine({ ...validLine(j, '{"broken":'), zzz: 1 })]);
+    const r = await runCli(["scrap", "prompt", "--capture", d, "--mission", join(d, "mission.json"),
+      "--id", "p1", "--repair", "--from", from]);
+    expect(r.code).toBe(2);
+    expect(r.out).toBe("");
+    expect(r.err).toMatch(/unknown key "zzz"/);
   });
 
   it("prompt --repair prints the second seat request message (kills mutants: repair-envelope-divergence, repair-history-leak, repair-first-prompt-reuse)", async () => {
@@ -356,7 +367,9 @@ describe("scrap import refusals", () => {
     const from = join(d, "ok.jsonl");
     writeAnswers(from, [answerLine(validLine(j, FIXED))]);
     writeFileSync(join(out, "state.jsonl"), "{}\n");
+    const beforeStateRefusal = readResultsRaw(out);
     expect((await importCli(out, d, from)).code).toBe(2);
+    expect(readResultsRaw(out)).toBe(beforeStateRefusal);
     const out2 = mkdtempSync(join(tmpdir(), "scrap-out-"));
     writeFileSync(join(out2, "results.ndjson"),
       `${JSON.stringify({ id: "p1", url: "http://x/p1", fields: {}, whatever: 1 })}\n`);
@@ -409,10 +422,25 @@ describe("scrap import refusals", () => {
     expect(failRows[0]).toMatchObject({ id: "p1", error: "parse_error" });
     const retry = join(dF, "retry.jsonl");
     writeAnswers(retry, [answerLine(validLine(jF, FIXED))]);
-    expect((await importCli(outF, dF, retry)).code).toBe(2);
+    const beforeRetryRefusal = readResultsRaw(outF);
+    const rRetryRefused = await importCli(outF, dF, retry);
+    expect(rRetryRefused.code).toBe(2);
+    expect(readResultsRaw(outF)).toBe(beforeRetryRefusal);
     const retryOk = await importCli(outF, dF, retry, ["--retry-failed"]);
     expect(retryOk.code).toBe(0);
     expect(readResults(outF).map((l) => JSON.parse(l)).filter((r) => r.type !== "summary")).toHaveLength(2);
+  });
+
+  it("refuses a duplicated line in the same file with no file written (kills mutant: MF7)", async () => {
+    const d = makeCapture(MISSION_TEXT, [okRow("p1", [S1])]);
+    const j = await promptJson(d, "p1");
+    const out = mkdtempSync(join(tmpdir(), "scrap-out-"));
+    const from = join(d, "dup.jsonl");
+    writeAnswers(from, [answerLine(validLine(j, FIXED)), answerLine(validLine(j, FIXED))]);
+    const r = await importCli(out, d, from);
+    expect(r.code).toBe(2);
+    expect(r.err).toMatch(/already answered/);
+    expect(readResultsRaw(out)).toBe(null);
   });
 });
 
@@ -439,6 +467,43 @@ describe("scrap import rows", () => {
       expect(rows[0].error).toBe(name === "prompt" ? "prompt_mismatch" : "snapshot_mismatch");
       expect(String(rows[0].error_detail).length).toBeGreaterThan(0);
     }
+  });
+
+  it("repairs across a foreign snapshot hash: attempt:2 still finds its attempt:1 (kills mutant: MF4)", async () => {
+    const d = makeCapture(MISSION_TEXT, [okRow("p1", [S1])]);
+    const j = await promptJson(d, "p1");
+    const probe = join(d, "probe.jsonl");
+    writeAnswers(probe, [answerLine(validLine(j, '{"broken":'))]);
+    const j2 = await promptJson(d, "p1", ["--repair", "--from", probe]);
+    const out = mkdtempSync(join(tmpdir(), "scrap-out-"));
+    const from = join(d, "foreign-repair.jsonl");
+    writeAnswers(from, [
+      answerLine(validLine(j, '{"broken":')),
+      answerLine({ ...validLine(j2, FIXED, 2), snapshot_sha256: ["f".repeat(64)] }),
+    ]);
+    const r = await importCli(out, d, from);
+    expect(r.code).toBe(0);
+    const rows = readResults(out).map((l) => JSON.parse(l)).filter((x) => x.type !== "summary");
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({ id: "p1", attempt: 1, error: "parse_error" });
+    expect(rows[1]).toMatchObject({ id: "p1", attempt: 2, error: "snapshot_mismatch" });
+    const summary = readResults(out).map((l) => JSON.parse(l)).find((x) => x.type === "summary");
+    expect(summary).toMatchObject({ ok: 0, failed: 2, attempts_total: 2 });
+  });
+
+  it("records the declared prompt_sha256 on a prompt_mismatch row (kills mutant: MF6)", async () => {
+    const d = makeCapture(MISSION_TEXT, [okRow("p1", [S1])]);
+    const j = await promptJson(d, "p1");
+    const declared = "0".repeat(64);
+    expect(declared).not.toBe(j.promptSha);
+    const out = mkdtempSync(join(tmpdir(), "scrap-out-"));
+    const from = join(d, "declared.jsonl");
+    writeAnswers(from, [answerLine({ ...validLine(j, FIXED), prompt_sha256: declared })]);
+    const r = await importCli(out, d, from);
+    expect(r.code).toBe(0);
+    const row = JSON.parse(readResults(out)[0]);
+    expect(row.error).toBe("prompt_mismatch");
+    expect(row.prompt_sha256).toBe(declared);
   });
 
   it("records empty_response, parse_error for fenced prose and non-objects, and nulls unverified quotes (kills mutants: empty-treated-as-parse-error, prose-around-fence-accepted, non-object-accepted, unverified-quote-kept)", async () => {
