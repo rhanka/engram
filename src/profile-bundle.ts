@@ -13,6 +13,11 @@ import type {
   RegistryRecord,
 } from "./types.js";
 import { toJsonValue, type JsonValue } from "./json-value.js";
+import { tryCanonicalBytes } from "./ontology-guardian/canonical.js";
+import { DATA_MODEL_FORMAT, extraKey, isTrimmedStr } from "./model-schemas.js";
+import { hashOntologyProfile } from "./ontology-profile.js";
+import { validateModelGovernance, type ModelGovernance, type QualifiedPin } from "./model-governance.js";
+export type { Digest, Pin } from "./ontology-guardian/types.js";
 export type { Cardinality, EnumDomain, FieldPair, LogicalType, ModelAttribute, ModelEdge, ModelEndpoints, ModelHeader, ModelNode, ModelRow, Names, Reference, TextDomain } from "./model-schemas.js";
 export type { ChangeCapture, ColumnGovernance, ModelGovernance, PiiCategory, QualifiedPin, Retention, SealedModelGovernance, StorageNeeds, TenantScope } from "./model-governance.js";
 
@@ -1264,5 +1269,179 @@ export function checkProfileCompatibility(
         message: err instanceof Error ? err.message : String(err),
       }],
     });
+  }
+}
+
+export interface VerifyModelPairInput {
+  readonly profilePin: QualifiedPin;
+  readonly governancePin: QualifiedPin;
+  readonly bundle: ProfileBundleV1 | string;
+  readonly governance: ModelGovernance | string;
+}
+export type VerifyModelPairRefusalCode =
+  | "invalid_pin" | "pin_mismatch" | "invalid_profile_syntax" | "invalid_profile_schema"
+  | "unsupported_linking_fn" | "invalid_governance_syntax" | "invalid_governance_schema" | "digest_mismatch";
+export type VerifyModelPairResult =
+  | {
+      readonly ok: true;
+      readonly profilePin: QualifiedPin;
+      readonly governancePin: QualifiedPin;
+      readonly bundleDigest: Digest;
+      readonly profile: NormalizedOntologyProfile;
+      readonly governance: ModelGovernance;
+      readonly governanceBytes: string;
+    }
+  | {
+      readonly ok: false;
+      readonly status: "refused";
+      readonly refusalCode: VerifyModelPairRefusalCode;
+      readonly errors: readonly ProfileBundleIssue[];
+    };
+const EXACT_VER_RE =
+  /^(0|[1-9][0-9]*)(\.(0|[1-9][0-9]*)){0,2}(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?(\+[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$/;
+const MODEL_V2_RE = /^2(?:\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))?$/;
+const BUNDLE_KEYS = [
+  "schema", "digest", "profileId", "profileVersion", "profileHash", "presentationHash",
+  "profile", "documentProjection", "extensions", "registries", "registriesMode",
+] as const;
+const DOC_ROOT = "bundle.documentProjection";
+type PairRefusal = Extract<VerifyModelPairResult, { readonly ok: false }>;
+const refusePair = (code: VerifyModelPairRefusalCode, path: string, message: string): PairRefusal =>
+  deepFreeze({ ok: false as const, status: "refused" as const, refusalCode: code,
+    errors: [{ severity: "error" as const, code, path, message }] });
+function snapVal(value: unknown, allowStr = false): unknown {
+  if (allowStr && typeof value === "string") return value;
+  const bytes = tryCanonicalBytes(value);
+  return bytes === null ? undefined : JSON.parse(bytes);
+}
+function decodeJson(raw: unknown, root: "bundle" | "governance") {
+  if (typeof raw !== "string") return { ok: true as const, value: raw };
+  const code = root === "bundle" ? "invalid_profile_syntax" : "invalid_governance_syntax";
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return { ok: true as const, value: isPlainObj(parsed) ? parseOntologyProfile(raw, `${root}.json`) : parsed };
+  } catch (err) {
+    const ep = (err as { path?: unknown })?.path;
+    return refusePair(code, typeof ep === "string" ? `${root}.${ep}` : root, String((err as Error).message ?? err));
+  }
+}
+function checkQPin(raw: unknown, root: string, verRe: RegExp) {
+  if (!isPlainObj(raw)) return refusePair("invalid_pin", root, `${root} must be an object`);
+  const ex = extraKey(raw, "namespace", "pin");
+  const p = raw.pin;
+  const pEx = isPlainObj(p) ? extraKey(p, "id", "version", "contentDigest") : undefined;
+  const bad = ex ? `${root}.${ex}`
+    : !isTrimmedStr(raw.namespace) ? `${root}.namespace`
+    : !isPlainObj(p) ? `${root}.pin`
+    : pEx ? `${root}.pin.${pEx}`
+    : !isTrimmedStr(p.id) ? `${root}.pin.id`
+    : typeof p.version !== "string" || !verRe.test(p.version) ? `${root}.pin.version`
+    : !isDigest(p.contentDigest) ? `${root}.pin.contentDigest` : null;
+  if (bad) return refusePair("invalid_pin", bad, `${bad} is invalid`);
+  return { ok: true as const, value: raw as unknown as QualifiedPin };
+}
+function findLinkingViolation(obj: unknown, root: string): string | null {
+  const nodes = asRec(asRec(obj).node_types);
+  for (const id of Object.keys(nodes).sort()) {
+    const lnk = asRec(asRec(nodes[id]).linking);
+    const norm = asRec(lnk.normalize);
+    if (Object.hasOwn(norm, "fn") && norm.fn !== undefined) return `${root}.node_types.${id}.linking.normalize.fn`;
+    const desc = asRec(lnk.normalizer);
+    const k = (["module_sha256", "export"] as const).find((f) => Object.hasOwn(desc, f) && desc[f] !== undefined);
+    if (k) return `${root}.node_types.${id}.linking.normalizer.${k}`;
+  }
+  return null;
+}
+function findDocRuntimeKey(doc: Record<string, unknown>): string | null {
+  if (Object.hasOwn(doc, "sourcePath")) return `${DOC_ROOT}.sourcePath`;
+  if (Object.hasOwn(doc, "profile_hash")) return `${DOC_ROOT}.profile_hash`;
+  const regs = asRec(doc.registries);
+  const hit = Object.keys(regs).sort().find((k) => isPlainObj(regs[k]) && Object.hasOwn(regs[k], "bound_source_path"));
+  return hit ? `${DOC_ROOT}.registries.${hit}.bound_source_path` : null;
+}
+export function verifyModelPair(input: VerifyModelPairInput): VerifyModelPairResult {
+  try {
+    if (!isPlainObj(input) || Reflect.ownKeys(input).some((k) => typeof k !== "string")) {
+      return refusePair("invalid_pin", "input", "input must be a plain object");
+    }
+    const ds = Object.getOwnPropertyDescriptors(input);
+    const inEx = extraKey(ds, "profilePin", "governancePin", "bundle", "governance");
+    if (inEx !== undefined) return refusePair("invalid_pin", inEx, `${inEx} is not allowed`);
+    const badProp = Object.keys(ds).find((k) => !ds[k]!.enumerable || !("value" in ds[k]!));
+    if (badProp !== undefined) {
+      const code = badProp === "bundle" ? "invalid_profile_schema"
+        : badProp === "governance" ? "invalid_governance_schema" : "invalid_pin";
+      return refusePair(code, badProp, `${badProp} must be an own data property`);
+    }
+    const nPinRes = checkQPin(snapVal(ds.profilePin?.value), "profilePin", MODEL_V2_RE);
+    const gPinRes = checkQPin(snapVal(ds.governancePin?.value), "governancePin", EXACT_VER_RE);
+    const rawBundle = snapVal(ds.bundle?.value, true);
+    const rawGov = snapVal(ds.governance?.value, true);
+    if (!nPinRes.ok) return nPinRes;
+    if (!gPinRes.ok) return gPinRes;
+    const [np, gpIn] = [nPinRes.value, gPinRes.value];
+    const decB = decodeJson(rawBundle, "bundle");
+    if (!decB.ok) return decB;
+    const rawB: any = decB.value;
+    const bEx = isPlainObj(rawB) ? extraKey(rawB, ...BUNDLE_KEYS) : undefined;
+    const badB = !isPlainObj(rawB) || tryCanonicalBytes(rawB) === null ? "bundle"
+      : bEx ? `bundle.${bEx}`
+      : rawB.schema !== PROFILE_BUNDLE_SCHEMA_V1 ? "bundle.schema"
+      : !isPlainObj(rawB.extensions) || Object.keys(rawB.extensions).length > 0 ? "bundle.extensions"
+      : !isDigest(rawB.digest) ? "bundle.digest"
+      : rawB.registriesMode !== "full" && rawB.registriesMode !== "bindings-only" ? "bundle.registriesMode"
+      : !isPlainObj(rawB.registries) ? "bundle.registries" : null;
+    if (badB) return refusePair("invalid_profile_schema", badB, `${badB} is invalid`);
+    const doc = rawB.documentProjection;
+    const fnPath = findLinkingViolation(rawB.profile, "bundle.profile") ?? findLinkingViolation(doc, DOC_ROOT);
+    if (fnPath) return refusePair("unsupported_linking_fn", fnPath, "linking module references are unsupported");
+    const badDoc = !isPlainObj(doc) || doc.data_model === undefined ? `${DOC_ROOT}.data_model`
+      : findDocRuntimeKey(doc) ?? (!isPlainObj(rawB.profile) ? "bundle.profile" : null);
+    if (badDoc) return refusePair("invalid_profile_schema", badDoc, `${badDoc} is invalid`);
+    const docErr = validateOntologyProfile(doc as unknown as OntologyProfile)[0];
+    if (docErr) return refusePair("invalid_profile_schema", `${DOC_ROOT}.${docErr.split(" ", 1)[0]!}`, docErr);
+    const profObj = rawB.profile as Record<string, unknown>;
+    const bodyHash = hashOntologyProfile(profObj as unknown as NormalizedOntologyProfile);
+    if (profObj.profile_hash !== bodyHash) return refusePair("digest_mismatch", "bundle.profile.profile_hash", "bad");
+    if (rawB.profileHash !== bodyHash) return refusePair("digest_mismatch", "bundle.profileHash", "mismatch");
+    const side = resolveComparableSide(rawB as unknown as ProfileBundleV1);
+    if (!side.bundle) return refusePair("digest_mismatch", "bundle.digest", "bundle verification failed");
+    const b = side.bundle;
+    const rIds = Object.keys(b.profile.registries).sort();
+    const badReg = rIds.length !== Object.keys(b.registries).length || rIds.some((id) => {
+      const { bound_source_path: _bsp, ...exp } = b.profile.registries[id]!;
+      const snap = asRec(rawB.registries)[id];
+      return !isPlainObj(snap) || extraKey(snap, "registryId", "binding", "recordCount", "recordsDigest") !== undefined
+        || !b.registries[id] || canonicalBytes(b.registries[id].binding) !== canonicalBytes(exp);
+    });
+    if (badReg) return refusePair("invalid_profile_schema", "bundle.registries", "bundle.registries mismatch");
+    for (const [code, path, a, e] of [
+      ["pin_mismatch", "profilePin.pin.id", b.profileId, np.pin.id],
+      ["pin_mismatch", "profilePin.pin.version", b.profileVersion, np.pin.version],
+      ["digest_mismatch", "profilePin.pin.contentDigest", bodyHash, np.pin.contentDigest],
+    ] as const) if (a !== e) return refusePair(code, path, `${path} mismatch`);
+    const decG = decodeJson(rawGov, "governance");
+    if (!decG.ok) return decG;
+    const rawG = decG.value;
+    const govBytes = isPlainObj(rawG) ? tryCanonicalBytes(rawG) : null;
+    if (govBytes === null) return refusePair("invalid_governance_schema", "governance", "bad governance");
+    const gErr = validateModelGovernance(b.profile, rawG)[0];
+    if (gErr) return refusePair("invalid_governance_schema", `governance.${gErr.split(" ", 1)[0]!}`, gErr);
+    const gov = rawG as unknown as ModelGovernance;
+    const gp = gov.profile;
+    for (const [code, path, a, e] of [
+      ["pin_mismatch", "governance.profile.namespace", gp.namespace, np.namespace],
+      ["pin_mismatch", "governance.profile.pin.id", gp.pin.id, np.pin.id],
+      ["pin_mismatch", "governance.profile.pin.version", gp.pin.version, np.pin.version],
+      ["digest_mismatch", "governance.profile.pin.contentDigest", gp.pin.contentDigest, np.pin.contentDigest],
+      ["pin_mismatch", "governance.namespace", gov.namespace, gpIn.namespace],
+      ["pin_mismatch", "governance.id", gov.id, gpIn.pin.id],
+      ["pin_mismatch", "governance.version", gov.version, gpIn.pin.version],
+      ["digest_mismatch", "governancePin.pin.contentDigest", sha256Hex(govBytes), gpIn.pin.contentDigest],
+    ] as const) if (a !== e) return refusePair(code, path, `${path} mismatch`);
+    return deepFreeze({ ok: true, profilePin: np, governancePin: gpIn, bundleDigest: b.digest,
+      profile: b.profile, governance: gov, governanceBytes: govBytes });
+  } catch (err) {
+    return refusePair("invalid_profile_schema", "input", err instanceof Error ? err.message : String(err));
   }
 }
