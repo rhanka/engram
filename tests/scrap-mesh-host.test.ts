@@ -132,6 +132,96 @@ describe("scrap mesh host", () => {
     }
   });
 
+  it("routes mesh:muse-wonder-1.0-max with reasoning effort max through preflight (mesh fake, no live call)", async () => {
+    const { createScrapMeshClient, preflightMeshAlias } = await import("../src/scrap/mesh-host.js");
+    const mesh = await import("@sentropic/llm-mesh");
+    // Kills a mutant where the installed mesh catalog refuses the Muse max
+    // effort: 0.38.9 admits max for muse-wonder-1.0 (sentropic #1073) while
+    // contributor/1.2 rows stay capped below max.
+    expect([...(mesh.MUSE_REASONING_EFFORTS["muse-wonder-1.0"] ?? [])]).toContain("max");
+    expect([...(mesh.MUSE_REASONING_EFFORTS["muse-spark-1.3-contributor"] ?? [])]).not.toContain("max");
+
+    // Preflight resolves the max-suffixed alias instead of refusing it.
+    const pre = await preflightMeshAlias("muse-wonder-1.0-max");
+    expect(pre).toEqual({ provider: "muse", model: "muse-wonder-1.0", effort: "max" });
+
+    const seen = { plans: 0 };
+    const requests: any[] = [];
+    const museStub = {
+      generate: async (request: any) => {
+        requests.push(request);
+        const text = JSON.stringify({ f: { value: "alpha street", quote: "alpha street number one" } });
+        await request?.validateResponse?.(text);
+        return {
+          id: "stub-muse-resp",
+          providerId: "muse",
+          modelId: "muse-wonder-1.0",
+          message: { role: "assistant", content: text },
+          text,
+          toolCalls: [],
+          usage: { inputTokens: 10, outputTokens: 5 },
+          finishReason: "stop",
+        };
+      },
+      stream: async () => { throw new Error("stream not used"); },
+    };
+    const museFacade = {
+      createRoutePlanner: (runtime: any) => ({
+        plan: async (_subject: any, input: any) => {
+          seen.plans++;
+          return {
+            planRef: "plan-stub-muse",
+            expiresAt: "2030-01-01T00:00:00.000Z",
+            candidateRefs: ["c1"],
+            policy: {},
+            councilRevision: "council-stub",
+            diagnostics: [{
+              candidateRef: "c1",
+              diagnosticAccountRef: "acct_stub",
+              requestedModel: input.requestedModel,
+              actualProviderId: "muse",
+              actualModelId: "muse-wonder-1.0",
+              actualTransportProviderId: "muse",
+              reason: "exact",
+              cacheContinuityRisk: false,
+            }],
+          };
+        },
+        prepareAttempt: async () => ({
+          attemptRef: "attempt-stub-muse",
+          generate: (request: any) => runtime.generate({
+            ...request,
+            auth: { material: { type: "direct-token", token: "stub-seat" }, descriptor: { sourceType: "direct-token" } },
+          }),
+          stream: (request: any) => runtime.stream(request),
+          recordOutcome: async () => {},
+          markCommitted: async () => {},
+          complete: async () => {},
+          releaseCancelled: async () => {},
+        }),
+      }),
+    };
+    const got = await createScrapMeshClient("muse-wonder-1.0-max", {
+      facade: museFacade as any,
+      adapterClients: { muse: museStub } as any,
+      ownerScopes: ["owner:test"],
+    });
+    // Kills a mutant where the host drops the max effort or misroutes the Muse alias.
+    expect(got.provider).toBe("muse");
+    expect(got.model).toBe("muse-wonder-1.0");
+    expect(got.effort).toBe("max");
+    expect(seen.plans).toBeGreaterThan(0);
+
+    await got.client.generateJson({ schema: "{}", prompt: "Extract." });
+    // Kills a mutant where the built request carries no reasoning effort, a
+    // capped effort, or budgetTokens the Muse Responses client refuses
+    // fail-closed before any I/O (resolveMuseReasoning).
+    expect(requests).toHaveLength(1);
+    expect(requests[0].providerId).toBe("muse");
+    expect(requests[0].modelId).toBe("muse-wonder-1.0");
+    expect(requests[0].reasoning).toEqual({ effort: "max" });
+  });
+
   it("rejects an unknown mesh alias before any planning", async () => {
     const seen = { plans: 0 };
     const { createScrapMeshClient } = await import("../src/scrap/mesh-host.js");
@@ -1053,7 +1143,7 @@ describe("scrap mesh host", () => {
       const stubPkgDir = join(sandbox, "node_modules", "@sentropic", "llm-mesh");
       writeFileSync(join(stubPkgDir, "package.json"), JSON.stringify({
         name: "@sentropic/llm-mesh",
-        version: "0.38.6",
+        version: "0.38.9",
         type: "module",
         exports: {
           ".": "./index.mjs",
