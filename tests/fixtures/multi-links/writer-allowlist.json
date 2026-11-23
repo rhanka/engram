@@ -36,6 +36,51 @@
     "count": 2
   },
   {
+    "file": "src/app-context/extract-data-model.ts",
+    "line": 511,
+    "owner": "upsertNode",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "27274fe3319c5b8a255666608eb13daf1787c1417615af0265881b6169820af2",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/app-context/extract-data-model.ts",
+    "line": 511,
+    "owner": "upsertNode",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "8a96f5daa2f69e108eae052c6bd395e7a2552023ab3626ad538c277547de5649",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/app-context/extract-data-model.ts",
+    "line": 517,
+    "owner": "appendNodeCitation",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "ee0cacb4472d1697550a6185194bbd59a44079cb8cd77a05cd5853e74c18a5e6",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/app-context/extract-data-model.ts",
+    "line": 518,
+    "owner": "appendNodeCitation",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "7605039f7648c081c3b82315c04fc6a07fec4ce17d5772c54e46b870b8ab8b8e",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/app-context/extract-data-model.ts",
+    "line": 522,
+    "owner": "addEdge",
+    "kind": "edge-row-constructor",
+    "fingerprint": "49bc7c65a90eb41cbea2a4072b121fcd6c774d0f34cede0bfc2dc3ab16f7854e",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
     "file": "src/assembly-hygiene.ts",
     "line": 784,
     "owner": "deOrphanByContainer",
