@@ -18,8 +18,15 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = dirname(HERE);
-const NPM = process.env.MCP_L4_NPM_BIN ?? '/home/antoinefa/.npm-global/bin/npm';
 const BUILT_AGAINST = '1c96bada2a749155f29aae763fa73ea6379c385d619f70614110f59b6b10b730';
+
+function writeTextIfChanged(path, text) {
+  if (existsSync(path) && readFileSync(path, 'utf8') === text) {
+    return false;
+  }
+  writeFileSync(path, text, 'utf8');
+  return true;
+}
 
 function sha256(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
@@ -91,12 +98,12 @@ export async function refreshCandidateManifest() {
     receipt.tarballIntegrity = tarballIntegrity;
     receipt.executableProvenance.sourceHead = head;
     receipt.executableProvenance.codeArchiveSha256 = tarballSha256;
-    writeFileSync(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`);
     const receiptCheck = validateMemoryPublisherAssetsV1(receipt, packedAssets);
     if (!receiptCheck.ok) throw new Error(`publisher receipt invalid after backfill: ${receiptCheck.reason}`);
     if (receipt.entryJcsSha256 !== sha256(Buffer.from(canonicalize(entries.entries[0]), 'utf8'))) {
       throw new Error('receipt entryJcsSha256 drifted from registry/entries.v1.json');
     }
+    writeTextIfChanged(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`);
 
     const digestOf = (path) => sha256(readFileSync(join(ROOT, path)));
     const sdkInstalled = JSON.parse(readFileSync(join(ROOT, 'node_modules', '@modelcontextprotocol', 'sdk', 'package.json'), 'utf8'));
@@ -125,7 +132,7 @@ export async function refreshCandidateManifest() {
         'Postgres canonical parity and native-addon suites (environmental: no native toolchain or addons in this container)',
       ],
     };
-    writeFileSync(join(ROOT, 'candidate-manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+    writeTextIfChanged(join(ROOT, 'candidate-manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
     console.log(`MCP-L4-MANIFEST-OK tarball=${tarballSha256}`);
     return manifest;
   } finally {
