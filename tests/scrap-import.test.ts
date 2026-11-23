@@ -631,4 +631,32 @@ describe("scrap import rows", () => {
       [Object.keys(conv.summary.run_transports)[1]!]: "browser" });
     expect(conv.rows[0]!.fields.company).toMatchObject({ verdict: "unanimous", value: "Acme Canada Inc." });
   });
+
+  it("verifies entity-decoded quotes on import (kills mutant: import-entity-unverified)", async () => {
+    const html = "<html><body><p>Visit us at 1705 Tech Avenue #1 &amp; 3 Toronto for details.</p></body></html>";
+    const h = sha256(html);
+    const d = makeCapture(MISSION_TEXT, [okRow("p1", [h])], { [h]: html });
+    const j = await promptJson(d, "p1");
+    const out = mkdtempSync(join(tmpdir(), "scrap-out-"));
+    const q = "1705 Tech Avenue #1 & 3 Toronto";
+    const raw = JSON.stringify({ company: { value: "Acme Canada Inc.", quote: q } });
+    const from = join(d, "ent.jsonl");
+    writeAnswers(from, [answerLine(validLine(j, raw))]);
+    expect((await importCli(out, d, from)).code).toBe(0);
+    const crow = JSON.parse(readResults(out)[0]!);
+    expect(crow.fields.company).toMatchObject({ value: "Acme Canada Inc.", quote: q, sha256: h });
+  });
+
+  it("scrap prompt keeps entities undecoded with a pinned hash (kills mutant: textOf-decodes-entities)", async () => {
+    const html = "<html><body><p>Visit us at 1705 Tech Avenue #1 &amp; 3 Toronto for details.</p></body></html>";
+    const h = sha256(html);
+    const d = makeCapture(MISSION_TEXT, [okRow("p1", [h])], { [h]: html });
+    const r = await runCli(["scrap", "prompt", "--capture", d, "--mission", join(d, "mission.json"), "--id", "p1"]);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("#1 &amp; 3 Toronto");
+    const j = await promptJson(d, "p1");
+    expect(j.message).toBe(r.out);
+    expect(j.message).toContain("#1 &amp; 3");
+    expect(j.prompt_sha256).toBe("b2bd9c04bc9385600ae362540958f095f1272755204508185814ef2024e1e639");
+  });
 });

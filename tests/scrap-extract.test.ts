@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { runExtract } from "../src/scrap/extract.js";
+import { decodeHtmlEntitiesOnce } from "../src/scrap/quote-match.js";
 const HTML = "<html><body><p>Visit us at 12 rue des Fleurs, Paris 75002. Phone 01 23 45 67 89.</p></body></html>";
 function fakeOut(canned: unknown): any {
   const d = mkdtempSync(join(tmpdir(), "scx-")), sha = createHash("sha256").update(HTML).digest("hex");
@@ -164,5 +165,169 @@ describe("scrap extract", () => {
       expect(await cli(["scrap", "extract", "--out", join(e, "o"), "--mission", join(e, "m.json"), "--model", "openai:gpt-5-mini"], e)).toBe(2);
     } finally { if (savedKey !== undefined) process.env.OPENAI_API_KEY = savedKey; }
     s.close();
+  });
+});
+
+describe("scrap quote entities", () => {
+  function entityOut(html: string, missionFields: unknown): { d: string; sha: string } {
+    const d = mkdtempSync(join(tmpdir(), "scx-ent-"));
+    const sha = createHash("sha256").update(html).digest("hex");
+    mkdirSync(join(d, "snapshots"), { recursive: true });
+    writeFileSync(join(d, "snapshots", `${sha}.html`), html);
+    writeFileSync(join(d, "state.jsonl"), `${JSON.stringify({ id: "a", url: "http://x/", status: "ok", pages: [{ url: "http://x/", final_url: "http://x/", status: 200, bytes: html.length, sha256: sha }] })}\n`);
+    writeFileSync(join(d, "mission.json"), JSON.stringify({ fields: missionFields, instruction: "Extract." }));
+    return { d, sha };
+  }
+  function stubClient(canned: unknown): any {
+    return { mode: "direct", provider: "test", generateJson: async (input: any) => { await input.validateResponse?.(JSON.stringify(canned)); return { status: "completed", provider: "test", mode: "direct", audit: { usage: { input: 10, output: 5 } } }; } };
+  }
+  const runEntity = (d: string, canned: unknown): Promise<void> =>
+    runExtract({ out: d, mission: join(d, "mission.json"), model: "openai:gpt-5-mini" }, stubClient(canned));
+
+  it("tkm case: record sub-fields sharing an entity-decoded quote stay verified (kills mutant: tkm-amp-entity-dropped)", async () => {
+    const html = "<html><body><p>Visit us at 1705 Tech Avenue #1 &amp; 3 Toronto for details.</p></body></html>";
+    const mission = [{ name: "biz", kind: "record", max_values: 1, fields: [{ name: "addr" }, { name: "phone" }] }];
+    const { d } = entityOut(html, mission);
+    const q = "1705 Tech Avenue #1 & 3 Toronto";
+    await runEntity(d, { biz: [{ addr: { value: q, quote: q }, phone: { value: q, quote: q } }] });
+    const fields = row(d).fields;
+    expect(fields.biz.values).toHaveLength(1);
+    expect(fields.biz.values[0].addr).toMatchObject({ value: q, quote: q });
+    expect(fields.biz.values[0].phone).toMatchObject({ value: q, quote: q });
+    expect(fields.biz.unverified_dropped).toBe(0);
+    expect(fields.biz.unverified_subfields).toBe(0);
+  });
+  it("reverse: a raw & page verifies an &amp; quote (kills mutant: reverse-entity-not-decoded)", async () => {
+    const html = "<html><body><p>A & B partnership announced today.</p></body></html>";
+    const { d } = entityOut(html, ["firm"]);
+    const q = "A &amp; B partnership";
+    await runEntity(d, { firm: { value: "A & B", quote: q } });
+    expect(row(d).fields.firm).toMatchObject({ value: "A & B", quote: q });
+  });
+  it("decimal reference decodes before the substring test (kills mutant: decimal-ref-undecoded)", async () => {
+    const html = "<html><body><p>Welcome to caf&#233; society downtown.</p></body></html>";
+    const { d } = entityOut(html, ["place"]);
+    const q = "caf\u00e9 society";
+    await runEntity(d, { place: { value: "caf\u00e9", quote: q } });
+    expect(row(d).fields.place).toMatchObject({ value: "caf\u00e9", quote: q });
+  });
+  it("hex reference decodes in a multi-value field (kills mutant: hex-ref-undecoded)", async () => {
+    const html = "<html><body><p>Deal A &#x26; B closes Monday morning.</p></body></html>";
+    const { d } = entityOut(html, [{ name: "items", max_values: 2 }]);
+    const q = "A & B closes";
+    await runEntity(d, { items: [{ value: "A & B", quote: q }] });
+    const fields = row(d).fields;
+    expect(fields.items.values).toHaveLength(1);
+    expect(fields.items.values[0]).toMatchObject({ value: "A & B", quote: q });
+    expect(fields.items.unverified_dropped).toBe(0);
+  });
+  it("accented named reference decodes (kills mutant: accented-named-ref-undecoded)", async () => {
+    const html = "<html><body><p>Visit our caf&eacute; society lounge.</p></body></html>";
+    const { d } = entityOut(html, ["place"]);
+    const q = "caf\u00e9 society";
+    await runEntity(d, { place: { value: "caf\u00e9", quote: q } });
+    expect(row(d).fields.place).toMatchObject({ value: "caf\u00e9", quote: q });
+  });
+  it("double encoding decodes once: decoded quote verifies, double-encoded quote stays dropped (kills mutant: recursive-decode-accepts-double)", async () => {
+    const html = "<html><body><p>Eat fish &amp; chips daily here.</p></body></html>";
+    const single = entityOut(html, ["meal"]);
+    await runEntity(single.d, { meal: { value: "fish & chips", quote: "fish & chips" } });
+    expect(row(single.d).fields.meal).toMatchObject({ value: "fish & chips", quote: "fish & chips" });
+    const dbl = entityOut(html, ["meal"]);
+    await runEntity(dbl.d, { meal: { value: "fish & chips", quote: "fish &amp;amp; chips" } });
+    expect(row(dbl.d).fields.meal).toEqual({ value: null, quote: null, sha256: null, reason: "unverified_quote" });
+  });
+  it("nbsp decodes to U+00A0 then compares as a space (kills mutant: nbsp-not-normalised)", async () => {
+    const html = "<html><body><p>Rooms A&nbsp;B available now.</p></body></html>";
+    const { d } = entityOut(html, ["room"]);
+    const q = "Rooms A B available";
+    await runEntity(d, { room: { value: "A B", quote: q } });
+    expect(row(d).fields.room).toMatchObject({ value: "A B", quote: q });
+  });
+  it("a quote differing in a real character stays dropped (kills mutant: entity-decode-masks-real-difference)", async () => {
+    const html = "<html><body><p>Visit our caf&eacute; menu today.</p></body></html>";
+    const { d } = entityOut(html, ["place"]);
+    await runEntity(d, { place: { value: "cafe", quote: "caf\u00e8 menu" } });
+    expect(row(d).fields.place).toEqual({ value: null, quote: null, sha256: null, reason: "unverified_quote" });
+  });
+  it("oelig in a French address verifies (kills mutant: oelig-undecoded)", async () => {
+    const html = "<html><body><p>Notre bureau: 12 rue du Sacr&eacute;-C&oelig;ur, Paris.</p></body></html>";
+    const { d } = entityOut(html, ["addr"]);
+    const q = "12 rue du Sacr\u00e9-C\u0153ur, Paris";
+    await runEntity(d, { addr: { value: q, quote: q } });
+    expect(row(d).fields.addr).toMatchObject({ value: q, quote: q });
+  });
+  it("rsquo pins the decoded apostrophe (kills mutant: rsquo-deleted)", async () => {
+    const html = "<html><body><p>Visitez l&rsquo;h&ocirc;tel de ville ce soir.</p></body></html>";
+    const { d } = entityOut(html, ["note"]);
+    const q = "l\u2019h\u00f4tel de ville";
+    await runEntity(d, { note: { value: "hotel", quote: q } });
+    expect(row(d).fields.note).toMatchObject({ value: "hotel", quote: q });
+  });
+  it("ndash pins the decoded en dash (kills mutant: ndash-deleted)", async () => {
+    const html = "<html><body><p>Direct Paris &ndash; Lyon tous les jours.</p></body></html>";
+    const { d } = entityOut(html, ["line"]);
+    const q = "Paris \u2013 Lyon";
+    await runEntity(d, { line: { value: "Paris-Lyon", quote: q } });
+    expect(row(d).fields.line).toMatchObject({ value: "Paris-Lyon", quote: q });
+  });
+  it("hellip pins the decoded ellipsis (kills mutant: hellip-deleted)", async () => {
+    const html = "<html><body><p>Encore plus d&rsquo;offres&hellip; venez voir.</p></body></html>";
+    const { d } = entityOut(html, ["teaser"]);
+    const q = "d\u2019offres\u2026 venez";
+    await runEntity(d, { teaser: { value: "offres", quote: q } });
+    expect(row(d).fields.teaser).toMatchObject({ value: "offres", quote: q });
+  });
+  it("laquo pins the decoded guillemets (kills mutant: laquo-deleted)", async () => {
+    const html = "<html><body><p>Il dit &laquo;bonjour&raquo; en entrant.</p></body></html>";
+    const { d } = entityOut(html, ["said"]);
+    const q = "\u00abbonjour\u00bb en entrant";
+    await runEntity(d, { said: { value: "bonjour", quote: q } });
+    expect(row(d).fields.said).toMatchObject({ value: "bonjour", quote: q });
+  });
+  it("a quote that is blank after decoding stays dropped (kills mutant: blank-decoded-quote-verified)", async () => {
+    for (const blank of ["&nbsp;", "&#32;", "&#x20;", "&#160;"]) {
+      const { d } = entityOut("<html><body><p>Rooms available now for rent downtown.</p></body></html>", ["room"]);
+      await runEntity(d, { room: { value: "spacious", quote: blank } });
+      expect(row(d).fields.room).toEqual({ value: null, quote: null, sha256: null, reason: "unverified_quote" });
+    }
+  });
+  it("Object.prototype names are left as-is (kills mutant: proto-name-lookup)", async () => {
+    for (const name of ["constructor", "toString", "valueOf", "hasOwnProperty", "isPrototypeOf",
+      "propertyIsEnumerable", "toLocaleString"]) {
+      expect(decodeHtmlEntitiesOnce(`&${name};`)).toBe(`&${name};`);
+    }
+  });
+  it("whitespace runs collapse after decoding (kills mutant: entity-spacing-not-collapsed)", async () => {
+    const first = entityOut("<html><body><p>Tel:&nbsp;&nbsp;01 23 45 67 89 listed here.</p></body></html>", ["tel"]);
+    await runEntity(first.d, { tel: { value: "01 23 45 67 89", quote: "Tel: 01 23 45 67 89" } });
+    expect(row(first.d).fields.tel).toMatchObject({ value: "01 23 45 67 89", quote: "Tel: 01 23 45 67 89" });
+    const second = entityOut("<html><body><p>Chambres A&nbsp; B disponibles.</p></body></html>", ["room"]);
+    await runEntity(second.d, { room: { value: "A B", quote: "Chambres A B disponibles" } });
+    expect(row(second.d).fields.room).toMatchObject({ value: "A B", quote: "Chambres A B disponibles" });
+  });
+  it("HTML 4.01 blocks beyond Latin-1 decode (kills mutant: html401-table-incomplete)", async () => {
+    const cases: Array<[string, string]> = [
+      ["OElig", "Œ"], ["oelig", "œ"], ["Scaron", "Š"], ["scaron", "š"], ["Yuml", "Ÿ"],
+      ["fnof", "ƒ"], ["circ", "ˆ"], ["tilde", "˜"],
+      ["Alpha", "Α"], ["Sigma", "Σ"], ["omega", "ω"], ["sigmaf", "ς"],
+      ["thetasym", "ϑ"], ["piv", "ϖ"],
+      ["thinsp", " "], ["sbquo", "‚"], ["bdquo", "„"], ["dagger", "†"],
+      ["permil", "‰"], ["lsaquo", "‹"], ["rsaquo", "›"], ["oline", "‾"], ["frasl", "⁄"],
+      ["image", "ℑ"], ["real", "ℜ"], ["alefsym", "ℵ"],
+      ["larr", "←"], ["rArr", "⇒"],
+      ["forall", "∀"], ["infin", "∞"], ["le", "≤"], ["supe", "⊇"],
+      ["oplus", "⊕"], ["lang", "〈"], ["loz", "◊"], ["spades", "♠"], ["hearts", "♥"],
+    ];
+    for (const [name, char] of cases) {
+      expect(decodeHtmlEntitiesOnce(`&${name};`)).toBe(char);
+    }
+  });
+  it("legacy Windows-1252 numeric references remap (kills mutant: win1252-not-remapped)", async () => {
+    const html = "<html><body><p>Bienvenue &agrave; l&#146;&Eacute;glise du C&#156;ur.</p></body></html>";
+    const { d } = entityOut(html, ["place"]);
+    const q = "l\u2019\u00c9glise du C\u0153ur";
+    await runEntity(d, { place: { value: q, quote: q } });
+    expect(row(d).fields.place).toMatchObject({ value: q, quote: q });
   });
 });

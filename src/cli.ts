@@ -6194,11 +6194,18 @@ export async function main(): Promise<void> {
         } else process.stdout.write(r.message);
       } catch (e) { if (usageErr(e)) { console.error(String(e)); process.exit(2); } throw e; }
     });
-  scrap.command("import").option("--out <dir>").option("--capture <dir>").option("--mission <file>")
+  scrap.command("import")
+    .description("Import browser-transport answers: each answer line requires attempt (1 or 2);"
+      + " ui accepts only surface and temporary_chat (temporary_chat must be true);"
+      + " --model must equal <surface>:<model_declared>-<effort_declared>"
+      + " (e.g. gemini-web:carbon-high)")
+    .option("--out <dir>").option("--capture <dir>").option("--mission <file>")
     .option("--from <file>").option("--model <label>").option("--retry-failed").action(async (o) => {
       if (!o.out || !o.capture || !o.mission || !o.from || !o.model) {
         console.error("usage: engram scrap import --out DIR --capture DIR --mission FILE --from FILE"
-          + " --model LABEL [--retry-failed]");
+          + " --model <surface>:<model_declared>-<effort_declared> [--retry-failed]"
+          + " (each answer line requires attempt 1|2;"
+          + " ui accepts only surface and temporary_chat)");
         process.exit(2);
       }
       const { runScrapImport, isScrapImportUsageError } = await import("./scrap/import.js");
