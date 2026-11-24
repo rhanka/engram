@@ -309,7 +309,7 @@ export async function runExtract(oc: ExtractOptions, client?: ExtractClient, dep
     if (!envs.some((e) => process.env[e]?.trim())) throw new Error(`scrap extract: missing credentials for ${pm!.provider} (missing_credentials); set one of ${envs.join(", ")} before any request`);
     cli = createDirectTextJsonClient({ provider: pm!.provider, model: pm!.name });
   }
-  // @sentropic/llm-mesh 0.38.9 dist/generation.d.ts:29-34 & dist/transport/cloud-code-runtime-client.js:147-162,252:
+  // @sentropic/llm-mesh 0.38.10 dist/generation.d.ts:29-34 & dist/transport/cloud-code-runtime-client.js:147-162,252:
   // Cloud Code caps thoughts+answer together under maxOutputTokens (other seat transports ignore budgetTokens).
   const reasoningBudget = num(mission.reasoning_budget_tokens) !== undefined && mission.reasoning_budget_tokens! >= 0 ? Math.floor(mission.reasoning_budget_tokens!) : 8192;
   const maxOutputTokens = effort && effort !== "none" ? 2000 + reasoningBudget : 2000;

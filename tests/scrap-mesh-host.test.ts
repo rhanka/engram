@@ -136,7 +136,7 @@ describe("scrap mesh host", () => {
     const { createScrapMeshClient, preflightMeshAlias } = await import("../src/scrap/mesh-host.js");
     const mesh = await import("@sentropic/llm-mesh");
     // Kills a mutant where the installed mesh catalog refuses the Muse max
-    // effort: 0.38.9 admits max for muse-wonder-1.0 (sentropic #1073) while
+    // effort: 0.38.10 admits max for muse-wonder-1.0 (sentropic #1073) while
     // contributor/1.2 rows stay capped below max.
     expect([...(mesh.MUSE_REASONING_EFFORTS["muse-wonder-1.0"] ?? [])]).toContain("max");
     expect([...(mesh.MUSE_REASONING_EFFORTS["muse-spark-1.3-contributor"] ?? [])]).not.toContain("max");
@@ -1143,7 +1143,7 @@ describe("scrap mesh host", () => {
       const stubPkgDir = join(sandbox, "node_modules", "@sentropic", "llm-mesh");
       writeFileSync(join(stubPkgDir, "package.json"), JSON.stringify({
         name: "@sentropic/llm-mesh",
-        version: "0.38.9",
+        version: "0.38.10",
         type: "module",
         exports: {
           ".": "./index.mjs",
@@ -1345,5 +1345,13 @@ describe("scrap mesh host", () => {
     } finally {
       rmSync(crossDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("seat error label (conductor fix, 0.38.10)", () => {
+  it("names the alias the caller passed, not the resolved bare model (kills mutant: label-uses-bare-model)", async () => {
+    const src = (await import("node:fs")).readFileSync(new URL("../src/scrap/mesh-host.ts", import.meta.url), "utf8");
+    expect(src).not.toMatch(/no usable mesh seat for "mesh:\$\{model\}"/);
+    expect(src.match(/no usable mesh seat for "mesh:\$\{rawAlias\.trim\(\)\}"/g)?.length).toBe(2);
   });
 });
