@@ -1,0 +1,16 @@
+{
+  "_note": "lot 1 binding fixture: transcribed from the W3C context, verified live by the build reviewer on 24/11; prov is separate, sourced to the PROV-O namespace statement",
+  "upstream": "http://www.w3.org/ns/anno.jsonld",
+  "bindings": {
+    "@context": {
+      "oa": "http://www.w3.org/ns/oa#",
+      "dcterms": "http://purl.org/dc/terms/",
+      "as": "http://www.w3.org/ns/activitystreams#",
+      "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+    }
+  },
+  "prov": {
+    "iri": "http://www.w3.org/ns/prov#",
+    "source": "PROV-O namespace statement: « The namespace for all PROV-O terms is http://www.w3.org/ns/prov# »"
+  }
+}
