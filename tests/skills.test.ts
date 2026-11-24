@@ -336,7 +336,8 @@ describe("skill cache examples", () => {
       const section = rest.slice(0, ends.length > 0 ? Math.min(...ends) : rest.length);
       for (const needle of ["Scrap annotation in assistant mode", "scrap prompt", "scrap import",
         "fresh_context", "claude-code", "codex", "agy", "stops and reports",
-        "converge output", "gold", "writes the annotator rules", "engram install <platform>"]) {
+        "converge output", "gold", "writes the annotator rules", "engram install <platform>",
+        "receipt", "Distil, never paste", "declared, not verified"]) {
         expect(section, `${relativePath} ${needle}`).toContain(needle);
       }
       expect(section).not.toContain("~/.codex");

@@ -1403,7 +1403,7 @@ Loop. For each packet id, in order:
 - c. Orchestrator: append one `answers.jsonl` line with exactly the eleven
   assistant keys `id`, `attempt`, `snapshot_sha256`, `prompt_sha256`,
   `model_declared`, `effort_declared`, `transport`, `assistant`,
-  `started_at`, `finished_at`, `raw_response` (`attempt: 1`; the hashes from
+  `started_at`, `finished_at`, `raw_response` plus an optional `receipt` (`attempt: 1`; the hashes from
   step a; `transport: "assistant"`;
   `assistant: { surface, fresh_context: true }`; the declared model and
   effort; the two timestamps from step b).
@@ -1420,6 +1420,8 @@ Loop. For each packet id, in order:
   repair hashes, then re-runs step d. No other failure is repaired this way;
   a failed row is retried only as a new `attempt: 1` under `--retry-failed`,
   exactly as for browser.
+
+Receipt (optional, orchestrator only). Where the annotator was a process of a CLI that writes per-invocation JSON (for example `claude -p --output-format json`), the encoder that builds the answer line may distil a `receipt` from that same invocation's output: `served_models` (the reported model ids), `usage` (only `input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`), `cost_usd`, and `source` (the short command form). Distil, never paste the CLI object — any other key refuses the import. Never attach the orchestrator session's own usage, never estimate or re-type figures, and omit `receipt` entirely where the annotator (sub-agent, new session) produced no such output. A receipt is declared, not verified; annotators never write their own.
 
 The fresh annotator context may be a sub-agent, a new session, or a new
 process of the same CLI. A process annotator starts from an empty working
