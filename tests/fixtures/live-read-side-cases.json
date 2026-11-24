@@ -117,6 +117,11 @@
       "repository": "h2a",
       "algorithm": "sha1",
       "oid": "c3c465a71dc92ed4bdd553eb939e32ba69a69c5b"
+    },
+    "F_WT": {
+      "repository": "F_WT",
+      "algorithm": "sha1",
+      "oid": "6df42923ff819534792d0c0021baef9c6d73ce25"
     }
   },
   "protocol": {
@@ -170,6 +175,7 @@
     "score": "median(1 - T1_i/T0_i)",
     "population": "all-20-first-investigations",
     "continuationThreshold": 0.3,
+    "baselineCapMs": 30000,
     "constantQualityRequired": true,
     "thresholdRetuning": false,
     "executionPilot": {
@@ -815,18 +821,18 @@
     },
     {
       "id": 7,
-      "question": "What is the latest authorized index/worktree state of graphify-wt-livegit?",
+      "question": "What is the latest authorized index/worktree state of the declared fixture worktree F_WT?",
       "type": "latest-local-state",
-      "corpus": "engram-history",
+      "corpus": "constructed-control",
       "pins": {
-        "E": {
+        "F_WT": {
           "algorithm": "sha1",
-          "oid": "545a57b8911ab108e84fa1778e0f268fe11bf1de"
+          "oid": "6df42923ff819534792d0c0021baef9c6d73ce25"
         }
       },
       "permissions": {
         "repositories": [
-          "engram"
+          "F_WT"
         ],
         "committedRead": "authorized",
         "localStateRead": "not-authorized",
@@ -843,7 +849,7 @@
       },
       "expected": {
         "state": "capture-absent",
-        "answer": "No authorized stable capture was supplied. The committed E tree cannot establish a current index, worktree, conflicts or a generation. Do not inspect that worktree or reconstruct superseded local states.",
+        "answer": "No authorized stable capture was supplied for F_WT. The committed F_WT tree cannot establish a current index, worktree, conflicts or a generation. Do not inspect that worktree directly or reconstruct superseded local states.",
         "reason": null,
         "capture": null,
         "generation": null,
@@ -851,18 +857,18 @@
       },
       "oracles": [
         {
-          "id": "committed-endpoint-only",
-          "repository": "engram",
+          "id": "f-wt-committed-endpoint-only",
+          "repository": "F_WT",
           "argv": [
             "rev-parse",
             "--verify",
-            "545a57b8911ab108e84fa1778e0f268fe11bf1de^{tree}"
+            "6df42923ff819534792d0c0021baef9c6d73ce25^{tree}"
           ],
           "expected": {
             "status": 0,
             "bytes": 41,
-            "sha256": "cdde260c2a42c868842c0b67a22019b6451b2b443aad41e5f99302642dd32130",
-            "stdout": "9ca18ccff658b8f284d369f0c5d9b31d86afeade\n"
+            "sha256": "bd54da95a1f9cfa9affbc843ec7c25c12ed94a1ab43c458479d96d61a0d0966f",
+            "stdout": "4c4f8461848c8130273ae19d8c71bc5a63a4cc63\n"
           }
         }
       ]

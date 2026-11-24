@@ -125,7 +125,28 @@ export function buildReadSideFixtures(box: LiveGitSandbox) {
   // One main tip per repository; neither topic is silently integrated into it.
   box.git(h2a, ["update-ref", "refs/heads/main", pins.F_H]);
   box.git(sentropic, ["update-ref", "refs/heads/main", pins.F_S]);
-  return { h2a, sentropic, pins };
+
+  // Declared ephemeral fixture worktree F_WT for case 7 (never an owner worktree).
+  const fWt = box.init(join(box.root, "f-wt-control"));
+  const fWtCommitted: Record<string, string> = {
+    "README.md": "# Declared F_WT fixture worktree\n",
+    "src/worktree-target.ts": "export const worktreeFixture = 'declared-f-wt';\n",
+  };
+  commit(fWt, "F_WT", fWtCommitted, [], "Initialize declared F_WT fixture worktree");
+  box.git(fWt, ["update-ref", "refs/heads/main", pins.F_WT]);
+  box.git(fWt, ["read-tree", pins.F_WT]);
+  materialize(fWt, Object.entries(fWtCommitted).map(([path, content]) => ({
+    path: Buffer.from(path),
+    mode: "100644",
+    oid: "",
+    content: Buffer.from(content),
+  })));
+  const stagedFwt = "export const worktreeFixture = 'declared-f-wt-staged';\n";
+  const stagedFwtBlob = box.git(fWt, ["hash-object", "-w", "--no-filters", "--stdin"], stagedFwt).toString().trim();
+  box.git(fWt, ["update-index", "--index-info"], `100644 ${stagedFwtBlob} 0\tsrc/worktree-target.ts\n`);
+  writeFileSync(join(fWt, "src/worktree-target.ts"), "export const worktreeFixture = 'declared-f-wt-unstaged';\n");
+
+  return { h2a, sentropic, F_WT: fWt, pins };
 }
 
 /** Local-only, independent object copy. No checkout, alternates, hardlinks,
