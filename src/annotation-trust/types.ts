@@ -1,6 +1,6 @@
 // Lot 2a: discriminated annotation-trust entry types (§6, §7 row 2a).
 import type { OntologyTemplateEnvelopeRef } from "../metamodel-contracts.js";
-import type { template } from "./profile.js";
+import type { template, validation } from "./profile.js";
 import type { Digest, Pin } from "../ontology-guardian/types.js";
 import type { Confidence, GraphEdge, OntologyCitation, OntologyEvidenceRecord } from "../types.js";
 export type Channel = "pipeline" | "mcp" | "ui-select" | "ui-thumbs" | "mcp-elicitation" | "import";
@@ -25,6 +25,25 @@ export type Inquire = { kind: "uncertain"; judged: number } | { kind: "needs-eli
 export type PreservedSource = SourceLink & { batchRef?: string; reportedSource?: string; reportedClass?: string; reportedNote?: string; reportedModel?: string; pendingHuman?: boolean };
 export type Evidence = { citations: OntologyCitation[]; evidenceRefs: OntologyEvidenceRecord["id"][]; sourceRows?: SourceLink[]; extraction?: { confidence?: Confidence; confidence_score?: GraphEdge["confidence_score"] } };
 export type StreamRef = { scopeRef: string; subjectRef: string; slot: string };
+// Lot 3 derived-read types (§3, §7 row 3). ReadModel is §6 verbatim, defined
+// once here; pairs and matchingRejections stay empty until lots 5 and 4a fill them.
+export type Validation = (typeof validation.states)[number];
+export type Trust = "provisional" | "trusted" | "withheld";
+export type EvaluationRole = "blind" | "known-error" | "anchored" | "unscored";
+export type ValueAt = { revision: number; subjectVersion: string; value: Value; validation: Validation;
+  author: AI | Human; contentDigest: Digest; createdAt: string; lastReviewedAt: string | null };
+export type HumanHead = { decision: number; by: Human; exposure: Exposure; decidedAt: string } & (
+  | { kind: "value"; action: "assert"; selected: ValueAt; judged: null }
+  | { kind: "value"; action: "confirm" | "correct"; selected: ValueAt; judged: ValueAt }
+  | { kind: "veto"; action: "reject"; judged: ValueAt; reason: RejectReason });
+export type EvaluationPair = { ai: ValueAt & { author: AI }; human: number; channel: Channel;
+  humanValue: Value | { rejected: RejectReason }; role: EvaluationRole };
+export type ReadModel = { stream: StreamRef; revision: number; subjectVersion: string;
+  ai: (ValueAt & { author: AI }) | null; human: HumanHead | null;
+  matchingRejections: { decision: number; judged: number; subjectVersion: string; reason: RejectReason }[];
+  unverifiedSources: { revision: number; row: PreservedSource }[]; pairs: EvaluationPair[] } & (
+  | { trust: "withheld"; effective: null }
+  | { trust: Exclude<Trust, "withheld">; effective: ValueAt });
 export type RequestId = string & { readonly __requestUuid: unique symbol };
 export type TemplateRef = OntologyTemplateEnvelopeRef & { readonly lineage: typeof template.lineage };
 export type Entry = {
