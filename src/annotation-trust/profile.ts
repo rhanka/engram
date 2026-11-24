@@ -46,7 +46,7 @@ export const PROFILE_PIN: Pin = deepFreeze({ id: PROFILE_ID, version: PROFILE_VE
 /** UNVERIFIED placeholder, not a published pin: replaced at the publication step after lots 1-5 (§7). Provisional id: the §3/§4 rule sheet is built in later lots. */
 export const UNVERIFIED_RULE_SHEET_PIN: Pin = deepFreeze({ id: "annotation-trust-feedback-rules", version: PROFILE_VERSION, contentDigest: "b".repeat(64) });
 /** Draft neutral template pin (lineage, templateId, templateVersion, templateDigestSha256); digest is the semantic profile digest, so presentation-only changes leave it unchanged. */
-export const TEMPLATE_REF: OntologyTemplateEnvelopeRef = deepFreeze({
+export const TEMPLATE_REF: import("./types.js").TemplateRef = deepFreeze({
   lineage: "engram", templateId: PROFILE_ID, templateVersion: PROFILE_VERSION,
   templateDigestSha256: semanticProfileDigest(template)
 });
