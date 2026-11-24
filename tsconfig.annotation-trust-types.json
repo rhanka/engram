@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "types": ["node"]
+  },
+  "include": ["src/annotation-trust/**/*.ts", "tests/annotation-trust-lot2a.test.ts"],
+  "exclude": ["node_modules", "dist"]
+}
