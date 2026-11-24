@@ -1,6 +1,6 @@
 # Lifecycle amendment — patch and decision semantics of the ontology decision log
 
-**v0.2.1 · Proposed specification · 23 November 2026 · freezable per review round 2, pending the joint pass with s-conductor.** Claude Fable 5.2 is the assigned author (owner ruling of 23 November: Fable writes, Muse wonder full max reviews). v0.2.0 folded round 1 of the Muse review (Review2: CHANGES REQUIRED). This revision applies, word for word, the four edits that round 2 of that review requires (`REVIEW-studio-specs-wonder-r2.md`, §7). The changelog at the end states what was done with every finding. Owner acceptance and implementation are pending. This document amends `spec/SPEC_ONTOLOGY_LIFECYCLE_RECONCILIATION.md`. It gives normative force to the alias and reversibility core of `spec/SPEC_ONTOLOGY_RECONCILIATION_ALGORITHM.md` (ALG:30–37,185). Occurrence aggregation (ALG:33) stays deferred (§18), so ALG as a whole stays "draft for review". It is the dependency that the Sentropic split specification cites as « to be written by engram ». (Review:111–132. Split:390,589.)
+**v0.2.2 · Proposed specification · 23 November 2026 · freezable per review round 2, pending the joint pass with s-conductor.** Claude Fable 5.2 is the assigned author (owner ruling of 23 November: Fable writes, Muse wonder full max reviews). v0.2.0 folded round 1 of the Muse review (Review2: CHANGES REQUIRED). v0.2.1 applied, word for word, the four edits that round 2 of that review requires (`REVIEW-studio-specs-wonder-r2.md`, §7). This revision is an erratum: it corrects one sentence of §7 for `duplicate_id` records and adds vector LV-REV-14. The changelog at the end states what was done with every finding. Owner acceptance and implementation are pending. This document amends `spec/SPEC_ONTOLOGY_LIFECYCLE_RECONCILIATION.md`. It gives normative force to the alias and reversibility core of `spec/SPEC_ONTOLOGY_RECONCILIATION_ALGORITHM.md` (ALG:30–37,185). Occurrence aggregation (ALG:33) stays deferred (§18), so ALG as a whole stays "draft for review". It is the dependency that the Sentropic split specification cites as « to be written by engram ». (Review:111–132. Split:390,589.)
 
 ## 1. What this amendment decides
 
@@ -289,7 +289,7 @@ Only the owner of an `id` can cancel or be cancelled. A later record with the sa
 
 **Second pass: evaluation.** Each evaluated decision that is neither cancelled nor a `revert_decision` goes through one function, `evaluateDecision(state, profile, patch)`. It returns a disposition and, when the disposition is `effective`, the next state. A cancelled decision receives `reverted` and changes no state, for the records between it and its revert as for the records after. The fold still asks `evaluateDecision` what the cancelled decision would have been at its own position, and discards the state it returns. A cancelling revert is `effective` when that answer is `effective` or `redundant`: it withdrew a decision that was in effect. It is `redundant` when the cancelled decision would have had no effect. The withdrawal then shows on the target, which moves to `reverted` and leaves the count of decisions that need attention.
 
-Cancellation overrides classification in exactly one case. A target whose operation this engine does not evaluate (`unsupported_operation`) owns its `id` and can be cancelled like any other decision (REV-3): it receives `reverted`, not `unsupported_operation`, and the cancelling revert is `redundant`, because the target never had an effect this engine can state. No other classification outcome can be a target: `opaque`, `not_a_decision`, no-`id` and `duplicate_id` records own no `id`, and a revert naming one is `orphan` (LV-REV-10).
+Cancellation overrides classification in exactly one case. A target whose operation this engine does not evaluate (`unsupported_operation`) owns its `id` and can be cancelled like any other decision (REV-3): it receives `reverted`, not `unsupported_operation`, and the cancelling revert is `redundant`, because the target never had an effect this engine can state. No other classification outcome can be a target: `opaque`, `not_a_decision`, no-`id` and `duplicate_id` records own no `id`. A revert naming an `id` that no earlier decision owns is `orphan` (LV-REV-10). A `duplicate_id` record carries the `id` of the earlier decision that owns it, so a revert naming that `id` is judged against the owner, exactly as if the duplicate were absent, and the later record stays `duplicate_id` (LV-REV-14).
 
 ### State
 
@@ -634,6 +634,7 @@ Files live under `contracts/ontology-studio-data-port/v1/vectors/` (Port §10). 
 | LV-REV-11 | Revert a decision that was `redundant`. | Target `reverted`. Revert `effective`. State unchanged. |
 | LV-REV-12 | Revert without `decision_id`. | `invalid_record`. Nothing is cancelled. |
 | LV-REV-13 | A `future_verb` decision, then a revert of it. | Target `reverted` (not `unsupported_operation`). Revert `redundant`. The write is valid (§13). State unchanged. |
+| LV-REV-14 | An effective `accept_match`, then a `create_canonical` that carries the same `id`, then a revert naming that `id`. | The `accept_match` is `reverted`. The `create_canonical` stays `duplicate_id` and creates no node. The revert is `effective`, not `orphan`. The projected state equals the base (REV-4). |
 | LV-RBS-01 | New graph hash, targets unchanged. | `effective`, `rebased`. |
 | LV-RBS-02 | New graph hash, the label of a target changed. | `target_changed`. |
 | LV-RBS-03 | New graph hash, registry-backed node renamed, same registry record. | `effective`. |
@@ -747,9 +748,17 @@ The findings of the Muse review of v0.1.0 are closed one by one in the changelog
 - A log state is identified by a computed digest over its entries. Writers append under one lock and may fence on that digest.
 - A recorded decision is carried to a new base behind an identity guard with a stated node set per verb, and to a new profile by re-evaluation. No record is rewritten.
 - Views are built by the shipped builders over a projected graph. Window, group counts and the search index are not projected in v1, and that choice needs a ruling because it changes the split's hosted first paint.
-- One hundred and thirty-one named vectors carry their expected result. Engram generates and versions them. No digest value in this document was computed. Counts are as drafted in this revision. Completeness against every refusal is what the Muse review tracks, and it closes only when the files land in lots L1 to L9.
+- One hundred and thirty-two named vectors carry their expected result. Engram generates and versions them. No digest value in this document was computed. Counts are as drafted in this revision. Completeness against every refusal is what the Muse review tracks, and it closes only when the files land in lots L1 to L9.
 
 ## Changelog
+
+### v0.2.2 · 23 November 2026 · erratum, revert naming the `id` of a `duplicate_id` record
+
+The last sentence of the cancellation-override paragraph of §7 put `duplicate_id` among the records for which « a revert naming one is `orphan` ». That contradicted three statements of the same section. Classification test 4 gives `duplicate_id` to a record whose `id` an earlier decision already carries. The first decision that carries an `id` owns it. The first pass makes a revert `orphan` only when no earlier decision owns the `id` it names. The sentence now states both cases: an `id` that no earlier decision owns gives `orphan` (LV-REV-10, unchanged), and the `id` that a duplicate carries is judged against its owner. The first-pass table already governed, so no engine behaviour and no other rule changes. LV-REV-14 locks the case, and the vector count moves from 131 to 132 (Summary).
+
+Checked and unchanged, because each states the rule correctly: LOG-6, classification test 4, the ownership sentence, the first-pass table and the sentence after it, the `orphan` and `duplicate_id` rows of the disposition table, REV-2, REV-3, CNF-4, CMP-4, LV-LOG-11, LV-REV-04 to 07, LV-REV-09 and LV-REV-10. The Port contract states no revert-target rule of its own and is not edited.
+
+The defect was flagged by the Engram re-check of the split at r8 (`RECHECK-studio-split-r8-fable.md`, E1). The split adopted the correct reading at r9 without waiting for this revision. The sentence came word for word from round 2 of the Muse review (`REVIEW-studio-specs-wonder-r2.md`, §1.2), so that reviewer should see this erratum. This revision changes the digest and the commit of this document: a pin that names v0.2.1 has to move to the commit that carries v0.2.2. Author of this erratum: Claude Opus 5.5.
 
 ### v0.2.1 · 23 November 2026 · round 2 of the Muse review, freeze path
 
