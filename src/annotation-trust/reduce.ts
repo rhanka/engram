@@ -2,8 +2,8 @@
 // validation.transitions (profile.ts), looked up by each row's requires. Each row
 // adds only what the profile cannot say (actor kind, self, selected-only states,
 // owner); one guard (admits) checks every judging row. No hand-written state
-// remains; every result state comes from its row. pairs (lot 5) and
-// matchingRejections (lot 4a) stay empty until the pin publishes (§7 line 400).
+// remains; every result state comes from its row. pairs (lot 5) stay empty
+// until the pin publishes (§7 line 400).
 import type { Pin } from "../ontology-guardian/types.js";
 import { pinsEqual } from "../ontology-guardian/admission.js";
 import { validation } from "./profile.js";
@@ -38,8 +38,10 @@ export function reduceEntries(entries: readonly Entry[], at: { stream: StreamRef
   });
   const values = new Map<number, ValueAt>();
   let aiRev: number | null = null;
-  let head: { decision: number; selected: number; judged: number | null; action: "assert" | "confirm" | "correct";
-    by: Human; exposure: Exposure; decidedAt: string } | null = null;
+  let head: ({ decision: number; selected: number; judged: number | null; action: "assert" | "confirm" | "correct";
+    by: Human; exposure: Exposure; decidedAt: string }
+  | { decision: number; selected: null; judged: number; action: "reject";
+    by: Human; exposure: Exposure; decidedAt: string; reason: RejectReason }) | null = null;
   const valuesEqual = (a: Value, b: Value): boolean => a.kind === "class" && b.kind === "class"
     ? a.code === b.code && pinsEqual([a.vocabulary], [b.vocabulary])
     : a.kind === "note" && b.kind === "note" ? a.text === b.text : false;
@@ -103,6 +105,18 @@ export function reduceEntries(entries: readonly Entry[], at: { stream: StreamRef
         contentDigest: e.contentDigest, createdAt: e.recordedAt, lastReviewedAt: null });
       head = { decision: e.revision, selected: e.revision, judged: e.action.judged, action: "correct",
         by: he.actor, exposure: he.exposure, decidedAt: e.recordedAt };
+    } else if (e.actor.kind === "human" && e.action.kind === "reject") {
+      const he = e as Entry & { actor: Human; exposure: Exposure };
+      const t = judged(e.action.judged, e, row);
+      const sel = head !== null && head.selected !== null ? values.get(head.selected) : undefined;
+      const headGone = head === null || (sel !== undefined && sel.subjectVersion !== e.subjectVersion);
+      const veto = (head !== null && head.selected === e.action.judged) || (e.action.judged === aiRev && headGone);
+      if (e.replacesHuman !== (veto ? head?.decision ?? null : null))
+        throw new Error(`annotation-trust: revision ${e.revision} must set replacesHuman to ${veto ? head?.decision ?? null : null}`);
+      t.validation = row.to as Validation;
+      t.lastReviewedAt = e.recordedAt;
+      if (veto) head = { decision: e.revision, selected: null, judged: e.action.judged, action: "reject",
+        by: he.actor, exposure: he.exposure, decidedAt: e.recordedAt, reason: e.action.reason };
     } else if (e.actor.kind === "adapter" && e.action.kind === "preserve-source") {
       unverified.push({ revision: e.revision, row: e.action.row });
     } else throw new Error(`annotation-trust: unlisted transition at revision ${e.revision}`);
@@ -111,16 +125,26 @@ export function reduceEntries(entries: readonly Entry[], at: { stream: StreamRef
   const ai = aiHead !== null && aiHead.author.kind === "ai" ? { ...aiHead, author: aiHead.author } : null;
   const eligible = (v: ValueAt): boolean => v.subjectVersion === at.subjectVersion
     && (v.value.kind !== "class" || (at.vocabulary !== null && pinsEqual([v.value.vocabulary], [at.vocabulary])));
-  const selected = head === null ? null : values.get(head.selected) ?? null;
-  const human: HumanHead | null = head === null || selected === null ? null : head.action === "assert"
+  const selected = head !== null && head.selected !== null ? values.get(head.selected) ?? null : null;
+  const human: HumanHead | null = head === null ? null : head.action === "reject"
+    ? { decision: head.decision, by: head.by, exposure: head.exposure, decidedAt: head.decidedAt,
+      kind: "veto", action: "reject", judged: values.get(head.judged) as ValueAt, reason: head.reason }
+    : selected === null ? null : head.action === "assert"
     ? { decision: head.decision, by: head.by, exposure: head.exposure, decidedAt: head.decidedAt,
       kind: "value", action: "assert", selected, judged: null }
     : { decision: head.decision, by: head.by, exposure: head.exposure, decidedAt: head.decidedAt,
       kind: "value", action: head.action, selected, judged: values.get(head.judged as number) as ValueAt };
+  const rej: ReadModel["matchingRejections"] = [];
+  if (ai !== null) for (const e of entries) if (e.actor.kind === "human" && e.action.kind === "reject") {
+    const j = values.get(e.action.judged);
+    if (j !== undefined && valuesEqual(j.value, ai.value)) rej.push({ decision: e.revision,
+      judged: e.action.judged, subjectVersion: j.subjectVersion, reason: e.action.reason });
+  }
   const base = { stream: at.stream, revision: entries.length, subjectVersion: at.subjectVersion,
-    ai, human, matchingRejections: [], unverifiedSources: unverified, pairs: [] };
+    ai, human, matchingRejections: rej, unverifiedSources: unverified, pairs: [] };
   if (human !== null && selected !== null && eligible(selected)) return { ...base, trust: "trusted", effective: selected };
   if (human !== null) return { ...base, trust: "withheld", effective: null };
-  if (ai !== null && ai.validation === "unreviewed" && eligible(ai)) return { ...base, trust: "provisional", effective: ai };
+  if (ai !== null && ai.validation === "unreviewed" && eligible(ai)
+    && !rej.some((r) => r.subjectVersion === at.subjectVersion)) return { ...base, trust: "provisional", effective: ai };
   return { ...base, trust: "withheld", effective: null };
 }

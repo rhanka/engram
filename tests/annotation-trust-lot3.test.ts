@@ -91,7 +91,7 @@ describe("lot 3 reducer for open states and trust", () => {
     ["a confirm cannot target an older-version value", () => replayAt("sv2", a1, a2sv2, { ...confirmBy(3, uiSelect("analyst-b"), 1), subjectVersion: "sv2" }), /judges no eligible value/],
     ["an uncertain recorded on a new version judges nothing open", () => replay(a1, u2sv2), /unlisted transition at revision 2/],
     ["a correct needs a different value", () => replay(a1, correct2), /different value/],
-    ["a reject is not live yet", () => replay(a1, reject2), /unlisted transition at revision 2/],
+    ["a veto over no head names nothing", () => replay(a1, { ...reject2, replacesHuman: 1 }), /must set replacesHuman to null/],
   ])("refuses %s", (_name, run, msg) => { expect(run).toThrow(msg); });
   it("a duplicated revision is refused, never trusted", () => { expect(() => replay(a1, hAssert2(uiSelect("analyst-b"), null), dupB2)).toThrow(/breaks the committed sequence/); });
   it("two AI asserts in reverse order refuse on sequence only", () => { expect(() => replay(dupB2, a1)).toThrow(/breaks the committed sequence/); });
