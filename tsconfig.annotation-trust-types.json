@@ -5,6 +5,6 @@
     "rootDir": ".",
     "types": ["node"]
   },
-  "include": ["src/annotation-trust/**/*.ts", "tests/annotation-trust-lot2a.test.ts"],
+  "include": ["src/annotation-trust/**/*.ts", "tests/annotation-trust-*.test.ts"],
   "exclude": ["node_modules", "dist"]
 }
