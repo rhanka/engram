@@ -50,7 +50,7 @@ export const TEMPLATE_REF: import("./types.js").TemplateRef = deepFreeze({
   lineage: "engram", templateId: PROFILE_ID, templateVersion: PROFILE_VERSION,
   templateDigestSha256: semanticProfileDigest(template)
 });
-const TEMPLATE_REF_KEYS = ["lineage", "templateId", "templateVersion", "templateDigestSha256"] as const;
+export const TEMPLATE_REF_KEYS = ["lineage", "templateId", "templateVersion", "templateDigestSha256"] as const;
 export function verifyPins(templateRef: OntologyTemplateEnvelopeRef, ruleSheetPin: Pin): void {
   assertExactKeys(templateRef, "templateRef", TEMPLATE_REF_KEYS, TEMPLATE_REF_KEYS);
   if (TEMPLATE_REF_KEYS.some((k) => templateRef[k] !== TEMPLATE_REF[k])) throw new Error("template pin mismatch");
