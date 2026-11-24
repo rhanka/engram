@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { buildReadSideFixtures, cloneReadSideSource, inventoryDigest, LiveGitSandbox } from "./helpers/live-git-fixtures.js";
@@ -47,7 +47,7 @@ function verifyManifest(manifest: Manifest) {
     correctness: ["OIDs", "paths", "ranges", "ordered-parents", "generations", "citations", "authorization"],
     reasonsRequireExplicitSources: true, failedCasesRetained: true, deniedOrFastIncompleteRefusalIsNotGain: true,
     recoveryRequiredWhenBaselineCanAnswer: true, score: "median(1 - T1_i/T0_i)", population: "all-20-first-investigations",
-    continuationThreshold: 0.30, constantQualityRequired: true, thresholdRetuning: false,
+    continuationThreshold: 0.30, baselineCapMs: 30000, constantQualityRequired: true, thresholdRetuning: false,
     executionPilot: { authorized: false, additionalGainThreshold: 0.20,
       includedCosts: ["preparation", "copying", "verification", "recovery", "cleanup"] }, results: "unverified" });
   for (const revision of Object.values(manifest.revisions)) {
@@ -135,7 +135,7 @@ it("the twenty case manifest pins full OIDs permissions and independently verifi
     expect(createHash("sha1").update(`blob ${blob.length}\0`).update(blob).digest("hex"), origin.path).toBe(origin.blobSha);
   }
   const repositories: Record<string, string> = { engram: repo,
-    h2a: control.h2a, sentropic: control.sentropic };
+    h2a: control.h2a, sentropic: control.sentropic, F_WT: control.F_WT };
   const frozenControls = Object.fromEntries(Object.entries(manifest.revisions).filter(([alias]) => alias.startsWith("F_"))
     .map(([alias, revision]) => [alias, revision.oid]));
   expect(control.pins).toEqual(frozenControls);
@@ -224,6 +224,8 @@ it("rejects shortened pins missing cases disclosure grants invented reasons and 
     manifest => { manifest.cases[13]!.expected.state = "oracle-ready"; },
     manifest => { manifest.measurement = "verified"; },
     manifest => { manifest.protocol.continuationThreshold = 0.20; },
+    manifest => { delete (manifest.protocol as { baselineCapMs?: number }).baselineCapMs; },
+    manifest => { manifest.protocol.baselineCapMs = 0; },
     manifest => { manifest.protocol.baseline = ["native Git"]; },
     manifest => { manifest.cases[0]!.oracles[0]!.argv[0] = "checkout"; },
   ];
@@ -231,4 +233,56 @@ it("rejects shortened pins missing cases disclosure grants invented reasons and 
     const manifest = load(); mutate(manifest);
     expect(() => verifyManifest(manifest)).toThrow();
   }
+});
+
+it("case 7 targets a declared fixture worktree built by the harness and never an owner worktree", () => {
+  const manifest = load();
+  expect(JSON.stringify(manifest)).not.toContain("graphify-wt-livegit");
+  const revisionFwt = manifest.revisions["F_WT"];
+  expect(revisionFwt).toBeDefined();
+  expect(revisionFwt!.repository).toBe("F_WT");
+  expect(revisionFwt!.algorithm).toBe("sha1");
+  expect(revisionFwt!.oid).toMatch(/^[a-f0-9]{40}$/);
+
+  const case7 = manifest.cases.find((c) => c.id === 7);
+  expect(case7).toBeDefined();
+  expect(case7!.question).toContain("F_WT");
+  expect(case7!.question).not.toContain("graphify-wt-livegit");
+  expect(case7!.pins).toEqual({ F_WT: { algorithm: "sha1", oid: revisionFwt!.oid } });
+  expect(case7!.permissions.repositories).toEqual(["F_WT"]);
+  expect(case7!.oracles.length).toBeGreaterThan(0);
+  expect(case7!.oracles.every((oracle) => oracle.repository === "F_WT")).toBe(true);
+
+  const box = new LiveGitSandbox("/tmp");
+  let fWtPath = "";
+  try {
+    const control = buildReadSideFixtures(box) as ReturnType<typeof buildReadSideFixtures> & { F_WT?: string };
+    expect(typeof control.F_WT).toBe("string");
+    fWtPath = control.F_WT!;
+    expect(fWtPath.startsWith(box.root + "/")).toBe(true);
+    expect(relative(process.cwd(), fWtPath).startsWith("..")).toBe(true);
+    expect(existsSync(fWtPath)).toBe(true);
+    expect(control.pins["F_WT"]).toBe(revisionFwt!.oid);
+
+    const beforeDigest = inventoryDigest({ root: fWtPath });
+    for (const oracle of case7!.oracles) {
+      const result = box.probe(fWtPath, oracle.argv, "oracle");
+      expect(result.status, `${oracle.id}: ${result.stderr}`).toBe(oracle.expected.status);
+      expect(result.stderr.toString()).toBe("");
+      expect(result.stdout.length).toBe(oracle.expected.bytes);
+      expect(sha256(result.stdout)).toBe(oracle.expected.sha256);
+      if (oracle.expected.stdout !== undefined) {
+        expect(result.stdout.toString("utf8")).toBe(oracle.expected.stdout);
+      }
+    }
+    expect(inventoryDigest({ root: fWtPath })).toBe(beforeDigest);
+    for (const launch of box.trace.launches) {
+      expect(launch.cwd.startsWith(box.root + "/") || launch.cwd === box.root).toBe(true);
+    }
+    box.trace.assertSafe();
+  } finally {
+    box.dispose();
+  }
+  expect(existsSync(box.root)).toBe(false);
+  if (fWtPath) expect(existsSync(fWtPath)).toBe(false);
 });

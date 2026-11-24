@@ -14,16 +14,21 @@
  *   case ids and Git commands, expectations are compared AFTER timing
  *   (only hashes enter the evidence);
  * - counterbalances arm order per case (odd: T0 first, even: T1 first);
+ * - validates protocol.baselineCapMs before measurement (refuses missing/non-positive cap);
  * - retains every case in the list and counts; non-success states
  *   (capability-absent/capture-absent/policy-unavailable/reader-absent/
- *   failed/denied/refused) never enter the median or the decision and can
- *   never count as success via matchedExpectation;
+ *   failed/denied/refused) score baseline recovery (`T1_effective = time_to_non_success + T0_i`,
+ *   `gain = -(time_to_non_success) / T0_i <= 0`) when T0 succeeds, or `0` when neither arm
+ *   reaches the verified answer, and never count as success via matchedExpectation;
+ * - scores a failing/capped T0 arm at `baselineCapMs` (and `gain = 1 - T1_i / C` when T1
+ *   reaches the verified answer);
  * - measures first-answer and warm repeats; CPU/RSS are parent Node process
  *   only (explicit `parentProcessOnly`; child Git resources not collected);
  * - result-classification timing is classification only (no recovery
  *   workflow measured);
- * - reports a diagnostic Git self-comparison median over SUCCESS cases only;
- *   native additions are `measured: false` (`reader-absent`);
+ * - computes median gain over all 20 numeric gains (continuation requires
+ *   exactly 20 finite numeric gains, else `not-computable`);
+ *   native additions remain `measured: false` (`reader-absent`, verdict `not-measurable`);
  * - G4 stays closed: the typed `policy-unavailable` refusal is an explicit
  *   non-success state with zero emitted bytes, never a time saving;
  * - reason text never enters the evidence: sha256 of the reason plus its
@@ -35,13 +40,15 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { performance } from "node:perf_hooks";
 
 // Pinned engram corpus, independently verified by live-read-side-oracles.test.ts.
-const MANIFEST_SHA256 = "9fdbb8795c3eaea5cb55a6bec4ca18270a8c5691e7169ca3b56e4087b6fc926c";
-const CONTINUATION_THRESHOLD = 0.30;
-const NON_SUCCESS = new Set([
+const MANIFEST_SHA256 = "fe2ef5dfdfc8a64e574a2a807b468cda1e3244f27cf827b598c19a3bf82fb945";
+export const BASELINE_CAP_MS = 30000;
+export const CONTINUATION_THRESHOLD = 0.30;
+export const NON_SUCCESS = new Set([
   "capability-absent",
   "capacité absente",
   "capture-absent",
@@ -60,7 +67,7 @@ function fail(message) {
 }
 
 function parseArgs(argv) {
-  const args = { repos: {}, warm: 1, timeoutMs: 30000 };
+  const args = { repos: {}, warm: 1, timeoutMs: null };
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i];
     if (flag === "--manifest") args.manifest = argv[++i];
@@ -78,7 +85,20 @@ function parseArgs(argv) {
   if (!args.out) fail(`missing --out\n${usage}`);
   if (Object.keys(args.repos).length === 0) fail(`at least one --repo name=path is required\n${usage}`);
   if (!Number.isSafeInteger(args.warm) || args.warm < 1) fail("warm must be a positive integer");
+  if (args.timeoutMs !== null && (!Number.isFinite(args.timeoutMs) || args.timeoutMs <= 0)) {
+    fail("timeout-ms must be a positive finite number");
+  }
   return args;
+}
+
+export function validateBaselineCap(manifest) {
+  const cap = manifest?.protocol?.baselineCapMs;
+  if (typeof cap !== "number" || !Number.isFinite(cap) || cap <= 0) {
+    throw new Error(
+      "manifest.protocol.baselineCapMs must be a positive finite number recorded before measurement",
+    );
+  }
+  return cap;
 }
 
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -141,16 +161,184 @@ function counterbalancedOrder(caseId) {
   return caseId % 2 === 1 ? ["T0", "T1"] : ["T1", "T0"];
 }
 
-function perCaseGain(t0Ms, t1Ms) {
+export function perCaseGain(t0Ms, t1Ms) {
   if (!Number.isFinite(t0Ms) || !Number.isFinite(t1Ms) || !(t0Ms > 0)) return null;
-  return 1 - t1Ms / t0Ms;
+  const value = 1 - t1Ms / t0Ms;
+  return value === 0 ? 0 : value;
 }
 
-function median(values) {
+export function median(values) {
   if (values.length === 0) throw new Error("median of an empty population");
   const sorted = [...values].sort((a, b) => a - b);
   const middle = Math.floor(sorted.length / 2);
   return sorted.length % 2 === 1 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+const normalizeZero = (value) => (value === 0 ? 0 : value);
+
+export function scoreReadSideCase({
+  state,
+  t0FirstMs,
+  t1FirstMs,
+  classificationMs = 0,
+  t0Error = null,
+  t1Error = null,
+  t0TimedOut = false,
+  baselineCapMs,
+  matchedExpectation = false,
+  emittedBytes = 0,
+  isExpectedRefusal = false,
+  activeRefusalVerified = false,
+}) {
+  if (typeof baselineCapMs !== "number" || !Number.isFinite(baselineCapMs) || baselineCapMs <= 0) {
+    throw new Error("baselineCapMs must be a positive finite number");
+  }
+  const rawT1 = Number.isFinite(t1FirstMs) && t1FirstMs >= 0 ? t1FirstMs : 0;
+  const rawClass = Number.isFinite(classificationMs) && classificationMs >= 0 ? classificationMs : 0;
+  const t1TimeToNonSuccess = rawT1 + rawClass;
+  const t0ExceededCap = Boolean(t0TimedOut || (Number.isFinite(t0FirstMs) && t0FirstMs > baselineCapMs));
+  const t0ReachedVerified =
+    t0Error === null && !t0ExceededCap && Number.isFinite(t0FirstMs) && t0FirstMs > 0 && t0FirstMs <= baselineCapMs;
+  const t0ScoredMs = t0ReachedVerified ? t0FirstMs : baselineCapMs;
+  const baselineFailed = !t0ReachedVerified;
+  const baselineTimedOut = t0ExceededCap;
+
+  let finalState = t1Error ? "failed" : state;
+  let finalMatched = false;
+  let t1ReachedVerified = false;
+  const safeEmittedBytes = Number.isFinite(emittedBytes) && emittedBytes >= 0 ? emittedBytes : 0;
+
+  if (isExpectedRefusal) {
+    // G4 closed safety: leaked bytes fail closed; only an active zero-byte verified refusal can succeed.
+    if (safeEmittedBytes !== 0) {
+      finalState = "failed";
+      finalMatched = false;
+      t1ReachedVerified = false;
+    } else if (activeRefusalVerified && t1Error === null && !NON_SUCCESS.has(finalState)) {
+      finalMatched = true;
+      t1ReachedVerified = true;
+    } else {
+      finalState = t1Error ? "failed" : (NON_SUCCESS.has(state) ? state : "policy-unavailable");
+      finalMatched = false;
+      t1ReachedVerified = false;
+    }
+  } else {
+    t1ReachedVerified = t1Error === null && !NON_SUCCESS.has(finalState) && matchedExpectation === true;
+    finalMatched = t1ReachedVerified;
+  }
+
+  let t1EffectiveMs;
+  let gain;
+  let answeredBy;
+  let baselineRecoveryMs = 0;
+  let countsAsSaving = false;
+
+  if (t0ReachedVerified && t1ReachedVerified) {
+    t1EffectiveMs = t1TimeToNonSuccess;
+    gain = normalizeZero(perCaseGain(t0ScoredMs, t1EffectiveMs));
+    answeredBy = "both";
+    countsAsSaving = gain !== null && gain > 0 && finalMatched === true;
+  } else if (t0ReachedVerified && !t1ReachedVerified) {
+    baselineRecoveryMs = t0ScoredMs;
+    t1EffectiveMs = t1TimeToNonSuccess + t0ScoredMs;
+    gain = normalizeZero(-(t1TimeToNonSuccess / t0ScoredMs));
+    answeredBy = "baseline-recovery";
+    countsAsSaving = false;
+    finalMatched = false;
+  } else if (!t0ReachedVerified && t1ReachedVerified) {
+    t1EffectiveMs = t1TimeToNonSuccess;
+    gain = normalizeZero(perCaseGain(baselineCapMs, t1EffectiveMs));
+    answeredBy = "native-only";
+    countsAsSaving = gain !== null && gain > 0 && finalMatched === true;
+  } else {
+    t1EffectiveMs = t1TimeToNonSuccess + baselineCapMs;
+    gain = 0;
+    answeredBy = "neither";
+    countsAsSaving = false;
+    finalMatched = false;
+  }
+
+  return {
+    state: finalState,
+    matchedExpectation: finalMatched,
+    t0ScoredMs,
+    t1TimeToNonSuccess,
+    t1EffectiveMs,
+    baselineRecoveryMs,
+    baselineTimedOut,
+    baselineFailed,
+    answeredBy,
+    emittedBytes: safeEmittedBytes,
+    gain,
+    countsAsSaving,
+  };
+}
+
+export function evaluateContinuation({ cases, nativeMeasured = false, threshold = CONTINUATION_THRESHOLD }) {
+  if (threshold !== CONTINUATION_THRESHOLD) {
+    throw new Error(`threshold retuning is forbidden; continuation threshold must stay ${CONTINUATION_THRESHOLD}`);
+  }
+  const list = Array.isArray(cases) ? cases : [];
+  const numericGains = list.map((c) => c?.gain).filter((g) => typeof g === "number" && Number.isFinite(g));
+  if (list.length !== 20 || numericGains.length !== 20) {
+    return {
+      decision: false,
+      measurable: false,
+      computable: false,
+      numericGainCount: numericGains.length,
+      medianGain: null,
+      threshold: CONTINUATION_THRESHOLD,
+      qualityMet: false,
+      verdict: "not-computable",
+      reasons: [`not-computable: continuation decision requires exactly 20 numeric gains (got ${numericGains.length})`],
+    };
+  }
+  const medianGainValue = median(numericGains);
+  const qualityMet = list.every(
+    (c) => c.matchedExpectation === true && !NON_SUCCESS.has(c.state) && (!c.isExpectedRefusal || c.emittedBytes === 0),
+  );
+  if (!nativeMeasured) {
+    return {
+      decision: false,
+      measurable: false,
+      computable: true,
+      numericGainCount: 20,
+      medianGain: medianGainValue,
+      threshold: CONTINUATION_THRESHOLD,
+      qualityMet,
+      verdict: "not-measurable",
+      reasons: ["not measurable: native readers absent (cluster-mesh L9-S, G3/G4/G5)"],
+    };
+  }
+  if (qualityMet && medianGainValue >= CONTINUATION_THRESHOLD) {
+    return {
+      decision: true,
+      measurable: true,
+      computable: true,
+      numericGainCount: 20,
+      medianGain: medianGainValue,
+      threshold: CONTINUATION_THRESHOLD,
+      qualityMet: true,
+      verdict: "continue",
+      reasons: [],
+    };
+  }
+  const reasons = [];
+  if (!qualityMet) reasons.push("constant quality not met across all 20 cases");
+  if (medianGainValue < CONTINUATION_THRESHOLD) {
+    reasons.push(`median gain ${(medianGainValue * 100).toFixed(2)}% is below ${(CONTINUATION_THRESHOLD * 100).toFixed(0)}%`);
+  }
+  return {
+    decision: false,
+    measurable: true,
+    computable: true,
+    numericGainCount: 20,
+    medianGain: medianGainValue,
+    threshold: CONTINUATION_THRESHOLD,
+    qualityMet,
+    verdict: "reject",
+    reasons,
+  };
 }
 
 function isG4(expected) {
@@ -184,27 +372,51 @@ function checkOracleOutput(oracle, stdout, status) {
  * It records raw Git outputs with their timing; verification against the
  * frozen expectations happens AFTER timing via verifyOracleOutputs().
  */
-function runOracleBatchTimed(timedOracles, repos, timeoutMs, discardStdout) {
+function runOracleBatchTimed(timedOracles, repos, timeoutMs, discardStdout, capMs = null) {
   const started = performance.now();
   let spawnError = null;
+  let timedOut = false;
   let oracleRuns = 0;
   const outputs = [];
   for (const oracleDef of timedOracles ?? []) {
+    const elapsed = performance.now() - started;
+    if (capMs !== null && elapsed >= capMs) {
+      timedOut = true;
+      spawnError = `baseline exceeded baselineCapMs (${capMs}ms)`;
+      break;
+    }
     const cwd = repos[oracleDef.repository];
     if (!cwd) {
       spawnError = `oracle ${oracleDef.id}: no --repo mapping for ${oracleDef.repository}`;
       break;
     }
-    const result = git(cwd, oracleDef.argv, { timeoutMs, discardStdout });
+    const perOracleTimeout = capMs !== null
+      ? Math.max(1, Math.min(timeoutMs, Math.ceil(capMs - elapsed)))
+      : timeoutMs;
+    const result = git(cwd, oracleDef.argv, { timeoutMs: perOracleTimeout, discardStdout });
     oracleRuns += 1;
     if (!result.spawned) {
-      spawnError = `oracle ${oracleDef.id}: subprocess unavailable (${result.stderr.slice(0, 120)})`;
+      if (capMs !== null && performance.now() - started >= capMs) {
+        timedOut = true;
+        spawnError = `baseline exceeded baselineCapMs (${capMs}ms)`;
+      } else {
+        spawnError = `oracle ${oracleDef.id}: subprocess unavailable (${result.stderr.slice(0, 120)})`;
+      }
       break;
     }
     outputs.push({ id: oracleDef.id, status: result.status, stdout: discardStdout ? null : result.stdout });
-    if (spawnError) break;
+    if (capMs !== null && performance.now() - started >= capMs) {
+      timedOut = true;
+      spawnError = `baseline exceeded baselineCapMs (${capMs}ms)`;
+      break;
+    }
   }
-  return { ms: performance.now() - started, spawnError, outputs, oracleRuns };
+  const ms = performance.now() - started;
+  if (capMs !== null && ms > capMs) {
+    timedOut = true;
+    spawnError = spawnError ?? `baseline exceeded baselineCapMs (${capMs}ms)`;
+  }
+  return { ms, spawnError, timedOut, outputs, oracleRuns };
 }
 
 /** Post-timing verification: compares raw outputs to the frozen expectations. */
@@ -249,6 +461,18 @@ async function main() {
       manifest.cases.some((entry, index) => entry.id !== index + 1)) {
     fail("manifest must retain all twenty numbered cases (1..20); no silent skip");
   }
+  let baselineCapMs;
+  try {
+    baselineCapMs = validateBaselineCap(manifest);
+  } catch (error) {
+    fail(error.message);
+  }
+  if (manifest.protocol?.continuationThreshold !== undefined &&
+      manifest.protocol.continuationThreshold !== CONTINUATION_THRESHOLD) {
+    fail(`manifest.protocol.continuationThreshold must stay ${CONTINUATION_THRESHOLD} (threshold retuning forbidden)`);
+  }
+  const t0TimeoutMs = args.timeoutMs !== null ? Math.min(args.timeoutMs, baselineCapMs) : baselineCapMs;
+  const t1TimeoutMs = args.timeoutMs !== null ? args.timeoutMs : Math.max(BASELINE_CAP_MS, baselineCapMs);
 
   // Freeze expectations BEFORE timing; the timed runner never sees them.
   // The real frozenAt timestamp recorded here is reused verbatim as
@@ -292,7 +516,7 @@ async function main() {
   // Bootstrap: validate every mapped repository without touching source content.
   const bootstrapStarted = performance.now();
   for (const [name, cwd] of Object.entries(args.repos)) {
-    const probe = git(cwd, ["rev-parse", "--git-dir"], { timeoutMs: args.timeoutMs });
+    const probe = git(cwd, ["rev-parse", "--git-dir"], { timeoutMs: t1TimeoutMs });
     if (!probe.spawned || probe.status !== 0) {
       fail(`repository mapping ${name}=${cwd} is not a usable git directory`);
     }
@@ -304,7 +528,7 @@ async function main() {
   const timingStartedAt = Date.now();
   const expectationsFrozenAt = frozenAt;
 
-  const gitVersion = git(Object.values(args.repos)[0], ["--version"], { timeoutMs: args.timeoutMs });
+  const gitVersion = git(Object.values(args.repos)[0], ["--version"], { timeoutMs: t1TimeoutMs });
   const toolVersions = {
     git: gitVersion.stdout.toString().trim(),
     node: process.version,
@@ -318,11 +542,12 @@ async function main() {
     const timed = { T0: null, T1: null };
     const timedOutputs = { T0: null, T1: null };
     const timedSpawnErrors = { T0: null, T1: null };
+    const timedTimedOut = { T0: false, T1: false };
     let oracleRuns = 0;
 
     // T0: Git-component baseline (timed; ids/commands only, no expectations).
     const runT0Timed = () => {
-      const result = runOracleBatchTimed(entry.oracles, args.repos, args.timeoutMs, false);
+      const result = runOracleBatchTimed(entry.oracles, args.repos, t0TimeoutMs, false, baselineCapMs);
       oracleRuns += result.oracleRuns;
       return result;
     };
@@ -334,12 +559,12 @@ async function main() {
     const runT1DiagnosticTimed = () => {
       const perms = entry.permissions ?? {};
       if (perms.committedRead !== undefined && perms.committedRead !== "authorized") {
-        return { ms: 0, spawnError: "T1 refused: committed read not authorized", outputs: [], oracleRuns: 0 };
+        return { ms: 0, spawnError: "T1 refused: committed read not authorized", timedOut: false, outputs: [], oracleRuns: 0 };
       }
       if (perms.externalDisclosure?.allowed === true) {
-        return { ms: 0, spawnError: "T1 refused: external disclosure grant present without scope", outputs: [], oracleRuns: 0 };
+        return { ms: 0, spawnError: "T1 refused: external disclosure grant present without scope", timedOut: false, outputs: [], oracleRuns: 0 };
       }
-      const result = runOracleBatchTimed(entry.oracles, args.repos, args.timeoutMs, false);
+      const result = runOracleBatchTimed(entry.oracles, args.repos, t1TimeoutMs, false);
       oracleRuns += result.oracleRuns;
       return result;
     };
@@ -351,7 +576,7 @@ async function main() {
             // G4 stays closed: typed policy-unavailable refusal before any
             // content is retained. Only exit statuses observed; every output
             // byte is discarded (zero emitted bytes). Timed ids/commands only.
-            const result = runOracleBatchTimed(entry.oracles, args.repos, args.timeoutMs, true);
+            const result = runOracleBatchTimed(entry.oracles, args.repos, t1TimeoutMs, true);
             oracleRuns += result.oracleRuns;
             return result;
           }
@@ -364,12 +589,13 @@ async function main() {
       timed[arm] = result.ms;
       timedOutputs[arm] = result.outputs ?? [];
       timedSpawnErrors[arm] = result.spawnError ?? null;
+      timedTimedOut[arm] = Boolean(result.timedOut);
     }
     // Warm repetitions, kept separate from first answers (timed only).
     const t0WarmRepeatsMs = [];
     const t1WarmRepeatsMs = [];
     for (let repeat = 0; repeat < args.warm; repeat++) {
-      const warmT0 = runOracleBatchTimed(entry.oracles, args.repos, args.timeoutMs, isG4(expected));
+      const warmT0 = runOracleBatchTimed(entry.oracles, args.repos, t0TimeoutMs, isG4(expected), baselineCapMs);
       oracleRuns += warmT0.oracleRuns;
       t0WarmRepeatsMs.push(warmT0.ms);
       t1WarmRepeatsMs.push(arms.T1().ms); // oracleRuns accounted inside the arm closure
@@ -410,24 +636,27 @@ async function main() {
       // still judges T1 outputs against the frozen expectation.
       statusError = statusError ?? `T0 error retained: ${t0Error}`;
     }
-    // A non-success state can never count as success: matchedExpectation is
-    // forced false for every non-success outcome, even when the frozen
-    // expectation literally describes that outcome. Non-success cases stay in
-    // the case list and counts but never enter the median or the decision.
-    const matchedExpectation = NON_SUCCESS.has(state) ? false : expectationMatches === true;
     const emittedBytes = 0;
     const classificationMs = performance.now() - classificationStarted;
     const recoveryMs = classificationMs; // deprecated alias: classification only
     const recoveryScope = "result-classification-only";
-    void emittedBytes;
 
-    const t0FirstMs = timed.T0 ?? NaN;
+    const t0RawFirstMs = timed.T0 ?? NaN;
     const t1FirstMs = timed.T1 ?? NaN;
-    const t1TotalMs = (t1FirstMs ?? NaN) + classificationMs;
-    // Non-success states are excluded from gain computation (gain null) while
-    // the case itself stays retained in the list and counts.
-    const gain = NON_SUCCESS.has(state) ? null : perCaseGain(t0FirstMs, t1TotalMs);
-    const countsAsSaving = gain !== null && gain > 0 && !NON_SUCCESS.has(state) && matchedExpectation === true;
+    const scored = scoreReadSideCase({
+      state,
+      t0FirstMs: t0RawFirstMs,
+      t1FirstMs,
+      classificationMs,
+      t0Error,
+      t1Error,
+      t0TimedOut: timedTimedOut.T0,
+      baselineCapMs,
+      matchedExpectation: expectationMatches,
+      emittedBytes,
+      isExpectedRefusal: isG4(expected),
+      activeRefusalVerified: false,
+    });
 
     // Reason text never enters the evidence: sha256 of the reason value plus
     // its category (reasonState such as documented/inconnu), never the text.
@@ -435,14 +664,20 @@ async function main() {
     cases.push({
       id: entry.id,
       order,
-      state,
+      state: scored.state,
       t1ReaderState: "reader-absent",
-      matchedExpectation,
+      matchedExpectation: scored.matchedExpectation,
       missingCapabilities: [...frozen.missingCapabilities],
       reasonState: frozen.reasonState,
       reasonValueSha256: sha256(String(reasonText)),
       reasonEvidence: [...frozen.reasonEvidence],
-      t0FirstMs,
+      t0RawFirstMs,
+      t0FirstMs: scored.t0ScoredMs,
+      t0ScoredMs: scored.t0ScoredMs,
+      baselineTimedOut: scored.baselineTimedOut,
+      baselineFailed: scored.baselineFailed,
+      baselineRecoveryMs: scored.baselineRecoveryMs,
+      answeredBy: scored.answeredBy,
       t1FirstMs,
       t0WarmMs: t0WarmRepeatsMs.reduce((sum, ms) => sum + ms, 0) / args.warm,
       t1WarmMs: t1WarmRepeatsMs.reduce((sum, ms) => sum + ms, 0) / args.warm,
@@ -452,35 +687,27 @@ async function main() {
       classificationScope: "result-classification-only-no-recovery-workflow-measured",
       recoveryMs,
       recoveryScope,
-      t1TotalMs,
-      gain,
-      countsAsSaving,
-      emittedBytes: 0,
+      t1TotalMs: scored.t1TimeToNonSuccess,
+      t1EffectiveMs: scored.t1EffectiveMs,
+      gain: scored.gain,
+      countsAsSaving: scored.countsAsSaving,
+      emittedBytes: scored.emittedBytes,
       oracleRuns,
       error: statusError,
       t0Error,
     });
   }
 
-  // Median and quality over SUCCESS cases only (diagnostic Git
-  // self-comparison). Every case stays in `cases` and counts; non-success
-  // gains are null and excluded here, never removed from the report.
+  // All 20 cases receive finite numeric gains and enter the population median
+  // (diagnostic Git self-comparison). Quality is evaluated across all 20 cases;
+  // non-success cases stay retained and can never satisfy quality.
   const successCases = cases.filter((c) => !NON_SUCCESS.has(c.state));
-  const successGains = successCases.map((c) => c.gain);
-  if (successCases.some((c) => c.gain === null || !Number.isFinite(c.gain))) {
-    fail("unusable T0 timing on a retained SUCCESS case: refusing to drop the case for the median (no silent skip)");
+  const continuation = evaluateContinuation({ cases, nativeMeasured: false });
+  if (!continuation.computable || continuation.medianGain === null) {
+    fail("continuation population must contain exactly 20 finite numeric gains");
   }
-  const medianGainValue = successCases.length > 0 ? median(successGains) : null;
-  const quality = successCases.length > 0 && successCases.every((c) => c.matchedExpectation === true);
-  // No native reader exists (cluster-mesh L9-S, G3/G4/G5 absent): T1 is
-  // reader-absent, so no continuation decision can be measured here,
-  // regardless of the diagnostic self-comparison numbers above.
-  const continuation = {
-    decision: false,
-    measurable: false,
-    verdict: "not-measurable",
-    reasons: ["not measurable: native readers absent (cluster-mesh L9-S, G3/G4/G5)"],
-  };
+  const medianGainValue = continuation.medianGain;
+  const quality = continuation.qualityMet;
 
   const cpu = process.cpuUsage(cpuStarted);
   const mem = process.memoryUsage();
@@ -512,6 +739,7 @@ async function main() {
     caseCount: cases.length,
     warmRepetitions: args.warm,
     successCaseCount: successCases.length,
+    baselineCapMs,
     t1State: "reader-absent",
     arms: [
       "T0-git-component-only",
@@ -519,6 +747,7 @@ async function main() {
       "existing-planned-readers-reader-absent",
     ],
     baseline: {
+      capMs: baselineCapMs,
       note: "T0 and T1 both run the same native Git controls on authorized local data (counterbalanced order). T1 is an explicit reader-absent diagnostic second run (no native reader installed): the T0/T1 delta compares the Git component with itself (self-comparison) and measures nothing about a native service. Human search, document and memory overhead is declared unmeasured, never reduced to bare Git alone.",
       toolVersions,
       permissions: "per-case pins and permissions identical across arms",
@@ -537,9 +766,9 @@ async function main() {
     cases,
     threshold: CONTINUATION_THRESHOLD,
     medianGain: medianGainValue,
-    medianGainScope: "diagnostic-git-self-comparison-over-SUCCESS-cases-only-non-success-excluded",
+    medianGainScope: "diagnostic-git-self-comparison-over-all-20-first-investigations",
     qualityMet: quality,
-    qualityScope: "SUCCESS-cases-only-non-success-never-counts-as-success",
+    qualityScope: "all-20-first-investigations-non-success-cannot-satisfy-quality",
     continuation,
     executionPilot: "not-authorized-here",
     resources: {
@@ -561,12 +790,16 @@ async function main() {
 
   mkdirSync(dirname(args.out), { recursive: true });
   writeFileSync(args.out, JSON.stringify(evidence, null, 2));
-  const medianLabel = medianGainValue === null ? "n/a (no SUCCESS cases)" : `${(medianGainValue * 100).toFixed(2)}% diagnostic self-comparison`;
+  const medianLabel = medianGainValue === null ? "n/a" : `${(medianGainValue * 100).toFixed(2)}% diagnostic self-comparison`;
   process.stdout.write(
-    `bench-live: ${cases.length} cases (${successCases.length} SUCCESS diagnostic), median gain ${medianLabel}, ` +
-      `quality ${quality ? "met (SUCCESS only)" : "NOT met (SUCCESS only)"}, continuation NOT MEASURABLE (reader-absent) ` +
+    `bench-live: ${cases.length} cases (${successCases.length} SUCCESS diagnostic, ${continuation.numericGainCount} numeric gains), median gain ${medianLabel}, ` +
+      `quality ${quality ? "met" : "NOT met"}, continuation ${continuation.verdict.toUpperCase()} ` +
       `(prototype, unverified)\n`,
   );
 }
 
-main().catch((error) => fail(`harness failure: ${error?.message ?? error}`));
+const invokedDirectly = process.argv[1] !== undefined
+  && import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
+if (invokedDirectly) {
+  main().catch((error) => fail(`harness failure: ${error?.message ?? error}`));
+}

@@ -1,9 +1,9 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   buildReadSideFixtures, cloneReadSideSource, inventoryDigest, LiveGitSandbox,
@@ -254,6 +254,7 @@ beforeAll(() => {
       score: "median(1 - T1_i/T0_i)",
       population: "all-20-first-investigations",
       continuationThreshold: READ_SIDE_CONTINUATION_THRESHOLD,
+      baselineCapMs: 30_000,
     },
     revisions: {},
     cases,
@@ -341,33 +342,42 @@ describe("counterbalanced first investigations retain all twenty cases and class
     expect(evidence.t1State).toBe("reader-absent");
   });
 
-  it("computes a diagnostic Git self-comparison median over SUCCESS cases only (non-success excluded, all retained)", () => {
+  it("computes a diagnostic Git self-comparison median over all twenty numeric gains (non-success retained with recovery cost)", () => {
     expect(evidence.threshold).toBe(READ_SIDE_CONTINUATION_THRESHOLD);
     expect(evidence.threshold).toBe(0.3);
+    expect(evidence.baselineCapMs).toBe(30_000);
     // All twenty cases stay in the list and counts: nothing removed.
     expect(evidence.cases).toHaveLength(READ_SIDE_CASE_COUNT);
     expect(evidence.caseCount).toBe(READ_SIDE_CASE_COUNT);
-    const successCases = (evidence.cases as Array<{ state: string; gain: number | null }>).filter(
-      (c) => !isNonSuccessState(c.state),
-    );
-    expect(successCases.length).toBeGreaterThan(0);
-    expect(successCases.length).toBeLessThan(READ_SIDE_CASE_COUNT);
-    const successGains = successCases.map((c) => c.gain);
-    expect(successGains.every((g) => typeof g === "number" && Number.isFinite(g))).toBe(true);
-    // Non-success states never enter the gain computation (gain null, excluded).
-    for (const entry of evidence.cases as Array<{ state: string; gain: unknown }>) {
-      if (isNonSuccessState(entry.state)) expect(entry.gain).toBeNull();
+    const allGains = (evidence.cases as Array<{ gain: unknown }>).map((c) => c.gain);
+    expect(allGains.every((g) => typeof g === "number" && Number.isFinite(g))).toBe(true);
+    for (const entry of evidence.cases as Array<{
+      state: string;
+      gain: number;
+      t0FirstMs: number;
+      t1TotalMs: number;
+      t1EffectiveMs: number;
+      t0Error: string | null;
+      countsAsSaving: boolean;
+      matchedExpectation: boolean;
+    }>) {
+      if (isNonSuccessState(entry.state)) {
+        expect(entry.gain <= 0).toBe(true);
+        expect(entry.countsAsSaving).toBe(false);
+        expect(entry.matchedExpectation).toBe(false);
+        if (entry.t0Error === null) {
+          expect(entry.t1EffectiveMs).toBeCloseTo(entry.t1TotalMs + entry.t0FirstMs, 6);
+          expect(entry.gain).toBeCloseTo(entry.t1TotalMs === 0 ? 0 : -entry.t1TotalMs / entry.t0FirstMs, 10);
+        } else {
+          expect(entry.gain).toBe(0);
+        }
+      }
     }
-    expect(evidence.medianGain).toBe(median(successGains as number[]));
-    expect(evidence.medianGain).toBe(median(evidence.cases
-      .filter((c: { state: string }) => c.state === "verified")
-      .map((c: { t0FirstMs: number; t1TotalMs: number }) => 1 - c.t1TotalMs / c.t0FirstMs)));
-    expect(evidence.medianGainScope).toContain("SUCCESS");
-    // Quality over SUCCESS only: the retained failed case must not decide it.
-    expect(evidence.qualityMet).toBe(true);
-    expect(evidence.qualityScope).toContain("SUCCESS");
-    // …while quality over ALL cases (including retained non-success) stays false,
-    // proving non-success outcomes are present but excluded from the decision.
+    expect(evidence.medianGain).toBe(median(allGains as number[]));
+    expect(evidence.medianGainScope).toContain("all-20");
+    // Quality over ALL 20 cases: retained non-success cases prevent constant-quality acceptance.
+    expect(evidence.qualityMet).toBe(false);
+    expect(evidence.qualityScope).toContain("all-20");
     expect(evidence.cases.every((c: { matchedExpectation: boolean }) => c.matchedExpectation)).toBe(false);
     // No continuation decision can be measured without a native reader.
     expect(evidence.continuation.decision).toBe(false);
@@ -427,11 +437,22 @@ describe("counterbalanced first investigations retain all twenty cases and class
   });
 
   it("never counts a rapid incomplete refusal as a time saving", () => {
-    for (const entry of evidence.cases as Array<{ state: string; countsAsSaving: boolean }>) {
-      if (isNonSuccessState(entry.state)) expect(entry.countsAsSaving).toBe(false);
+    for (const entry of evidence.cases as Array<{ state: string; countsAsSaving: boolean; gain: number }>) {
+      if (isNonSuccessState(entry.state)) {
+        expect(entry.countsAsSaving).toBe(false);
+        expect(entry.gain <= 0).toBe(true);
+      }
     }
-    const refused = evidence.cases.find((c: { id: number }) => c.id === 20) as { t1FirstMs: number; t0FirstMs: number; gain: number };
-    void refused;
+    const refused = evidence.cases.find((c: { id: number }) => c.id === 20) as {
+      t1FirstMs: number;
+      t0FirstMs: number;
+      gain: number;
+      emittedBytes: number;
+      countsAsSaving: boolean;
+    };
+    expect(refused.emittedBytes).toBe(0);
+    expect(refused.countsAsSaving).toBe(false);
+    expect(refused.gain <= 0).toBe(true);
   });
 });
 
@@ -461,23 +482,36 @@ describe("source review regression guards", () => {
     );
   });
 
-  it("[P1-2] non-success states never enter the median or the decision and never count as success", () => {
+  it("[P1-2] non-success states never count as success and score baseline recovery or zero on failure", () => {
     expect(evidence.cases).toHaveLength(READ_SIDE_CASE_COUNT);
     expect(evidence.successCaseCount).toBe(
       (evidence.cases as Array<{ state: string }>).filter((c) => !isNonSuccessState(c.state)).length,
     );
-    for (const entry of evidence.cases as Array<{ state: string; matchedExpectation: unknown; countsAsSaving: unknown; gain: unknown }>) {
+    for (const entry of evidence.cases as Array<{
+      state: string;
+      matchedExpectation: unknown;
+      countsAsSaving: unknown;
+      gain: number;
+      t0Error: string | null;
+    }>) {
       if (isNonSuccessState(entry.state)) {
         expect(entry.matchedExpectation).toBe(false);
         expect(entry.countsAsSaving).toBe(false);
-        expect(entry.gain).toBeNull();
+        expect(typeof entry.gain).toBe("number");
+        expect(entry.gain <= 0).toBe(true);
       }
     }
-    // Case 19 stays retained as failed with its error (kept in list and counts).
-    const failed = evidence.cases.find((c: { id: number }) => c.id === 19) as { state: string; error: unknown; gain: unknown };
+    // Case 19 stays retained as failed with its error and T0 scored at baselineCapMs, gain 0.
+    const failed = evidence.cases.find((c: { id: number }) => c.id === 19) as {
+      state: string;
+      error: unknown;
+      gain: unknown;
+      t0FirstMs: number;
+    };
     expect(failed.state).toBe("failed");
     expect(typeof failed.error).toBe("string");
-    expect(failed.gain).toBeNull();
+    expect(failed.t0FirstMs).toBe(30_000);
+    expect(failed.gain).toBe(0);
   });
 
   it("[P1-2] the recovery timing is labelled result-classification-only (no recovery workflow measured)", () => {
@@ -537,12 +571,13 @@ it("runs the pinned engram oracles offline with package identity and no native-s
     const pins = Object.values(pinned.revisions as Record<string, { repository: string; oid: string }>)
       .filter(pin => pin.repository === "engram").map(pin => pin.oid);
     const history = cloneReadSideSource(box, pins);
-    const repos = { engram: history.repo, h2a: controls.h2a, sentropic: controls.sentropic };
+    const repos = { engram: history.repo, h2a: controls.h2a, sentropic: controls.sentropic, F_WT: controls.F_WT };
     const inventories = Object.values(repos).map(root => inventoryDigest({ root }));
     const out = join(box.root, "evidence.json");
     const actual = runBench(path, repos, out);
     expect(actual.manifestPinned).toBe(true);
     expect(actual.manifestSha256).toBe(sha256(bytes));
+    expect(actual.baselineCapMs).toBe(30_000);
     expect(actual.oracleVersion).toBe("native-git-read-side/1");
     const packageBytes = readFileSync(new URL("../engram-live/package.json", import.meta.url));
     expect(actual.artifacts.engramLive).toEqual({ name: "@sentropic/engram-live",
@@ -559,16 +594,21 @@ it("runs the pinned engram oracles offline with package identity and no native-s
       expect(entry.t0Error, `case ${entry.id}`).toBeNull();
       expect(entry.t1ReaderState).toBe("reader-absent");
       expect(entry.reasonValueSha256).toBe(sha256(control.expected.reason?.value ?? ""));
+      expect(typeof entry.gain).toBe("number");
+      expect(Number.isFinite(entry.gain)).toBe(true);
       if (control.expected.state === "oracle-ready") expect(entry.state).toBe("verified");
       else {
-        expect(entry.gain).toBeNull();
+        expect(entry.gain <= 0).toBe(true);
+        expect(entry.gain).toBeCloseTo(entry.t1TotalMs === 0 ? 0 : -entry.t1TotalMs / entry.t0FirstMs, 10);
         expect(entry.countsAsSaving).toBe(false);
         expect(entry.matchedExpectation).toBe(false);
       }
     }
+    expect(actual.cases[6]).toMatchObject({ id: 7, state: "capture-absent" });
     expect(actual.cases[19]).toMatchObject({ id: 20, state: "policy-unavailable", emittedBytes: 0 });
     expect(actual.nativeAdditions.measured).toBe(false);
-    expect(actual.continuation).toMatchObject({ measurable: false, verdict: "not-measurable",
+    expect((actual.nativeAdditions.gains as Array<{ gain: unknown }>).every((g) => typeof g.gain === "number" && Number.isFinite(g.gain as number))).toBe(true);
+    expect(actual.continuation).toMatchObject({ measurable: false, computable: true, numericGainCount: 20, verdict: "not-measurable",
       reasons: ["not measurable: native readers absent (cluster-mesh L9-S, G3/G4/G5)"] });
     expect(readFileSync(out, "utf8")).not.toContain('"measured": true');
     const raw = readFileSync(out, "utf8");
@@ -581,7 +621,7 @@ it("runs the pinned engram oracles offline with package identity and no native-s
   } finally { box.dispose(); }
 }, 120_000);
 
-it("retains explicit non-success states with null gains even when their Git controls match", () => {
+it("retains explicit non-success states with non-positive recovery gains even when their Git controls match", () => {
   const altered = structuredClone(manifest);
   const states = ["failed", "denied", "refused", "reader-absent", "policy-unavailable"];
   altered.cases.forEach((entry, index) => { entry.expected.state = states[index % states.length]!; });
@@ -589,11 +629,17 @@ it("retains explicit non-success states with null gains even when their Git cont
   writeFileSync(path, JSON.stringify(altered));
   const actual = runBench(path, { "synthetic-h2a": repoA, "synthetic-s": repoB }, join(root, "non-success-evidence.json"));
   expect(actual.cases).toHaveLength(20);
-  states.forEach((state, index) => expect(actual.cases[index]).toMatchObject({
-    state, gain: null, matchedExpectation: false, countsAsSaving: false,
-  }));
+  states.forEach((state, index) => {
+    const entry = actual.cases[index];
+    expect(entry).toMatchObject({ state, matchedExpectation: false, countsAsSaving: false });
+    expect(typeof entry.gain).toBe("number");
+    expect(entry.gain <= 0).toBe(true);
+    expect(entry.gain).toBeCloseTo(-entry.t1TotalMs / entry.t0FirstMs, 10);
+  });
   expect(actual.successCaseCount).toBe(0);
-  expect(actual.medianGain).toBeNull();
+  expect(typeof actual.medianGain).toBe("number");
+  expect(actual.medianGain <= 0).toBe(true);
+  expect(actual.qualityMet).toBe(false);
   expect(actual.continuation.measurable).toBe(false);
 });
 
@@ -619,4 +665,264 @@ it("rejects a missing or duplicate investigation instead of changing the fixed p
     expect(() => runBench(path, { "synthetic-h2a": repoA }, join(root, "invalid-evidence.json")))
       .toThrow("manifest must retain all twenty numbered cases (1..20); no silent skip");
   }
+});
+
+it("a non-success first investigation scores its refusal time plus the baseline recovery and a continuation decision needs exactly twenty numeric gains", async () => {
+  // 1. Every non-success case where T0 succeeded receives numeric gain = -t1TotalMs / t0FirstMs <= 0
+  //    (T1_effective = t1TotalMs + t0FirstMs) and never counts as saving or matched expectation.
+  expect(evidence.cases).toHaveLength(READ_SIDE_CASE_COUNT);
+  for (const entry of evidence.cases as Array<{
+    id: number;
+    state: string;
+    gain: unknown;
+    t0FirstMs: number;
+    t1TotalMs: number;
+    t1EffectiveMs?: number;
+    countsAsSaving: boolean;
+    matchedExpectation: boolean;
+    t0Error: string | null;
+  }>) {
+    expect(typeof entry.gain, `case ${entry.id} must carry a finite numeric gain`).toBe("number");
+    expect(Number.isFinite(entry.gain as number), `case ${entry.id} gain must be finite`).toBe(true);
+    if (isNonSuccessState(entry.state)) {
+      expect(entry.countsAsSaving).toBe(false);
+      expect(entry.matchedExpectation).toBe(false);
+      expect((entry.gain as number) <= 0).toBe(true);
+      if (entry.t0Error === null) {
+        const expectedGain = entry.t1TotalMs === 0 ? 0 : -entry.t1TotalMs / entry.t0FirstMs;
+        expect(entry.t1EffectiveMs).toBeCloseTo(entry.t1TotalMs + entry.t0FirstMs, 6);
+        expect(entry.gain as number).toBeCloseTo(expectedGain, 10);
+      } else {
+        expect(entry.gain).toBe(0);
+      }
+    }
+  }
+  const allGains = (evidence.cases as Array<{ gain: number }>).map((c) => c.gain);
+  expect(evidence.nativeAdditions.gains).toHaveLength(READ_SIDE_CASE_COUNT);
+  expect((evidence.nativeAdditions.gains as Array<{ gain: number }>).every((g) => typeof g.gain === "number" && Number.isFinite(g.gain))).toBe(true);
+  expect(evidence.medianGain).toBe(median(allGains));
+
+  // 2. Continuation verdict requires exactly 20 numeric gains; < 20 returns not-computable.
+  const bench = (await import(pathToFileURL(BENCH).href)) as {
+    evaluateContinuation: (input: { cases: Array<Record<string, unknown>>; nativeMeasured?: boolean }) => {
+      decision: boolean;
+      measurable: boolean;
+      computable: boolean;
+      numericGainCount: number;
+      verdict: string;
+      medianGain: number | null;
+      qualityMet: boolean;
+    };
+    scoreReadSideCase: (input: Record<string, unknown>) => Record<string, unknown>;
+  };
+
+  const passingCases = Array.from({ length: 20 }, (_, i) => ({
+    id: i + 1,
+    state: "verified",
+    gain: 0.5,
+    matchedExpectation: true,
+    emittedBytes: 0,
+  }));
+  expect(bench.evaluateContinuation({ cases: passingCases.slice(0, 19), nativeMeasured: true })).toMatchObject({
+    decision: false,
+    measurable: false,
+    computable: false,
+    numericGainCount: 19,
+    verdict: "not-computable",
+  });
+  const withOneNullGain = passingCases.map((c, i) => (i === 6 ? { ...c, gain: null } : c));
+  expect(bench.evaluateContinuation({ cases: withOneNullGain, nativeMeasured: true })).toMatchObject({
+    decision: false,
+    measurable: false,
+    computable: false,
+    numericGainCount: 19,
+    verdict: "not-computable",
+  });
+  expect(bench.evaluateContinuation({ cases: passingCases, nativeMeasured: true })).toMatchObject({
+    decision: true,
+    measurable: true,
+    computable: true,
+    numericGainCount: 20,
+    verdict: "continue",
+    medianGain: 0.5,
+    qualityMet: true,
+  });
+  const withOneNonSuccess = passingCases.map((c, i) =>
+    i === 19 ? { id: 20, state: "policy-unavailable", gain: -0.05, matchedExpectation: false, emittedBytes: 0 } : c,
+  );
+  expect(bench.evaluateContinuation({ cases: withOneNonSuccess, nativeMeasured: true })).toMatchObject({
+    decision: false,
+    measurable: true,
+    computable: true,
+    numericGainCount: 20,
+    verdict: "reject",
+    qualityMet: false,
+  });
+  const belowThreshold = passingCases.map((c) => ({ ...c, gain: 0.29 }));
+  expect(bench.evaluateContinuation({ cases: belowThreshold, nativeMeasured: true })).toMatchObject({
+    decision: false,
+    measurable: true,
+    computable: true,
+    numericGainCount: 20,
+    verdict: "reject",
+    qualityMet: true,
+  });
+
+  // 3. G4 closed safety: leaked bytes never pass or count as saving; active zero-byte refusal can verify.
+  const leakedG4 = bench.scoreReadSideCase({
+    state: "verified",
+    t0FirstMs: 100,
+    t1FirstMs: 5,
+    classificationMs: 1,
+    baselineCapMs: 30_000,
+    matchedExpectation: true,
+    isExpectedRefusal: true,
+    activeRefusalVerified: true,
+    emittedBytes: 12,
+  });
+  expect(leakedG4.matchedExpectation).toBe(false);
+  expect(leakedG4.countsAsSaving).toBe(false);
+  expect((leakedG4.gain as number) <= 0).toBe(true);
+
+  const activeG4 = bench.scoreReadSideCase({
+    state: "verified",
+    t0FirstMs: 100,
+    t1FirstMs: 10,
+    classificationMs: 0,
+    baselineCapMs: 30_000,
+    matchedExpectation: true,
+    isExpectedRefusal: true,
+    activeRefusalVerified: true,
+    emittedBytes: 0,
+  });
+  expect(activeG4.matchedExpectation).toBe(true);
+  expect(activeG4.emittedBytes).toBe(0);
+  expect(activeG4.gain).toBeCloseTo(0.9, 10);
+});
+
+it("a baseline arm that does not reach the verified answer is scored at the time cap recorded in the manifest before measurement and a manifest without a cap is refused", async () => {
+  // 1. Refuse any manifest missing a valid positive finite protocol.baselineCapMs before measurement.
+  for (const invalidCap of [undefined, null, 0, -50, "30000"]) {
+    const altered = structuredClone(manifest) as Record<string, any>;
+    if (invalidCap === undefined) delete altered.protocol.baselineCapMs;
+    else altered.protocol.baselineCapMs = invalidCap;
+    const badPath = join(root, "missing-cap.json");
+    const badOut = join(root, "missing-cap-out.json");
+    rmSync(badOut, { force: true });
+    writeFileSync(badPath, JSON.stringify(altered));
+    const res = spawnSync(
+      process.execPath,
+      [BENCH, "--manifest", badPath, "--repo", `synthetic-h2a=${repoA}`, "--repo", `synthetic-s=${repoB}`, "--out", badOut],
+      { encoding: "utf8", timeout: 30_000 },
+    );
+    expect(res.status, `cap=${String(invalidCap)} must exit 2`).toBe(2);
+    expect(res.stderr).toContain("baselineCapMs");
+    expect(existsSync(badOut)).toBe(false);
+  }
+
+  // 2. Evidence records the manifest baselineCapMs; Case 19 (neither arm succeeded) scores T0_i = C and gain = 0.
+  expect(evidence.baselineCapMs).toBe(30_000);
+  const case19 = evidence.cases.find((c: { id: number }) => c.id === 19) as {
+    t0FirstMs: number;
+    t0ScoredMs?: number;
+    gain: number;
+    matchedExpectation: boolean;
+    countsAsSaving: boolean;
+    answeredBy?: string;
+  };
+  expect(case19.t0FirstMs).toBe(30_000);
+  expect(case19.t0ScoredMs).toBe(30_000);
+  expect(case19.gain).toBe(0);
+  expect(case19.matchedExpectation).toBe(false);
+  expect(case19.countsAsSaving).toBe(false);
+  expect(case19.answeredBy).toBe("neither");
+
+  // 3. CLI run where T0 exceeds a small manifest baselineCapMs while T1 succeeds: T0 stops and scores at C.
+  const headA = git(repoA, ["rev-parse", "HEAD"], gitEnv(root)).stdout.toString().trim();
+  const baseOracle = oracle(repoA, gitEnv(root), "cap-sub", "synthetic-h2a", ["rev-parse", "--verify", headA]);
+  const capManifest = structuredClone(manifest) as Record<string, any>;
+  capManifest.protocol.baselineCapMs = 5;
+  capManifest.cases[0].oracles = Array.from({ length: 60 }, (_, idx) => ({
+    ...structuredClone(baseOracle),
+    id: `cap-sub-${idx}`,
+  }));
+  const capPath = join(root, "cap-exceeded.json");
+  const capOut = join(root, "cap-exceeded-out.json");
+  writeFileSync(capPath, JSON.stringify(capManifest));
+  const capEvidence = runBench(capPath, { "synthetic-h2a": repoA, "synthetic-s": repoB }, capOut, ["--timeout-ms", "30000"]);
+  expect(capEvidence.baselineCapMs).toBe(5);
+  expect(capEvidence.cases[0]).toMatchObject({
+    id: 1,
+    state: "verified",
+    t0FirstMs: 5,
+    t0ScoredMs: 5,
+    baselineTimedOut: true,
+    answeredBy: "native-only",
+    matchedExpectation: true,
+  });
+  expect(capEvidence.cases[0].gain).toBeCloseTo(1 - capEvidence.cases[0].t1TotalMs / 5, 10);
+
+  // 4. Scoring helper: when T0 hits C=30000ms and T1 answers in 150ms, gain = 1 - 150/30000 = 0.995.
+  const bench = (await import(pathToFileURL(BENCH).href)) as {
+    scoreReadSideCase: (input: Record<string, unknown>) => Record<string, unknown>;
+  };
+  const nativeOnly = bench.scoreReadSideCase({
+    state: "verified",
+    t0FirstMs: 30_000,
+    t1FirstMs: 145,
+    classificationMs: 5,
+    t0TimedOut: true,
+    t0Error: "T0 exceeded baselineCapMs (30000ms)",
+    t1Error: null,
+    baselineCapMs: 30_000,
+    matchedExpectation: true,
+  });
+  expect(nativeOnly).toMatchObject({
+    t0ScoredMs: 30_000,
+    baselineTimedOut: true,
+    answeredBy: "native-only",
+    matchedExpectation: true,
+    countsAsSaving: true,
+  });
+  expect(nativeOnly.gain).toBeCloseTo(1 - 150 / 30_000, 10);
+
+  const t0ErroredNativeOnly = bench.scoreReadSideCase({
+    state: "verified",
+    t0FirstMs: 25,
+    t1FirstMs: 150,
+    classificationMs: 0,
+    t0TimedOut: false,
+    t0Error: "T0 oracle mismatch",
+    t1Error: null,
+    baselineCapMs: 30_000,
+    matchedExpectation: true,
+  });
+  expect(t0ErroredNativeOnly).toMatchObject({
+    t0ScoredMs: 30_000,
+    baselineFailed: true,
+    answeredBy: "native-only",
+    matchedExpectation: true,
+    countsAsSaving: true,
+  });
+  expect(t0ErroredNativeOnly.gain).toBeCloseTo(1 - 150 / 30_000, 10);
+
+  const neitherSucceeded = bench.scoreReadSideCase({
+    state: "failed",
+    t0FirstMs: 25,
+    t1FirstMs: 15,
+    classificationMs: 1,
+    t0TimedOut: false,
+    t0Error: "T0 oracle failed",
+    t1Error: "T1 oracle failed",
+    baselineCapMs: 30_000,
+    matchedExpectation: false,
+  });
+  expect(neitherSucceeded).toMatchObject({
+    t0ScoredMs: 30_000,
+    baselineFailed: true,
+    answeredBy: "neither",
+    matchedExpectation: false,
+    countsAsSaving: false,
+    gain: 0,
+  });
 });
