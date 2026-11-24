@@ -6205,6 +6205,7 @@ export async function main(): Promise<void> {
   scrap.command("import")
     .description("Import browser- or assistant-transport answers: each line needs attempt (1 or 2);"
       + " browser lines carry ui, assistant lines carry assistant;"
+      + " assistant lines may carry an optional receipt (declared, not verified);"
       + " ui.temporary_chat and assistant.fresh_context must be true;"
       + " --model must equal <surface>:<model_declared>-<effort_declared>"
       + " (e.g. gemini-web:carbon-high, claude-code:carbon-high)")

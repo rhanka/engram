@@ -922,3 +922,518 @@ describe("scrap import assistant transport", () => {
     expect(rows[1]).toMatchObject({ attempt: 2, transport: "assistant" });
   });
 });
+
+describe("scrap import assistant receipt", () => {
+  const ASSIST_LABEL = "claude-code:carbon-high";
+  const SRC = "claude -p --output-format json";
+  function validAssistR(h: Hashes, raw: string, attempt: 1 | 2 = 1): Record<string, unknown> {
+    return {
+      id: "p1", attempt, snapshot_sha256: h.snaps, prompt_sha256: h.promptSha,
+      model_declared: "carbon", effort_declared: "high", transport: "assistant",
+      assistant: { surface: "claude-code", fresh_context: true },
+      started_at: "2026-11-22T10:00:00Z", finished_at: "2026-11-22T10:01:00Z", raw_response: raw,
+    };
+  }
+  const RECEIPT_FULL = {
+    served_models: ["carbon"],
+    usage: { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 2, cache_creation_input_tokens: 1 },
+    cost_usd: 0.001,
+    source: SRC,
+  };
+  async function importAssistR(out: string, capture: string, from: string, model = ASSIST_LABEL,
+    extra: string[] = []): Promise<CliResult> {
+    return runCli(["scrap", "import", "--out", out, "--capture", capture, "--mission",
+      join(capture, "mission.json"), "--from", from, "--model", model, ...extra]);
+  }
+
+  it("records a valid receipt on answered and failed rows with exact key order and canonical bytes", async () => {
+    const d = makeCapture(MISSION_TEXT, [okRow("p1", [S1])]);
+    const j = await promptJson(d, "p1");
+    const out = mkdtempSync(join(tmpdir(), "scrap-rc-"));
+    const shuffled = {
+      source: SRC, cost_usd: 0.001,
+      usage: { cache_creation_input_tokens: 1, output_tokens: 5, cache_read_input_tokens: 2, input_tokens: 10 },
+      served_models: ["carbon"],
+    };
+    const from = join(d, "r.jsonl");
+    writeAnswers(from, [answerLine({ ...validAssistR(j, FIXED), receipt: shuffled })]);
+    const r = await importAssistR(out, d, from);
+    expect(r.code).toBe(0);
+    const lines = readResults(out);
+    expect(lines).toHaveLength(2);
+    const row = JSON.parse(lines[0]!);
+    expect(Object.keys(row)).toEqual(["id", "url", "fields", "transport", "transport_label", "attempt",
+      "model_declared", "effort_declared", "receipt", "assistant", "started_at", "finished_at",
+      "prompt_sha256", "raw_response_sha256"]);
+    expect(JSON.stringify(row.receipt)).toBe(JSON.stringify({
+      served_models: ["carbon"],
+      usage: { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 2, cache_creation_input_tokens: 1 },
+      cost_usd: 0.001, source: SRC,
+    }));
+    expect(row).not.toHaveProperty("receipt_mismatch");
+    const summary = JSON.parse(lines[1]!);
+    expect(Object.keys(summary)).toEqual(["type", "transport", "transport_label", "mission_digest",
+      "ok", "failed", "attempts_total", "source_sha256", "receipt_rows", "receipt_mismatches",
+      "receipt_served_models", "receipt_usage_rows", "receipt_usage", "receipt_cost_rows", "receipt_cost_usd"]);
+    expect(summary).toMatchObject({ receipt_rows: 1, receipt_mismatches: 0,
+      receipt_served_models: ["carbon"], receipt_usage_rows: 1, receipt_cost_rows: 1 });
+    expect(summary.receipt_usage).toEqual({ input_tokens: 10, output_tokens: 5,
+      cache_read_input_tokens: 2, cache_creation_input_tokens: 1 });
+    for (const parsed of [row, summary]) {
+      for (const k of ["tokens", "cost", "mesh", "audit", "routed", "routed_mismatch", "resolved", "calls"]) {
+        expect(parsed[k], k).toBeUndefined();
+      }
+    }
+    const outF = mkdtempSync(join(tmpdir(), "scrap-rc-"));
+    const fromF = join(d, "rf.jsonl");
+    writeAnswers(fromF, [answerLine({ ...validAssistR(j, '{"broken":'), receipt: { ...RECEIPT_FULL } })]);
+    expect((await importAssistR(outF, d, fromF)).code).toBe(0);
+    const rowF = JSON.parse(readResults(outF)[0]!);
+    expect(rowF.error).toBe("parse_error");
+    expect(Object.keys(rowF)).toEqual(["id", "url", "error", "error_detail", "fields", "transport",
+      "transport_label", "attempt", "model_declared", "effort_declared", "receipt", "assistant",
+      "started_at", "finished_at", "prompt_sha256", "raw_response_sha256"]);
+  });
+
+  it("writes a receipt-free assistant row and summary byte-identical to today", async () => {
+    const d = makeCapture(MISSION_TEXT, [okRow("p1", [S1])]);
+    const j = await promptJson(d, "p1");
+    const out = mkdtempSync(join(tmpdir(), "scrap-rc-"));
+    const from = join(d, "plain.jsonl");
+    writeAnswers(from, [answerLine(validAssistR(j, FIXED))]);
+    expect((await importAssistR(out, d, from)).code).toBe(0);
+    const row = JSON.parse(readResults(out)[0]!);
+    expect(Object.keys(row)).toEqual(["id", "url", "fields", "transport", "transport_label", "attempt",
+      "model_declared", "effort_declared", "assistant", "started_at", "finished_at",
+      "prompt_sha256", "raw_response_sha256"]);
+    const summary = JSON.parse(readResults(out)[1]!);
+    expect(Object.keys(summary).sort()).toEqual(["attempts_total", "failed", "mission_digest",
+      "ok", "source_sha256", "transport", "transport_label", "type"]);
+  });
+
+  it("refuses receipt on a browser line and every malformed receipt field", async () => {
+    const d = makeCapture(MISSION_TEXT, [okRow("p1", [S1])]);
+    const j = await promptJson(d, "p1");
+    const good = { ...validAssistR(j, FIXED), receipt: { ...RECEIPT_FULL } };
+    const badReceipts: unknown[] = [
+      null, [],
+      { ...RECEIPT_FULL, zzz: 1 },
+      { served_models: ["carbon"] },
+      { usage: { input_tokens: 1, output_tokens: 1 }, cost_usd: 0.001, source: SRC },
+      { ...RECEIPT_FULL, source: "" },
+      { ...RECEIPT_FULL, served_models: [] },
+      { ...RECEIPT_FULL, served_models: ["carbon", "carbon"] },
+      { ...RECEIPT_FULL, served_models: [""] },
+      { ...RECEIPT_FULL, served_models: ["carbon", 7] },
+      { ...RECEIPT_FULL, usage: { output_tokens: 1 } },
+      { ...RECEIPT_FULL, usage: { input_tokens: 1 } },
+      { ...RECEIPT_FULL, usage: { input_tokens: -1, output_tokens: 1 } },
+      { ...RECEIPT_FULL, usage: { input_tokens: 1.5, output_tokens: 1 } },
+      { ...RECEIPT_FULL, usage: { input_tokens: "1", output_tokens: 1 } },
+      { ...RECEIPT_FULL, usage: { input_tokens: true, output_tokens: 1 } },
+      { ...RECEIPT_FULL, usage: { input_tokens: 2 ** 53, output_tokens: 1 } },
+      { ...RECEIPT_FULL, usage: { input_tokens: 1, output_tokens: 1, extra: 2 } },
+      { ...RECEIPT_FULL, usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 1.2 } },
+      { ...RECEIPT_FULL, cost_usd: -0.1 },
+      { ...RECEIPT_FULL, cost_usd: "0.1" },
+    ];
+    const outSeed = mkdtempSync(join(tmpdir(), "scrap-rc-"));
+    const seedFrom = join(d, "seed.jsonl");
+    writeAnswers(seedFrom, [answerLine(validAssistR(j, FIXED))]);
+    expect((await importAssistR(outSeed, d, seedFrom)).code).toBe(0);
+    const seedSnap = readResultsRaw(outSeed)!;
+    for (const [i, receipt] of badReceipts.entries()) {
+      const line = { ...validAssistR(j, FIXED), receipt } as Record<string, unknown>;
+      const from = join(d, `bad-${i}.jsonl`);
+      writeAnswers(from, [answerLine(line)]);
+      const r = await importAssistR(outSeed, d, from);
+      expect(r.code, `case ${i}`).toBe(2);
+      expect(r.err, `case ${i}`).toMatch(/receipt/);
+      expect(readResultsRaw(outSeed), `case ${i}`).toBe(seedSnap);
+    }
+    for (const [name, rawText] of [
+      ["cost-1e999", answerLine({ ...validAssistR(j, FIXED),
+        receipt: { ...RECEIPT_FULL } }).replace('"cost_usd":0.001', '"cost_usd":1e999')],
+      ["tokens-1e999", answerLine({ ...validAssistR(j, FIXED),
+        receipt: { served_models: ["carbon"],
+          usage: { input_tokens: 10, output_tokens: 5 }, source: SRC } })
+        .replace('"input_tokens":10', '"input_tokens":1e999')],
+    ] as const) {
+      const from = join(d, `${name}.jsonl`);
+      writeFileSync(from, `${rawText}\n`);
+      const r = await importAssistR(outSeed, d, from);
+      expect(r.code, name).toBe(2);
+      expect(r.err, name).toMatch(/receipt/);
+      expect(readResultsRaw(outSeed), name).toBe(seedSnap);
+    }
+    const outTop = mkdtempSync(join(tmpdir(), "scrap-rc-"));
+    const fromTop = join(d, "bad-top.jsonl");
+    writeAnswers(fromTop, [answerLine({ ...good, zzz: 1 })]);
+    const rTop = await importAssistR(outTop, d, fromTop);
+    expect(rTop.code).toBe(2);
+    expect(rTop.err).toMatch(/unknown key "zzz"/);
+    expect(readResultsRaw(outTop)).toBe(null);
+    const outB = mkdtempSync(join(tmpdir(), "scrap-rc-"));
+    const fromB = join(d, "bad-browser.jsonl");
+    writeAnswers(fromB, [answerLine({ ...validLine(j, FIXED), receipt: { ...RECEIPT_FULL } })]);
+    const rB = await runCli(["scrap", "import", "--out", outB, "--capture", d, "--mission",
+      join(d, "mission.json"), "--from", fromB, "--model", LABEL]);
+    expect(rB.code).toBe(2);
+    expect(rB.err).toMatch(/unknown key "receipt"/);
+    expect(readResultsRaw(outB)).toBe(null);
+  });
+
+  it("flags receipt_mismatch only when served_models omits model_declared", async () => {
+    const d = makeCapture(MISSION_TEXT, [okRow("p1", [S1])]);
+    const j = await promptJson(d, "p1");
+    for (const [name, served, flag] of [
+      ["other", ["other-model"], true],
+      ["dated", ["carbon-2026-01-01"], true],
+      ["match", ["aux", "carbon"], false],
+    ] as const) {
+      const out = mkdtempSync(join(tmpdir(), "scrap-rc-"));
+      const from = join(d, `mm-${name}.jsonl`);
+      writeAnswers(from, [answerLine({ ...validAssistR(j, FIXED),
+        receipt: { served_models: [...served], source: SRC } })]);
+      expect((await importAssistR(out, d, from)).code).toBe(0);
+      const row = JSON.parse(readResults(out)[0]!);
+      const summary = JSON.parse(readResults(out)[1]!);
+      if (flag) {
+        expect(row.receipt_mismatch).toBe(true);
+        expect(Object.keys(row).indexOf("receipt_mismatch")).toBe(Object.keys(row).indexOf("receipt") + 1);
+        expect(summary.receipt_mismatches).toBe(1);
+      } else {
+        expect(row).not.toHaveProperty("receipt_mismatch");
+        expect(summary.receipt_mismatches).toBe(0);
+      }
+    }
+  });
+
+  it("stages summaries per import with denominators, rounding and sorted union", async () => {
+    const d = makeCapture(MISSION_TEXT, [okRow("p1", [S1]), okRow("p2", [S1]), okRow("p3", [S1])]);
+    const j = await promptJson(d, "p1");
+    const j2 = await promptJson(d, "p2");
+    const out = mkdtempSync(join(tmpdir(), "scrap-rc-"));
+    const from1 = join(d, "batch1.jsonl");
+    writeAnswers(from1, [answerLine({ ...validAssistR(j, FIXED),
+      receipt: { served_models: ["carbon"], usage: { input_tokens: 3, output_tokens: 1 }, source: SRC } })]);
+    expect((await importAssistR(out, d, from1)).code).toBe(0);
+    expect(JSON.parse(readResults(out)[1]!).receipt_rows).toBe(1);
+    const l3 = { ...validAssistR(j2, FIXED), id: "p2" };
+    const lineNoReceipt = { ...validAssistR({ promptSha: j.promptSha, snaps: j.snaps }, FIXED), id: "p3" };
+    const from2 = join(d, "batch2.jsonl");
+    writeAnswers(from2, [
+      answerLine({ ...l3, receipt: { served_models: ["zeta"], cost_usd: 0.1, source: "other-src" } }),
+      answerLine({ ...lineNoReceipt, receipt: { served_models: ["carbon"], cost_usd: 0.2, source: SRC } }),
+    ]);
+    expect((await importAssistR(out, d, from2)).code).toBe(0);
+    const rows = readResults(out).map((l) => JSON.parse(l));
+    const summary2 = rows[rows.length - 1]!;
+    expect(summary2).toMatchObject({ ok: 2, failed: 0, attempts_total: 2, receipt_rows: 2,
+      receipt_mismatches: 1, receipt_served_models: ["carbon", "zeta"] });
+    expect(summary2).not.toHaveProperty("receipt_usage_rows");
+    expect(summary2).not.toHaveProperty("receipt_usage");
+    expect(summary2.receipt_cost_rows).toBe(2);
+    expect(summary2.receipt_cost_usd).toBe(0.3);
+  });
+
+  it("M1 mixed file pins denominators: plain, usage-only, cost-only failed, both", async () => {
+    const d = makeCapture(MISSION_TEXT,
+      [okRow("p1", [S1]), okRow("p2", [S1]), okRow("p3", [S1]), okRow("p4", [S1])]);
+    const j1 = await promptJson(d, "p1");
+    const j2 = await promptJson(d, "p2");
+    const j3 = await promptJson(d, "p3");
+    const j4 = await promptJson(d, "p4");
+    const out = mkdtempSync(join(tmpdir(), "scrap-rc-"));
+    const from = join(d, "m1-mixed.jsonl");
+    writeAnswers(from, [
+      answerLine({ ...validAssistR(j1, FIXED), id: "p1" }),
+      answerLine({ ...validAssistR(j2, FIXED), id: "p2",
+        receipt: { served_models: ["carbon"],
+          usage: { input_tokens: 3, output_tokens: 1 }, source: SRC } }),
+      answerLine({ ...validAssistR(j3, '{"broken":'), id: "p3",
+        receipt: { served_models: ["carbon"], cost_usd: 0.2, source: SRC } }),
+      answerLine({ ...validAssistR(j4, FIXED), id: "p4",
+        receipt: { served_models: ["aux", "carbon"],
+          usage: { input_tokens: 10, output_tokens: 5 }, cost_usd: 0.1, source: SRC } }),
+    ]);
+    const r = await importAssistR(out, d, from);
+    expect(r.code).toBe(0);
+    const lines = readResults(out);
+    expect(lines).toHaveLength(5);
+    const rows = lines.map((l) => JSON.parse(l));
+    const data = rows.filter((x) => x.type !== "summary");
+    expect(data).toHaveLength(4);
+    const summary = rows[rows.length - 1]!;
+    expect(summary).toMatchObject({ ok: 3, failed: 1, attempts_total: 4,
+      receipt_rows: 3, receipt_usage_rows: 2, receipt_cost_rows: 2, receipt_mismatches: 0 });
+    expect(summary.receipt_served_models).toEqual(["aux", "carbon"]);
+    expect(summary.receipt_usage).toEqual({ input_tokens: 13, output_tokens: 6 });
+    expect(summary.receipt_cost_usd).toBe(0.3);
+    expect(Object.keys(summary)).toEqual(["type", "transport", "transport_label", "mission_digest",
+      "ok", "failed", "attempts_total", "source_sha256", "receipt_rows", "receipt_mismatches",
+      "receipt_served_models", "receipt_usage_rows", "receipt_usage",
+      "receipt_cost_rows", "receipt_cost_usd"]);
+    const plain = data.find((x) => x.id === "p1")!;
+    expect(Object.keys(plain)).toEqual(["id", "url", "fields", "transport", "transport_label", "attempt",
+      "model_declared", "effort_declared", "assistant", "started_at", "finished_at",
+      "prompt_sha256", "raw_response_sha256"]);
+    const withBoth = data.find((x) => x.id === "p4")!;
+    expect(Object.keys(withBoth)).toEqual(["id", "url", "fields", "transport", "transport_label", "attempt",
+      "model_declared", "effort_declared", "receipt", "assistant", "started_at", "finished_at",
+      "prompt_sha256", "raw_response_sha256"]);
+    const failedCostOnly = data.find((x) => x.id === "p3")!;
+    expect(failedCostOnly.error).toBe("parse_error");
+    expect(Object.keys(failedCostOnly)).toEqual(["id", "url", "error", "error_detail", "fields",
+      "transport", "transport_label", "attempt", "model_declared", "effort_declared",
+      "receipt", "assistant", "started_at", "finished_at", "prompt_sha256", "raw_response_sha256"]);
+  });
+
+  it("sums usage components only when contributed and dedupes union across failed rows", async () => {
+    const d = makeCapture(MISSION_TEXT, [okRow("p1", [S1]), okRow("p2", [S1])]);
+    const j = await promptJson(d, "p1");
+    const j2 = await promptJson(d, "p2");
+    const out = mkdtempSync(join(tmpdir(), "scrap-rc-"));
+    const from = join(d, "mix.jsonl");
+    writeAnswers(from, [
+      answerLine({ ...validAssistR(j, '{"broken":'),
+        receipt: { served_models: ["m1"], usage: { input_tokens: 4, output_tokens: 2 }, source: SRC } }),
+      answerLine({ ...validAssistR(j2, FIXED), id: "p2",
+        receipt: { served_models: ["m1", "m2"],
+          usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 7 }, source: SRC } }),
+    ]);
+    expect((await importAssistR(out, d, from)).code).toBe(0);
+    const summary = JSON.parse(readResults(out).pop()!);
+    expect(summary.receipt_rows).toBe(2);
+    expect(summary.receipt_served_models).toEqual(["m1", "m2"]);
+    expect(summary.receipt_usage_rows).toBe(2);
+    expect(summary.receipt_usage).toEqual({ input_tokens: 5, output_tokens: 3, cache_read_input_tokens: 7 });
+    expect(summary).not.toHaveProperty("receipt_cost_rows");
+  });
+
+  it("keeps the first row on receipt-only re-imports and conflicts on changed answers", async () => {
+    const d = makeCapture(MISSION_TEXT, [okRow("p1", [S1])]);
+    const j = await promptJson(d, "p1");
+    const out = mkdtempSync(join(tmpdir(), "scrap-rc-"));
+    const from = join(d, "a.jsonl");
+    writeAnswers(from, [answerLine({ ...validAssistR(j, FIXED), receipt: { ...RECEIPT_FULL } })]);
+    expect((await importAssistR(out, d, from)).code).toBe(0);
+    const snap = readResultsRaw(out)!;
+    expect((await importAssistR(out, d, from)).code).toBe(0);
+    expect(readResultsRaw(out)).toBe(snap);
+    const variants: Record<string, unknown>[] = [
+      { ...validAssistR(j, FIXED) },
+      { ...validAssistR(j, FIXED), receipt: { served_models: ["carbon"], usage: { input_tokens: 99, output_tokens: 99 }, cost_usd: 9, source: "other" } },
+    ];
+    for (const [i, v] of variants.entries()) {
+      const f = join(d, `re-${i}.jsonl`);
+      writeAnswers(f, [answerLine(v)]);
+      const before = readResultsRaw(out)!;
+      expect((await importAssistR(out, d, f)).code).toBe(0);
+      expect(readResultsRaw(out)).toBe(before);
+      expect(JSON.parse(readResults(out)[0]!).receipt).toEqual({ ...RECEIPT_FULL });
+    }
+    const fTime = join(d, "re-time.jsonl");
+    writeAnswers(fTime, [answerLine({ ...validAssistR(j, FIXED),
+      finished_at: "2026-11-22T10:02:00Z", receipt: { ...RECEIPT_FULL } })]);
+    expect((await importAssistR(out, d, fTime)).code).toBe(2);
+    expect(readResultsRaw(out)).toBe(snap);
+    const fRaw = join(d, "re-raw.jsonl");
+    const otherRaw = JSON.stringify({ company: { value: "Beta Corp", quote: "Beta Corp" } });
+    // Beta Corp is not in the S1 snapshot, so fields verify to nulls but raw differs -> still conflicts
+    writeAnswers(fRaw, [answerLine({ ...validAssistR(j, otherRaw), receipt: { ...RECEIPT_FULL } })]);
+    expect((await importAssistR(out, d, fRaw)).code).toBe(2);
+    expect(readResultsRaw(out)).toBe(snap);
+    const fDup = join(d, "re-dup.jsonl");
+    writeAnswers(fDup, [answerLine({ ...validAssistR(j, FIXED), receipt: { ...RECEIPT_FULL } }),
+      answerLine({ ...validAssistR(j, FIXED), receipt: { served_models: ["carbon"], source: "x" } })]);
+    const outDup = mkdtempSync(join(tmpdir(), "scrap-rc-"));
+    expect((await importAssistR(outDup, d, fDup)).code).toBe(2);
+    expect(readResultsRaw(outDup)).toBe(null);
+  });
+
+  it("repairs a receipt-free parse_error with a receipt-carrying attempt 1 plus attempt 2", async () => {
+    const d = makeCapture(MISSION_TEXT, [okRow("p1", [S1])]);
+    const j = await promptJson(d, "p1");
+    const out = mkdtempSync(join(tmpdir(), "scrap-rc-"));
+    const f1 = join(d, "p1.jsonl");
+    writeAnswers(f1, [answerLine(validAssistR(j, '{"broken":'))]);
+    expect((await importAssistR(out, d, f1)).code).toBe(0);
+    const probe = join(d, "probe.jsonl");
+    writeAnswers(probe, [answerLine({ ...validAssistR(j, '{"broken":'), receipt: { ...RECEIPT_FULL } })]);
+    const j2raw = await promptJson(d, "p1", ["--repair", "--from", probe]);
+    const j2 = { promptSha: j2raw.prompt_sha256 as string, snaps: j2raw.snapshot_sha256 as string[] };
+    const f2 = join(d, "p2.jsonl");
+    writeAnswers(f2, [answerLine({ ...validAssistR(j, '{"broken":'), receipt: { ...RECEIPT_FULL } }),
+      answerLine({ ...validAssistR(j2, FIXED, 2), receipt: { served_models: ["carbon"], source: SRC } })]);
+    expect((await importAssistR(out, d, f2)).code).toBe(0);
+    const rows = readResults(out).map((l) => JSON.parse(l)).filter((x) => x.type !== "summary");
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({ attempt: 1, error: "parse_error" });
+    expect(rows[0]).not.toHaveProperty("receipt");
+    expect(rows[1]).toMatchObject({ attempt: 2 });
+    expect(rows[1].receipt).toEqual({ served_models: ["carbon"], source: SRC });
+  });
+
+  it("skips a failed row re-imported with a receipt under --retry-failed but appends new answers", async () => {
+    const d = makeCapture(MISSION_TEXT, [okRow("p1", [S1])]);
+    const j = await promptJson(d, "p1");
+    const out = mkdtempSync(join(tmpdir(), "scrap-rc-"));
+    const f1 = join(d, "fail.jsonl");
+    writeAnswers(f1, [answerLine(validAssistR(j, "[[["))]);
+    expect((await importAssistR(out, d, f1)).code).toBe(0);
+    const snap = readResultsRaw(out)!;
+    const fRetry = join(d, "retry.jsonl");
+    writeAnswers(fRetry, [answerLine({ ...validAssistR(j, "[[["), receipt: { ...RECEIPT_FULL } })]);
+    expect((await importAssistR(out, d, fRetry, ASSIST_LABEL, ["--retry-failed"])).code).toBe(0);
+    expect(readResultsRaw(out)).toBe(snap);
+    const fNew = join(d, "new.jsonl");
+    writeAnswers(fNew, [answerLine(validAssistR(j, FIXED))]);
+    expect((await importAssistR(out, d, fNew, ASSIST_LABEL, ["--retry-failed"])).code).toBe(0);
+    expect(readResults(out).map((l) => JSON.parse(l)).filter((r) => r.type !== "summary")).toHaveLength(2);
+  });
+
+  it("repairs through a receipt-bearing line and converges without receipt keys", async () => {
+    const d = makeCapture(MISSION_TEXT, [okRow("p1", [S1])]);
+    const j = await promptJson(d, "p1");
+    const from = join(d, "rc.jsonl");
+    writeAnswers(from, [answerLine({ ...validAssistR(j, '{"broken":'), receipt: { ...RECEIPT_FULL } })]);
+    const rRepair = await runCli(["scrap", "prompt", "--capture", d, "--mission", join(d, "mission.json"),
+      "--id", "p1", "--repair", "--from", from]);
+    expect(rRepair.code).toBe(0);
+    const j2raw = await promptJson(d, "p1", ["--repair", "--from", from]);
+    const j2 = { promptSha: j2raw.prompt_sha256 as string, snaps: j2raw.snapshot_sha256 as string[] };
+    const out = mkdtempSync(join(tmpdir(), "scrap-rc-"));
+    writeAnswers(from, [answerLine({ ...validAssistR(j, '{"broken":'), receipt: { ...RECEIPT_FULL } }),
+      answerLine({ ...validAssistR(j2, FIXED, 2), receipt: { served_models: ["carbon"], source: SRC } })]);
+    expect((await importAssistR(out, d, from)).code).toBe(0);
+    const { runConverge } = await import("../src/scrap/converge.js");
+    const plain = mkdtempSync(join(tmpdir(), "scrap-rc-"));
+    const fromPlain = join(d, "plain2.jsonl");
+    writeAnswers(fromPlain, [answerLine(validAssistR(j, '{"broken":'))]);
+    const pj2 = await promptJson(d, "p1", ["--repair", "--from", fromPlain]);
+    const pj = { promptSha: pj2.prompt_sha256 as string, snaps: pj2.snapshot_sha256 as string[] };
+    writeAnswers(fromPlain, [answerLine(validAssistR(j, '{"broken":')), answerLine(validAssistR(pj, FIXED, 2))]);
+    expect((await importAssistR(plain, d, fromPlain)).code).toBe(0);
+    const convOut = mkdtempSync(join(tmpdir(), "scrap-conv-"));
+    const conv = await runConverge({ runs: [out, plain], mission: join(d, "mission.json"),
+      out: convOut, allowTransports: ["assistant"] });
+    expect(conv.rows[0]!.fields.company).toMatchObject({ verdict: "unanimous", value: "Acme Canada Inc." });
+    const convText = readFileSync(join(convOut, "converge.ndjson"), "utf-8");
+    expect(convText).not.toContain("receipt");
+  });
+});
+
+describe("scrap import retry within-file (B1)", () => {
+  const ASSIST_B1 = "claude-code:carbon-high";
+  const SRC_B1 = "claude -p --output-format json";
+  function validAssistB1(h: Hashes, raw: string, attempt: 1 | 2 = 1): Record<string, unknown> {
+    return {
+      id: "p1", attempt, snapshot_sha256: h.snaps, prompt_sha256: h.promptSha,
+      model_declared: "carbon", effort_declared: "high", transport: "assistant",
+      assistant: { surface: "claude-code", fresh_context: true },
+      started_at: "2026-11-22T10:00:00Z", finished_at: "2026-11-22T10:01:00Z", raw_response: raw,
+    };
+  }
+  async function importAssistB1(out: string, capture: string, from: string,
+    extra: string[] = []): Promise<CliResult> {
+    return runCli(["scrap", "import", "--out", out, "--capture", capture, "--mission",
+      join(capture, "mission.json"), "--from", from, "--model", ASSIST_B1, ...extra]);
+  }
+
+  it("B1(a) browser: one file [failing, valid] under --retry-failed appends both", async () => {
+    const d = makeCapture(MISSION_TEXT, [okRow("p1", [S1])]);
+    const j = await promptJson(d, "p1");
+    const out = mkdtempSync(join(tmpdir(), "scrap-b1-"));
+    const from = join(d, "b1a-browser.jsonl");
+    writeAnswers(from, [answerLine(validLine(j, "[[[")), answerLine(validLine(j, FIXED))]);
+    const r = await importCli(out, d, from, ["--retry-failed"]);
+    expect(r.code).toBe(0);
+    const rows = readResults(out).map((l) => JSON.parse(l)).filter((x) => x.type !== "summary");
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({ id: "p1", attempt: 1 });
+    expect(rows[0].error).toBeTruthy();
+    expect(rows[1]).toMatchObject({ id: "p1", attempt: 1 });
+    expect(rows[1].error).toBeUndefined();
+  });
+
+  it("B1(a) assistant: one file [failing, valid] under --retry-failed appends both", async () => {
+    const d = makeCapture(MISSION_TEXT, [okRow("p1", [S1])]);
+    const j = await promptJson(d, "p1");
+    const out = mkdtempSync(join(tmpdir(), "scrap-b1-"));
+    const from = join(d, "b1a-assist.jsonl");
+    writeAnswers(from, [answerLine(validAssistB1(j, "[[[")), answerLine(validAssistB1(j, FIXED))]);
+    const r = await importAssistB1(out, d, from, ["--retry-failed"]);
+    expect(r.code).toBe(0);
+    const rows = readResults(out).map((l) => JSON.parse(l)).filter((x) => x.type !== "summary");
+    expect(rows).toHaveLength(2);
+    expect(rows[0].error).toBeTruthy();
+    expect(rows[1].error).toBeUndefined();
+  });
+
+  it("B1(b) browser: cumulative answers.jsonl re-import with --retry-failed appends one row", async () => {
+    const d = makeCapture(MISSION_TEXT, [okRow("p1", [S1])]);
+    const j = await promptJson(d, "p1");
+    const out = mkdtempSync(join(tmpdir(), "scrap-b1-"));
+    const from = join(d, "answers.jsonl");
+    writeAnswers(from, [answerLine(validLine(j, "[[["))]);
+    expect((await importCli(out, d, from)).code).toBe(0);
+    expect(readResults(out).filter((l) => !JSON.parse(l).type).length).toBe(1);
+    writeAnswers(from, [answerLine(validLine(j, "[[[")), answerLine(validLine(j, FIXED))]);
+    const r = await importCli(out, d, from, ["--retry-failed"]);
+    expect(r.code).toBe(0);
+    const rows = readResults(out).map((l) => JSON.parse(l)).filter((x) => x.type !== "summary");
+    expect(rows).toHaveLength(2);
+    expect(rows[1]).toMatchObject({ id: "p1", attempt: 1 });
+    expect(rows[1].error).toBeUndefined();
+  });
+
+  it("B1(b) assistant: cumulative answers.jsonl re-import with --retry-failed appends one row", async () => {
+    const d = makeCapture(MISSION_TEXT, [okRow("p1", [S1])]);
+    const j = await promptJson(d, "p1");
+    const out = mkdtempSync(join(tmpdir(), "scrap-b1-"));
+    const from = join(d, "answers.jsonl");
+    writeAnswers(from, [answerLine(validAssistB1(j, "[[["))]);
+    expect((await importAssistB1(out, d, from)).code).toBe(0);
+    writeAnswers(from, [answerLine(validAssistB1(j, "[[[")), answerLine(validAssistB1(j, FIXED))]);
+    const r = await importAssistB1(out, d, from, ["--retry-failed"]);
+    expect(r.code).toBe(0);
+    const rows = readResults(out).map((l) => JSON.parse(l)).filter((x) => x.type !== "summary");
+    expect(rows).toHaveLength(2);
+    expect(rows[1].error).toBeUndefined();
+  });
+
+  it("B1(c) browser: two identical failing lines under --retry-failed appends both (pre-receipt)", async () => {
+    const d = makeCapture(MISSION_TEXT, [okRow("p1", [S1])]);
+    const j = await promptJson(d, "p1");
+    const out = mkdtempSync(join(tmpdir(), "scrap-b1-"));
+    const from = join(d, "b1c-browser.jsonl");
+    writeAnswers(from, [answerLine(validLine(j, "[[[")), answerLine(validLine(j, "[[["))]);
+    const r = await importCli(out, d, from, ["--retry-failed"]);
+    expect(r.code).toBe(0);
+    const rows = readResults(out).map((l) => JSON.parse(l)).filter((x) => x.type !== "summary");
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({ id: "p1", attempt: 1 });
+    expect(rows[0].error).toBeTruthy();
+    expect(rows[1]).toMatchObject({ id: "p1", attempt: 1 });
+    expect(rows[1].error).toBeTruthy();
+  });
+
+  it("B1(c) assistant: same line with two receipts under --retry-failed refuses byte-identical", async () => {
+    const d = makeCapture(MISSION_TEXT, [okRow("p1", [S1])]);
+    const j = await promptJson(d, "p1");
+    const out = mkdtempSync(join(tmpdir(), "scrap-b1-"));
+    const from = join(d, "b1c-assist.jsonl");
+    const r1 = { served_models: ["carbon"], source: SRC_B1 };
+    const r2 = { served_models: ["carbon"], usage: { input_tokens: 1, output_tokens: 1 }, source: "other" };
+    writeAnswers(from, [
+      answerLine({ ...validAssistB1(j, "[[["), receipt: r1 }),
+      answerLine({ ...validAssistB1(j, "[[["), receipt: r2 }),
+    ]);
+    const before = readResultsRaw(out);
+    const r = await importAssistB1(out, d, from, ["--retry-failed"]);
+    expect(r.code).toBe(2);
+    expect(r.err).toMatch(/is already answered/);
+    expect(readResultsRaw(out)).toBe(before);
+  });
+});

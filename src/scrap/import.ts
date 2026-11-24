@@ -47,10 +47,23 @@ export interface BrowserAnswer {
   started_at: string; finished_at: string; raw_response: string;
 }
 
+export interface AssistantReceiptUsage {
+  input_tokens: number; output_tokens: number;
+  cache_read_input_tokens?: number; cache_creation_input_tokens?: number;
+}
+
+export interface AssistantReceipt {
+  served_models: string[];
+  usage?: AssistantReceiptUsage;
+  cost_usd?: number;
+  source: string;
+}
+
 export interface AssistantAnswer {
   id: string; attempt: 1 | 2; snapshot_sha256: string[]; prompt_sha256: string;
   model_declared: string; effort_declared: string; transport: "assistant";
   assistant: { surface: string; fresh_context: boolean };
+  receipt?: AssistantReceipt;
   started_at: string; finished_at: string; raw_response: string;
 }
 
@@ -68,6 +81,75 @@ const isUtcIso = (s: unknown): s is string => {
   return new Date(t).toISOString() === s.replace(/(\.\d{1,9})?Z$/, `.${frac.slice(0, 3)}Z`);
 };
 
+const RECEIPT_KEYS = ["served_models", "usage", "cost_usd", "source"];
+const RECEIPT_USAGE_KEYS = ["input_tokens", "output_tokens", "cache_read_input_tokens",
+  "cache_creation_input_tokens"];
+
+const decodeReceipt = (cmd: Cmd, lineNo: number, r: unknown): AssistantReceipt => {
+  if (!isObj(r)) throw refusal(cmd, lineNo, "invalid receipt (requires an object)");
+  for (const k of Object.keys(r)) {
+    if (!RECEIPT_KEYS.includes(k)) throw refusal(cmd, lineNo, `unknown receipt key ${JSON.stringify(k)}`);
+  }
+  for (const k of ["served_models", "source"] as const) {
+    if (!(k in r)) throw refusal(cmd, lineNo, `missing receipt key ${JSON.stringify(k)}`);
+  }
+  const served = (r as Record<string, unknown>).served_models;
+  if (!Array.isArray(served) || served.length === 0
+    || served.some((s) => typeof s !== "string" || (s as string).length === 0)
+    || new Set(served as string[]).size !== (served as unknown[]).length) {
+    throw refusal(cmd, lineNo,
+      "invalid receipt served_models (requires a non-empty array of distinct non-empty strings)");
+  }
+  let usageOut: AssistantReceiptUsage | undefined;
+  if ("usage" in r && (r as Record<string, unknown>).usage !== undefined) {
+    const u = (r as Record<string, unknown>).usage;
+    if (!isObj(u)) throw refusal(cmd, lineNo, "invalid receipt usage (requires an object)");
+    for (const k of Object.keys(u)) {
+      if (!RECEIPT_USAGE_KEYS.includes(k)) {
+        throw refusal(cmd, lineNo, `unknown receipt usage key ${JSON.stringify(k)}`);
+      }
+    }
+    for (const k of ["input_tokens", "output_tokens"] as const) {
+      if (!(k in u)) throw refusal(cmd, lineNo, `missing receipt usage key ${JSON.stringify(k)}`);
+    }
+    for (const k of RECEIPT_USAGE_KEYS) {
+      if (k in u) {
+        const n = (u as Record<string, unknown>)[k];
+        if (typeof n !== "number" || !Number.isSafeInteger(n) || (n as number) < 0) {
+          throw refusal(cmd, lineNo,
+            `invalid receipt usage ${k} (requires a non-negative safe integer)`);
+        }
+      }
+    }
+    const uu = u as Record<string, unknown>;
+    usageOut = {
+      input_tokens: uu.input_tokens as number, output_tokens: uu.output_tokens as number,
+      ...("cache_read_input_tokens" in uu
+        ? { cache_read_input_tokens: uu.cache_read_input_tokens as number } : {}),
+      ...("cache_creation_input_tokens" in uu
+        ? { cache_creation_input_tokens: uu.cache_creation_input_tokens as number } : {}),
+    };
+  }
+  let costOut: number | undefined;
+  if ("cost_usd" in r && (r as Record<string, unknown>).cost_usd !== undefined) {
+    const c = (r as Record<string, unknown>).cost_usd;
+    if (typeof c !== "number" || !Number.isFinite(c) || (c as number) < 0) {
+      throw refusal(cmd, lineNo, "invalid receipt cost_usd (requires a finite number, zero or greater)");
+    }
+    costOut = c as number;
+  }
+  const source = (r as Record<string, unknown>).source;
+  if (typeof source !== "string" || source.length === 0) {
+    throw refusal(cmd, lineNo, "invalid receipt source (requires a non-empty string)");
+  }
+  return {
+    served_models: [...(served as string[])],
+    ...(usageOut !== undefined ? { usage: usageOut } : {}),
+    ...(costOut !== undefined ? { cost_usd: costOut } : {}),
+    source: source as string,
+  };
+};
+
 export function decodeAnswerLine(cmd: Cmd, text: string, lineNo: number): AnswerLine {
   let v: unknown;
   try {
@@ -80,8 +162,16 @@ export function decodeAnswerLine(cmd: Cmd, text: string, lineNo: number): Answer
     throw refusal(cmd, lineNo, `invalid transport (requires "browser" or "assistant")`);
   }
   const wantKeys = v.transport === "browser" ? BROWSER_KEYS : ASSIST_KEYS;
-  for (const k of Object.keys(v)) {
-    if (!wantKeys.includes(k)) throw refusal(cmd, lineNo, `unknown key ${JSON.stringify(k)}`);
+  if (v.transport === "browser") {
+    for (const k of Object.keys(v)) {
+      if (!wantKeys.includes(k)) throw refusal(cmd, lineNo, `unknown key ${JSON.stringify(k)}`);
+    }
+  } else {
+    for (const k of Object.keys(v)) {
+      if (k !== "receipt" && !wantKeys.includes(k)) {
+        throw refusal(cmd, lineNo, `unknown key ${JSON.stringify(k)}`);
+      }
+    }
   }
   for (const k of wantKeys) {
     if (!(k in v)) throw refusal(cmd, lineNo, `missing key ${JSON.stringify(k)}`);
@@ -160,9 +250,13 @@ export function decodeAnswerLine(cmd: Cmd, text: string, lineNo: number): Answer
     return { ...base, transport: "browser", ui: { surface: ui.surface as string, temporary_chat: true } };
   }
   const assistant = v.assistant as Record<string, unknown>;
+  const receipt = ("receipt" in v && (v as Record<string, unknown>).receipt !== undefined)
+    ? decodeReceipt(cmd, lineNo, (v as Record<string, unknown>).receipt)
+    : undefined;
   return {
     ...base, transport: "assistant",
     assistant: { surface: assistant.surface as string, fresh_context: true },
+    ...(receipt !== undefined ? { receipt } : {}),
   };
 }
 
@@ -243,20 +337,32 @@ export interface ScrapImportOptions {
   out: string; capture: string; mission: string; from: string; model: string; retryFailed?: boolean;
 }
 
-const rowTail = (label: string, line: AnswerLine): Record<string, unknown> => ({
-  transport: line.transport,
-  transport_label: label,
-  attempt: line.attempt,
-  model_declared: line.model_declared,
-  effort_declared: line.effort_declared,
-  ...(line.transport === "browser"
-    ? { ui: { ...line.ui } }
-    : { assistant: { ...(line as AssistantAnswer).assistant } }),
-  started_at: line.started_at,
-  finished_at: line.finished_at,
-  prompt_sha256: line.prompt_sha256,
-  raw_response_sha256: sha256(line.raw_response),
-});
+const rowTail = (label: string, line: AnswerLine): Record<string, unknown> => {
+  const receipt = line.transport === "assistant" ? (line as AssistantAnswer).receipt : undefined;
+  const mismatch = receipt !== undefined && !receipt.served_models.includes(line.model_declared);
+  return {
+    transport: line.transport,
+    transport_label: label,
+    attempt: line.attempt,
+    model_declared: line.model_declared,
+    effort_declared: line.effort_declared,
+    ...(receipt !== undefined ? { receipt } : {}),
+    ...(mismatch ? { receipt_mismatch: true } : {}),
+    ...(line.transport === "browser"
+      ? { ui: { ...line.ui } }
+      : { assistant: { ...(line as AssistantAnswer).assistant } }),
+    started_at: line.started_at,
+    finished_at: line.finished_at,
+    prompt_sha256: line.prompt_sha256,
+    raw_response_sha256: sha256(line.raw_response),
+  };
+};
+
+const rowIdentityOf = (rowJson: string): string => {
+  const v = JSON.parse(rowJson) as Record<string, unknown>;
+  const { receipt: _r, receipt_mismatch: _m, ...rest } = v;
+  return JSON.stringify(rest);
+};
 
 export async function runScrapImport(o: ScrapImportOptions): Promise<void> {
   if (!o.out || !o.capture || !o.mission || !o.from || !o.model) {
@@ -329,8 +435,9 @@ export async function runScrapImport(o: ScrapImportOptions): Promise<void> {
     }
   }
   const resPath = join(o.out, "results.ndjson");
-  const existingLines = new Set<string>();
-  const lastRow = new Map<string, string>();
+  const existingIdentities = new Set<string>();
+  const lastIdentity = new Map<string, string>();
+  const lastError = new Map<string, unknown>();
   const existingTransports = new Set<string>();
   if (existsSync(resPath)) {
     for (const t of readFileSync(resPath, "utf-8").split("\n")) {
@@ -346,8 +453,12 @@ export async function runScrapImport(o: ScrapImportOptions): Promise<void> {
       + " \"browser\" or \"assistant\"");
       }
       existingTransports.add(v.transport as string);
-      existingLines.add(t);
-      if (typeof v.id === "string" && v.type !== "summary") lastRow.set(v.id, t);
+      if (typeof v.id === "string" && v.type !== "summary") {
+        const ident = rowIdentityOf(t);
+        existingIdentities.add(ident);
+        lastIdentity.set(v.id, ident);
+        lastError.set(v.id, (v as Record<string, unknown>).error ?? null);
+      }
     }
   }
   if (existingTransports.size > 1) {
@@ -362,10 +473,14 @@ export async function runScrapImport(o: ScrapImportOptions): Promise<void> {
   }
   const cap = loaded.mission.tokenCap ?? SCRAP_PACKET_BUDGET;
   const computed: string[] = [];
+  const computedIdentities: string[] = [];
   const staged: string[] = [];
-  const stage = (id: string, rowJson: string): void => {
+  const stagedIdentities = new Set<string>();
+  const stage = (id: string, rowJson: string, ident: string, err: unknown): void => {
     staged.push(rowJson);
-    lastRow.set(id, rowJson);
+    stagedIdentities.add(ident);
+    lastIdentity.set(id, ident);
+    lastError.set(id, err ?? null);
   };
   for (let li = 0; li < lines.length; li++) {
     const { line, no } = lines[li]!;
@@ -429,24 +544,30 @@ export async function runScrapImport(o: ScrapImportOptions): Promise<void> {
     const rowJson = JSON.stringify(error
       ? { id: line.id, url: packet.url, error, error_detail: detail, fields: null, ...rowTail(o.model, line) }
       : { id: line.id, url: packet.url, fields, ...rowTail(o.model, line) });
+    const rowIdent = rowIdentityOf(rowJson);
+    const rowErr: unknown = error ?? null;
     computed.push(rowJson);
-    if (existingLines.has(rowJson)) continue;
-    const last = lastRow.get(line.id);
+    computedIdentities.push(rowIdent);
+    if (existingIdentities.has(rowIdent)) continue;
+    if (line.transport === "assistant" && stagedIdentities.has(rowIdent)) {
+      throw new Error(`scrap import: line ${no}: id ${JSON.stringify(line.id)} is already answered`);
+    }
+    const last = lastIdentity.get(line.id);
+    const lastErr = lastError.get(line.id);
     if (line.attempt === 1 && last === undefined) {
-      stage(line.id, rowJson);
+      stage(line.id, rowJson, rowIdent, rowErr);
       continue;
     }
-    if (line.attempt === 2 && last !== undefined && prevIdx >= 0 && last === computed[prevIdx]
-      && (JSON.parse(last) as { error?: unknown }).error === "parse_error") {
-      stage(line.id, rowJson);
+    if (line.attempt === 2 && last !== undefined && prevIdx >= 0
+      && last === computedIdentities[prevIdx] && lastErr === "parse_error") {
+      stage(line.id, rowJson, rowIdent, rowErr);
       continue;
     }
-    if (line.attempt === 1 && last !== undefined && o.retryFailed === true
-      && (JSON.parse(last) as { error?: unknown }).error != null) {
-      stage(line.id, rowJson);
+    if (line.attempt === 1 && last !== undefined && o.retryFailed === true && lastErr != null) {
+      stage(line.id, rowJson, rowIdent, rowErr);
       continue;
     }
-    if (last === undefined || (JSON.parse(last) as { error?: unknown }).error == null) {
+    if (last === undefined || lastErr == null) {
       throw new Error(`scrap import: line ${no}: id ${JSON.stringify(line.id)} is already answered`);
     }
     throw new Error(`scrap import: line ${no}: id ${JSON.stringify(line.id)} last row failed`
@@ -459,10 +580,56 @@ export async function runScrapImport(o: ScrapImportOptions): Promise<void> {
     if (r.error == null) ok++;
     else failed++;
   }
-  mkdirSync(o.out, { recursive: true });
-  appendFileSync(resPath, `${staged.join("\n")}\n${JSON.stringify({
+  const summaryBase: Record<string, unknown> = {
     type: "summary", transport: fileTransport ?? "browser", transport_label: o.model,
     mission_digest: loaded.digest, ok, failed, attempts_total: staged.length,
     source_sha256: sourceSha256,
-  })}\n`, "utf-8");
+  };
+  if (fileTransport === "assistant") {
+    const parsed = staged.map((s) => JSON.parse(s) as Record<string, unknown>);
+    const withReceipt = parsed.filter((r) => isObj(r.receipt));
+    if (withReceipt.length > 0) {
+      const served = new Set<string>();
+      for (const r of withReceipt) {
+        for (const m of ((r.receipt as Record<string, unknown>).served_models as string[])) served.add(m);
+      }
+      summaryBase.receipt_rows = withReceipt.length;
+      summaryBase.receipt_mismatches = withReceipt.filter((r) => r.receipt_mismatch === true).length;
+      summaryBase.receipt_served_models = [...served].sort();
+      const withUsage = withReceipt.filter((r) => isObj((r.receipt as Record<string, unknown>).usage));
+      if (withUsage.length > 0) {
+        let input = 0, output = 0, cacheRead = 0, cacheCreation = 0;
+        let hasRead = false, hasCreation = false;
+        for (const r of withUsage) {
+          const u = (r.receipt as Record<string, unknown>).usage as Record<string, unknown>;
+          input += u.input_tokens as number;
+          output += u.output_tokens as number;
+          if ("cache_read_input_tokens" in u) {
+            hasRead = true;
+            cacheRead += u.cache_read_input_tokens as number;
+          }
+          if ("cache_creation_input_tokens" in u) {
+            hasCreation = true;
+            cacheCreation += u.cache_creation_input_tokens as number;
+          }
+        }
+        summaryBase.receipt_usage_rows = withUsage.length;
+        summaryBase.receipt_usage = {
+          input_tokens: input, output_tokens: output,
+          ...(hasRead ? { cache_read_input_tokens: cacheRead } : {}),
+          ...(hasCreation ? { cache_creation_input_tokens: cacheCreation } : {}),
+        };
+      }
+      const withCost = withReceipt.filter((r) =>
+        typeof (r.receipt as Record<string, unknown>).cost_usd === "number");
+      if (withCost.length > 0) {
+        const sum = withCost.reduce((a, r) =>
+          a + ((r.receipt as Record<string, unknown>).cost_usd as number), 0);
+        summaryBase.receipt_cost_rows = withCost.length;
+        summaryBase.receipt_cost_usd = Number(sum.toFixed(9));
+      }
+    }
+  }
+  mkdirSync(o.out, { recursive: true });
+  appendFileSync(resPath, `${staged.join("\n")}\n${JSON.stringify(summaryBase)}\n`, "utf-8");
 }
