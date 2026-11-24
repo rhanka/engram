@@ -291,7 +291,16 @@ describe("scrap mesh Claude seat + cross-family & failover guards", () => {
     const probe = vi.fn(async () => VALID_CAPS);
     const seen = { plans: 0 };
 
-    // 1. Built-in 0.38.9 gateway aliases (claude-opus-5-5-max, claude-sonnet-5-5-low, claude-haiku-5-5-low)
+    // 0. 0.38.10 pins the bare 5.5 ids as gateway-alias-only on every surface:
+    // the planner never yields a faithful anthropic target for them.
+    const mesh = await import("@sentropic/llm-mesh");
+    for (const id of ["claude-opus-5-5", "claude-opus-5-5-max", "claude-sonnet-5-5", "claude-sonnet-5-5-low", "claude-haiku-5-5", "claude-haiku-5-5-max"]) {
+      expect(mesh.isGatewayAliasOnlyClaudeModelId(id)).toBe(true);
+    }
+    expect(mesh.isGatewayAliasOnlyClaudeModelId("claude-opus-5")).toBe(false);
+    expect([...mesh.GATEWAY_ALIAS_ONLY_CLAUDE_MODEL_IDS].sort()).toEqual(["claude-haiku-5-5", "claude-opus-5-5", "claude-sonnet-5-5"]);
+
+    // 1. Built-in 0.38.10 gateway aliases (claude-opus-5-5-max, claude-sonnet-5-5-low, claude-haiku-5-5-low)
     for (const alias of ["claude-opus-5-5-max", "claude-sonnet-5-5-low", "claude-haiku-5-5-low"]) {
       let err: unknown;
       try {
@@ -339,6 +348,102 @@ describe("scrap mesh Claude seat + cross-family & failover guards", () => {
     }
     expect(String(planErr)).toMatch(/mesh:claude-opus-5-max.*anthropic.*openai\/gpt-6\.2-sol.*cross-family alias routing/);
     expect(isExtractUsageError(planErr)).toBe(true);
+  });
+
+  it("routes qualified mesh:anthropic:claude-opus-5-5-{max,low} to the claude-code seat with effort forwarded (fake facade, no live call)", async () => {
+    const { createScrapMeshClient, preflightMeshAlias, SEAT_WIRED } = await import("../src/scrap/mesh-host.js");
+    const probe = vi.fn(async () => VALID_CAPS);
+    const planInputs: Array<{ subject: unknown; input: any }> = [];
+    const seenPlans = { plans: 0 };
+    const qualifiedFacade = {
+      createRoutePlanner: (runtime: any) => ({
+        plan: async (subject: any, input: any) => {
+          seenPlans.plans++;
+          planInputs.push({ subject, input });
+          return {
+            planRef: "plan-55-stub",
+            expiresAt: "2030-01-01T00:00:00.000Z",
+            candidateRefs: ["c1"],
+            policy: {},
+            councilRevision: "council-stub",
+            diagnostics: [{
+              candidateRef: "c1",
+              diagnosticAccountRef: "acct_claude_stub",
+              requestedModel: input.requestedModel,
+              actualProviderId: "anthropic",
+              actualModelId: input.requestedModel,
+              actualTransportProviderId: "claude-code",
+              reason: "exact",
+              cacheContinuityRisk: false,
+            }],
+          };
+        },
+        prepareAttempt: async () => ({
+          attemptRef: "attempt-55-stub",
+          generate: (request: any) => runtime.generate({ ...request, auth: claudeAuth() }),
+          stream: (request: any) => runtime.stream(request),
+          recordOutcome: async () => {},
+          markCommitted: async () => {},
+          complete: async () => {},
+          releaseCancelled: async () => {},
+        }),
+      }),
+    };
+
+    // Preflight resolves the qualified alias with the seat qualifier instead of refusing it.
+    const preMax = await preflightMeshAlias("anthropic:claude-opus-5-5-max", { probeClaudeCli: probe });
+    expect(preMax).toEqual({ provider: "anthropic", model: "claude-opus-5-5", effort: "max", qualifiedClaudeCode: true, claudeCaps: VALID_CAPS });
+    const preLow = await preflightMeshAlias("anthropic:claude-opus-5-5-low", { probeClaudeCli: probe });
+    expect(preLow).toEqual({ provider: "anthropic", model: "claude-opus-5-5", effort: "low", qualifiedClaudeCode: true, claudeCaps: VALID_CAPS });
+
+    for (const [alias, expectedEffort] of [["anthropic:claude-opus-5-5-max", "max"], ["anthropic:claude-opus-5-5-low", "low"]] as const) {
+      const seenEfforts: Array<ReasoningEffort | undefined> = [];
+      const seenCalls: Array<{ modelId: string; prompt: string }> = [];
+      const base = planInputs.length;
+      const { d } = twoOut();
+      await captureLogs(() =>
+        runExtract(
+          { out: d, mission: join(d, "mission.json"), model: `mesh:${alias}` },
+          undefined,
+          {
+            createMeshClient: async (a: string) =>
+              createScrapMeshClient(a, {
+                facade: qualifiedFacade as any,
+                ownerScopes: ["owner:test"],
+                probeClaudeCli: probe,
+                createClaudeRunner: (opts) => {
+                  seenEfforts.push(opts.effort);
+                  return stubClaudeRunner(seenCalls);
+                },
+              }),
+          },
+        ),
+      );
+      // Kills a mutant that plans the bare id without pinning the anthropic/claude-code seat:
+      // the probe plan plus both execution plans carry the explicit override.
+      expect(planInputs.length).toBe(base + 3);
+      for (const entry of planInputs.slice(base)) {
+        expect(entry.input.requestedModel).toBe("claude-opus-5-5");
+        expect(entry.input.targetCandidatesOverride).toEqual([{
+          providerId: "anthropic",
+          transportProviderId: "claude-code",
+          model: "claude-opus-5-5",
+          effort: expectedEffort,
+        }]);
+      }
+      // Kills a mutant that drops the effort or misroutes the qualified alias.
+      expect(seenEfforts).toEqual([expectedEffort]);
+      expect(seenCalls.map((c) => c.modelId)).toEqual(["claude-opus-5-5", "claude-opus-5-5"]);
+      const rows = idRows(d);
+      expect(rows).toHaveLength(2);
+      for (const row of rows) {
+        expect(row.mesh).toEqual({ provider: "anthropic", model: "claude-opus-5-5" });
+        expect(row.routed_mismatch).toBeUndefined();
+      }
+    }
+    // A passing injected probe never mutates the module-global seat set.
+    expect(SEAT_WIRED.has("anthropic")).toBe(false);
+    expect(seenPlans.plans).toBeGreaterThan(0);
   });
 
   it("records routed_mismatch: true with both resolved and routed provider/model on failover and counts it in summary", async () => {
