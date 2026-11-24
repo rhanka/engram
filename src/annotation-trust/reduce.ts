@@ -7,7 +7,7 @@
 import type { Pin } from "../ontology-guardian/types.js";
 import { pinsEqual } from "../ontology-guardian/admission.js";
 import { validation } from "./profile.js";
-import type { AI, Entry, Exposure, Human, HumanHead, ReadModel, StreamRef, Validation, ValueAt } from "./types.js";
+import type { AI, Entry, Exposure, Human, HumanHead, ReadModel, RejectReason, StreamRef, Validation, Value, ValueAt } from "./types.js";
 type Transition = { action: Entry["action"]["kind"]; actor: Entry["actor"]["kind"]; owner: "3" | "4a";
   requires?: string; to: Validation | null; ambiguousTo?: Validation; self?: boolean;
   selectedOnly?: readonly Validation[] };
@@ -23,10 +23,12 @@ const TRANSITIONS: readonly Transition[] = [
   { action: "reject", actor: "human", owner: "4a", requires: "reject", to: "rejected", selectedOnly: ["human-asserted", "confirmed"] },
   { action: "preserve-source", actor: "adapter", owner: "3", to: null },
 ];
-const from = (r: Transition): readonly string[] => validation.transitions.find((t) => (t.requires as readonly string[]).includes(r.requires ?? ""))?.from as readonly string[] ?? [];
+const from = (r: Transition): readonly string[] =>
+  validation.transitions.find((t) => (t.requires as readonly string[]).includes(r.requires ?? ""))?.from as readonly string[] ?? [];
 const sameAuthor = (a: AI | Human, b: AI | Human): boolean =>
   a.kind === "ai" && b.kind === "ai" && a.channel === "pipeline" && b.channel === "pipeline" ? a.runRef === b.runRef
-  : a.kind === "ai" && b.kind === "ai" && a.channel === "mcp" && b.channel === "mcp" && a.sessionRef !== undefined && b.sessionRef !== undefined ? a.sessionRef === b.sessionRef
+  : a.kind === "ai" && b.kind === "ai" && a.channel === "mcp" && b.channel === "mcp" && a.sessionRef !== undefined
+    && b.sessionRef !== undefined ? a.sessionRef === b.sessionRef
   : a.actorRef === b.actorRef;
 export function reduceEntries(entries: readonly Entry[], at: { stream: StreamRef; subjectVersion: string; vocabulary: Pin | null }): ReadModel {
   entries.forEach((e, i) => {
@@ -36,19 +38,30 @@ export function reduceEntries(entries: readonly Entry[], at: { stream: StreamRef
   });
   const values = new Map<number, ValueAt>();
   let aiRev: number | null = null;
-  let head: { decision: number; selected: number; judged: number | null; action: "assert" | "confirm";
+  let head: { decision: number; selected: number; judged: number | null; action: "assert" | "confirm" | "correct";
     by: Human; exposure: Exposure; decidedAt: string } | null = null;
+  const valuesEqual = (a: Value, b: Value): boolean => a.kind === "class" && b.kind === "class"
+    ? a.code === b.code && pinsEqual([a.vocabulary], [b.vocabulary])
+    : a.kind === "note" && b.kind === "note" ? a.text === b.text : false;
+  const assertTo = TRANSITIONS.find((t) => t.action === "assert" && t.actor === "human")?.to as Validation;
   const unverified: ReadModel["unverifiedSources"] = [];
   const admits = (r: Transition, t: ValueAt | undefined, n: number, e: Entry): boolean => t !== undefined && t.subjectVersion === e.subjectVersion
     && (from(r) as readonly string[]).includes(t.validation) && (!r.selectedOnly?.includes(t.validation) || head?.selected === n)
     && (r.self !== true || sameAuthor(t.author, e.actor as AI | Human));
+  const judged = (n: number, e: Entry, row: Transition): ValueAt => {
+    const t = values.get(n);
+    if (t === undefined || t.subjectVersion !== e.subjectVersion)
+      throw new Error(`annotation-trust: revision ${e.revision} judges no eligible value`);
+    if (!admits(row, t, n, e)) throw new Error(`annotation-trust: unlisted transition at revision ${e.revision}`);
+    return t;
+  };
   for (const e of entries) {
     const row = TRANSITIONS.find((t) => t.action === e.action.kind && t.actor === e.actor.kind);
     if (row === undefined) throw new Error(`annotation-trust: unlisted transition at revision ${e.revision}`);
-    if (row.owner !== "3") throw new Error(`annotation-trust: ${e.action.kind} owned by lot ${row.owner}`);
-    const replacing = e.actor.kind === "human" && (e.action.kind === "assert" || e.action.kind === "confirm")
+    const replacing = e.actor.kind === "human" && (e.action.kind === "assert" || e.action.kind === "confirm" || e.action.kind === "correct")
       ? head?.decision ?? null : null;
-    if (e.replacesHuman !== replacing) throw new Error(`annotation-trust: revision ${e.revision} must set replacesHuman to ${replacing}`);
+    if (e.action.kind !== "reject" && e.replacesHuman !== replacing)
+      throw new Error(`annotation-trust: revision ${e.revision} must set replacesHuman to ${replacing}`);
     if (e.actor.kind === "ai" && e.action.kind === "assert") {
       const amb = (e.action as { ambiguous?: boolean }).ambiguous === true;
       const v = (amb ? row.ambiguousTo ?? row.to : row.to) as Validation;
@@ -70,14 +83,25 @@ export function reduceEntries(entries: readonly Entry[], at: { stream: StreamRef
       (t as ValueAt).validation = row.to as Validation;
     } else if (e.actor.kind === "human" && e.action.kind === "confirm") {
       const he = e as Entry & { actor: Human; exposure: Exposure };
-      const t = values.get(e.action.judged);
-      if (t === undefined || t.subjectVersion !== e.subjectVersion)
-        throw new Error(`annotation-trust: revision ${e.revision} judges no eligible value`);
-      if (!admits(row, t, e.action.judged, e))
-        throw new Error(`annotation-trust: unlisted transition at revision ${e.revision}`);
+      const t = judged(e.action.judged, e, row);
       t.validation = row.to as Validation;
       t.lastReviewedAt = e.recordedAt;
       head = { decision: e.revision, selected: e.action.judged, judged: e.action.judged, action: "confirm",
+        by: he.actor, exposure: he.exposure, decidedAt: e.recordedAt };
+    } else if (e.actor.kind === "human" && e.action.kind === "correct") {
+      const he = e as Entry & { actor: Human; exposure: Exposure };
+      const t = judged(e.action.judged, e, row);
+      const v = e.action.value;
+      if (v.kind !== t.value.kind || (v.kind === "class" && t.value.kind === "class" && !pinsEqual([v.vocabulary], [t.value.vocabulary])))
+        throw new Error(`annotation-trust: revision ${e.revision} correct keeps its target's pin`);
+      if (valuesEqual(t.value, e.action.value))
+        throw new Error(`annotation-trust: revision ${e.revision} correct needs a different value`);
+      t.validation = row.to as Validation;
+      t.lastReviewedAt = e.recordedAt;
+      values.set(e.revision, { revision: e.revision, subjectVersion: e.subjectVersion as string, value: e.action.value,
+        validation: assertTo, author: he.actor,
+        contentDigest: e.contentDigest, createdAt: e.recordedAt, lastReviewedAt: null });
+      head = { decision: e.revision, selected: e.revision, judged: e.action.judged, action: "correct",
         by: he.actor, exposure: he.exposure, decidedAt: e.recordedAt };
     } else if (e.actor.kind === "adapter" && e.action.kind === "preserve-source") {
       unverified.push({ revision: e.revision, row: e.action.row });
@@ -92,7 +116,7 @@ export function reduceEntries(entries: readonly Entry[], at: { stream: StreamRef
     ? { decision: head.decision, by: head.by, exposure: head.exposure, decidedAt: head.decidedAt,
       kind: "value", action: "assert", selected, judged: null }
     : { decision: head.decision, by: head.by, exposure: head.exposure, decidedAt: head.decidedAt,
-      kind: "value", action: "confirm", selected, judged: values.get(head.judged as number) as ValueAt };
+      kind: "value", action: head.action, selected, judged: values.get(head.judged as number) as ValueAt };
   const base = { stream: at.stream, revision: entries.length, subjectVersion: at.subjectVersion,
     ai, human, matchingRejections: [], unverifiedSources: unverified, pairs: [] };
   if (human !== null && selected !== null && eligible(selected)) return { ...base, trust: "trusted", effective: selected };
