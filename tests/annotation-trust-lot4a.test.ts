@@ -68,6 +68,10 @@ describe("lot 4a protected selection and veto", () => {
     expect(r.human?.decision).toBe(2);
     expect(r.human?.kind).toBe("value");
     expect(r.ai?.revision).toBe(1);
+    expect(r.human).toMatchObject({ by: analyst,
+      decidedAt: "2026-11-24T00:00:02Z", exposure: shown(1),
+      selected: { createdAt: "2026-11-24T00:00:02Z",
+        contentDigest: seal(c2).contentDigest } });
     if (r.human?.kind === "value") {
       expect(r.human.action).toBe("correct");
       expect(r.human.judged?.revision).toBe(1);
@@ -94,6 +98,8 @@ describe("lot 4a protected selection and veto", () => {
       expect(r.human.decision).toBe(5);
       expect(r.human.judged.revision).toBe(2);
       expect(r.human.reason).toBe("wrong-subject");
+      expect(r.human).toMatchObject({ by: analyst,
+        decidedAt: "2026-11-24T00:00:05Z", exposure: shown(2) });
     }
   });
   it("rejecting the AI head with no human head vetoes", () => {
@@ -152,7 +158,7 @@ describe("lot 4a protected selection and veto", () => {
     ["a correct judges an eligible value", [a1, { ...c2, subjectVersion: "sv2" }], /judges no eligible value/],
     ["rejecting an alternative names no decision", [a1, c2, a3, { ...r4, replacesHuman: 2 }], /must set replacesHuman to null/],
     ["a veto names the head decision", [a1, c2, a3, r4, { ...r5, replacesHuman: null }], /must set replacesHuman to 2/],
-    ["a corrected value stays terminal", [a1, c2, { ...c2, ...env(3), replacesHuman: 2 }], /unlisted transition/],
+    ["a corrected value stays terminal", [a1, c2, { ...c2, ...env(3), replacesHuman: 2 }], /transition at revision 3/],
     ["a correct keeps its target pin", [a1, { ...c2,
       action: { kind: "correct", judged: 1, value: { ...surveiller, vocabulary: OTHER } } }], /keeps its target's pin/],
     ["a correct keeps its target kind", [a1, { ...c2,
@@ -162,10 +168,10 @@ describe("lot 4a protected selection and veto", () => {
       { ...c2, action: { kind: "correct", judged: 1, value: { kind: "note", text: "n" } } }], /different value/],
     ["a correct names the head decision", [a1, c2, a3,
       { ...r4, action: { kind: "correct", judged: 3, value: surveiller } }], /must set replacesHuman to 2/],
-    ["a rejected alternative stays terminal", [a1, c2, a3, r4, { ...r4, ...env(5) }], /unlisted transition/],
+    ["a rejected alternative stays terminal", [a1, c2, a3, r4, { ...r4, ...env(5) }], /transition at revision 5/],
     ["a correct cannot reselect an unselected value", [a1, b2, h3,
       { ...env(4), subjectVersion: "sv1", actor: analyst, exposure: shown(1),
-        action: { kind: "correct", judged: 1, value: surveiller }, replacesHuman: 3 }], /unlisted transition/],
+        action: { kind: "correct", judged: 1, value: surveiller }, replacesHuman: 3 }], /transition at revision 4/],
     ["a reject cannot reselect an unselected value", [a1, b2, h3,
       { ...env(4), subjectVersion: "sv1", actor: analyst, exposure: shown(1),
         action: { kind: "reject", judged: 1, reason: "duplicate" } }], /unlisted transition at revision 4/],

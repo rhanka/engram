@@ -3,7 +3,7 @@
 // adds only what the profile cannot say (actor kind, self, selected-only states,
 // owner); one guard (admits) checks every judging row. No hand-written state
 // remains; every result state comes from its row.
-import type { Pin } from "../ontology-guardian/types.js";
+import type { Digest, Pin } from "../ontology-guardian/types.js";
 import { pinsEqual } from "../ontology-guardian/admission.js";
 import { validation } from "./profile.js";
 import type { AI, Decide, Entry, EvaluationPair, Exposure, Human, HumanHead } from "./types.js";
@@ -31,6 +31,9 @@ const sameAuthor = (a: AI | Human, b: AI | Human): boolean =>
   : a.kind === "ai" && b.kind === "ai" && a.channel === "mcp" && b.channel === "mcp" && a.sessionRef !== undefined
     && b.sessionRef !== undefined ? a.sessionRef === b.sessionRef
   : a.actorRef === b.actorRef;
+const valuesEqual = (a: Value, b: Value): boolean => a.kind === "class" && b.kind === "class"
+  ? a.code === b.code && pinsEqual([a.vocabulary], [b.vocabulary])
+  : a.kind === "note" && b.kind === "note" ? a.text === b.text : false;
 export function reduceEntries(entries: readonly Entry[], at: { stream: StreamRef; subjectVersion: string; vocabulary: Pin | null }): ReadModel {
   entries.forEach((e, i) => {
     if (e.revision !== i + 1 || e.expectedRevision !== i || e.stream.scopeRef !== at.stream.scopeRef
@@ -43,9 +46,6 @@ export function reduceEntries(entries: readonly Entry[], at: { stream: StreamRef
     by: Human; exposure: Exposure; decidedAt: string }
   | { decision: number; selected: null; judged: number; action: "reject";
     by: Human; exposure: Exposure; decidedAt: string; reason: RejectReason }) | null = null;
-  const valuesEqual = (a: Value, b: Value): boolean => a.kind === "class" && b.kind === "class"
-    ? a.code === b.code && pinsEqual([a.vocabulary], [b.vocabulary])
-    : a.kind === "note" && b.kind === "note" ? a.text === b.text : false;
   const assertTo = TRANSITIONS.find((t) => t.action === "assert" && t.actor === "human")?.to as Validation;
   const unverified: ReadModel["unverifiedSources"] = [];
   const admits = (r: Transition, t: ValueAt | undefined, n: number, e: Entry): boolean => t !== undefined && t.subjectVersion === e.subjectVersion
@@ -205,4 +205,46 @@ export function reduceEntries(entries: readonly Entry[], at: { stream: StreamRef
   if (ai !== null && ai.validation === "unreviewed" && eligible(ai)
     && !rej.some((r) => r.subjectVersion === at.subjectVersion)) return { ...base, trust: "provisional", effective: ai };
   return { ...base, trust: "withheld", effective: null };
+}
+// Lot 5: §4 reports group pairs by run identity. The rate is blind agreements over
+// blind pairs, absent when there are none; the ceiling is anchored confirmations
+// over anchored plus known errors on displayed proposals, absent when both are zero.
+export type EvaluationGroup = { model: string; modelVersion: string | null; declared: boolean;
+  promptDigest: Digest | null; channel: Channel; clientRef: string | null; blind: number;
+  agreements: number; rate: number | null; knownErrors: number; anchored: number; unscored: number;
+  ceiling: number | null; confusions: { ai: Value; human: EvaluationPair["humanValue"]; count: number }[] };
+const sameHuman = (a: EvaluationPair["humanValue"], b: EvaluationPair["humanValue"]): boolean =>
+  "rejected" in a ? "rejected" in b && a.rejected === b.rejected : !("rejected" in b) && valuesEqual(a, b);
+export function reportEvaluation(pairs: readonly EvaluationPair[]): EvaluationGroup[] {
+  const groups = new Map<string, EvaluationGroup>();
+  for (const p of pairs) {
+    const a = p.ai.author;
+    const declared = a.channel === "mcp";
+    const key = JSON.stringify([a.model, a.channel === "mcp" ? a.clientRef : a.modelVersion,
+      a.channel === "mcp" ? null : a.promptDigest, p.channel]);
+    let g = groups.get(key);
+    if (g === undefined) {
+      g = { model: a.model, modelVersion: a.channel === "mcp" ? null : a.modelVersion, declared,
+        promptDigest: a.channel === "mcp" ? null : a.promptDigest, channel: p.channel,
+        clientRef: a.channel === "mcp" ? a.clientRef : null,
+        blind: 0, agreements: 0, rate: null, knownErrors: 0, anchored: 0, unscored: 0,
+        ceiling: null, confusions: [] };
+      groups.set(key, g);
+    }
+    if (p.role === "blind") {
+      g.blind += 1;
+      if (!("rejected" in p.humanValue) && valuesEqual(p.ai.value, p.humanValue)) g.agreements += 1;
+    } else if (p.role === "known-error") {
+      g.knownErrors += 1;
+      const c = g.confusions.find((c) => valuesEqual(c.ai, p.ai.value) && sameHuman(c.human, p.humanValue));
+      if (c === undefined) g.confusions.push({ ai: p.ai.value, human: p.humanValue, count: 1 });
+      else c.count += 1;
+    } else if (p.role === "anchored") g.anchored += 1;
+    else g.unscored += 1;
+  }
+  for (const g of groups.values()) {
+    if (g.blind > 0) g.rate = g.agreements / g.blind;
+    if (g.anchored + g.knownErrors > 0) g.ceiling = g.anchored / (g.anchored + g.knownErrors);
+  }
+  return [...groups.values()];
 }
