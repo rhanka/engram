@@ -4,11 +4,12 @@ import { join } from "node:path";
 import { describe, expect, expectTypeOf, it } from "vitest";
 import { ARM_MANIFEST_SCHEMA_ID, ARM_TARIFF_STATUSES, DECISIONS_SCHEMA_ID, DOSSIER_LANGUAGES,
   DOSSIER_META_SCHEMA_ID, METRICS_IMPORT_SCHEMA_ID, SEAT_OBSERVATION_SCHEMA_ID, SEAT_OBSERVATION_WINDOW_MINUTES,
-  STAKES_LEVELS, parseArmManifest, parseMetricsImportFile, parseSeatObservationInput, parseSeatObservationsFile,
-  readArmManifest, readMetricsImportFile, readSeatObservationInput, readSeatObservationsFile, type ArmManifestFile,
+  STAKES_LEVELS, parseArmManifest, parseDecisionsFile, parseDossierMetaFile, parseMetricsImportFile,
+  parseSeatObservationInput, parseSeatObservationsFile, readArmManifest, readDecisionsFile, readDossierMetaFile,
+  readMetricsImportFile, readSeatObservationInput, readSeatObservationsFile, type ArmManifestFile,
   type ArmTariffStatus, type BenchDecisionsFile, type BenchMetricsImportFile, type DossierLanguage,
-  type DossierMetaFile, type SeatObservationInput, type SeatObservationsFile, type StakesLevel
-} from "../src/bench-dossier/companion-contracts.js";
+  type DossierMetaFile, type SeatObservationInput, type SeatObservationsFile,
+  type StakesLevel } from "../src/bench-dossier/companion-contracts.js";
 import { BenchResultsValidationError, type BenchResultsErrorCode } from "../src/bench-dossier/results-guards.js";
 import type { BenchInterval } from "../src/bench-dossier/results-types.js";
 
@@ -32,6 +33,8 @@ describe("Companion contract types and constants", () => {
     expectTypeOf<BenchDecisionsFile["schemaId"]>().toEqualTypeOf<typeof DECISIONS_SCHEMA_ID>();
   });
 });
+
+function clone<T>(v: T): T { return JSON.parse(JSON.stringify(v)) as T; }
 
 function refuse(fn: () => void, code: BenchResultsErrorCode, expectedPath: string): BenchResultsValidationError {
   let caught: unknown;
@@ -192,5 +195,89 @@ describe("metrics.json (urn:engram:bench-metrics-import:1.0.0) core contract", (
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+function makeDossierMeta(): DossierMetaFile {
+  return { schemaId: "urn:engram:bench-dossier-meta:1.0.0", ref: "report:lotb-eval-pass-one", language: "en",
+    title: "Lot B Benchmark Evaluation", subject: "Canadian startup office extraction quality",
+    ownerRequestQuote: "Provide a benchmark dossier with recall precision and cost charts.",
+    stakes: "Determines which low-effort model family enters production scraping.", stakesLevel: "medium",
+    provenance: { source: "owner-brief-r15", readAt: "2026-11-22T10:00:00Z" },
+    reviewStatus: { complete: false,
+      summaryProse: "Co-author review by Astra Six Two remains pending until twenty-seven November." },
+    origins: { defaultRepo: "rhanka/engram", defaultRevision: "282201a9d", sourcePaths: {
+      results: { repo: "rhanka/tkm", revision: "main", path: "docs/spec/reports/lotb/golden/metrics.json" },
+      brief: { uri: "https://example.invalid/brief" } } },
+    cursor: "draft:1", readingBudgetMinutes: 6,
+    amendmentTrace: [{ at: "2026-11-22T10:30:00Z", author: "Hydrogen", summary: "Initial evaluation setup" }],
+    fieldLabels: { "office.city": { en: "office municipality", fr: "municipalite du bureau" } },
+    glossaryExtra: [{ term: "FSA", definition: "Forward Sortation Area prefix of a postal code" }] };
+}
+
+function makeDecisionsFile(): BenchDecisionsFile {
+  return { schemaId: "urn:engram:bench-decisions:1.0.0", questions: [{
+    id: "q-packaging", title: "Multi-field sheet packaging",
+    question: "Which sheet packaging format should ship as the default for multi-field dossiers?",
+    context: "Four full-resolution lossless sheets exceed the one mebibyte document ceiling.",
+    recommendedOptionId: "opt-per-field",
+    recommendedAnswer: "In short: emit one lossless portable file per field so phone zoom stays crisp.",
+    strongestObjectionProse: "Splitting into four files asks the reviewer to open four separate tabs.",
+    overturnConditionProse: "Switch back to a single file once vector images are accepted upstream.",
+    failureScenarioProse: "Lossy compression blurs thin dashed progression lines under zoom.",
+    presenterConvenienceProse: "A single file saves clicks at the cost of reading clarity.",
+    completionCriterion: "Default packaging passes the artifact size limit without losing legibility.",
+    readingTimeMinutes: 1.5, options: [
+      { id: "opt-per-field", label: "One lossless dossier per field",
+        consequence: "Keeps sharp lossless charts on phone under the size cap across four files.",
+        body: "Each field dossier stays well below the size limit with light and dark sheets." },
+      { id: "opt-jpeg", label: "Single dossier with compressed sheets",
+        consequence: "Keeps one file while trading fine dashed line sharpness under zoom.",
+        body: "Uses light-only compressed sheets so four fields fit inside one artifact." } ] }],
+  ownerCriteria: [{ criterion: "charts readable on phone with zoom and a see all view",
+    requestSource: "2026-11-22 owner request", addressedBy: "q-packaging / opt-per-field", gapOrDeparture: "" }] };
+}
+
+describe("dossier-meta.json and decisions.json core contracts and Focus alignment", () => {
+  it("validates meta and decisions fixtures in memory, on disk, and enforces Focus readability budgets", () => {
+    const meta = makeDossierMeta();
+    const decisions = makeDecisionsFile();
+    expect(parseDossierMetaFile(meta)).toEqual(meta);
+    expect(parseDecisionsFile(decisions)).toEqual(decisions);
+    const dir = mkdtempSync(join(tmpdir(), "bd1b-focus-"));
+    try {
+      const mp = join(dir, "meta.json");
+      const dp = join(dir, "decisions.json");
+      writeFileSync(mp, JSON.stringify(meta), "utf8");
+      writeFileSync(dp, JSON.stringify(decisions), "utf8");
+      expect(readDossierMetaFile(mp)).toEqual(meta);
+      expect(readDecisionsFile(dp)).toEqual(decisions);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+
+    const budgetTwo = { ...meta, readingBudgetMinutes: 2 };
+    expect(parseDossierMetaFile(budgetTwo).readingBudgetMinutes).toBe(2);
+    const lowBudgetOk = { ...budgetTwo, stakesLevel: "low" as const };
+    expect(parseDossierMetaFile(lowBudgetOk).readingBudgetMinutes).toBe(2);
+
+    const lowBudgetBad = { ...lowBudgetOk, readingBudgetMinutes: 2.01 };
+    refuse(() => parseDossierMetaFile(lowBudgetBad), "BAD_SHAPE", "$.readingBudgetMinutes");
+
+    const halfMinOk = clone(decisions) as any;
+    const q = halfMinOk.questions[0];
+    q.readingTimeMinutes = 0.5;
+    q.title = "w";
+    q.question = "w";
+    q.recommendedAnswer = "w";
+    q.completionCriterion = "w";
+    q.options = [
+      { id: "opt-per-field", label: "w", consequence: "w", body: "w" },
+      { id: "opt-2", label: "w", consequence: "w", body: "w" },
+    ];
+    q.context = Array.from({ length: 80 }, () => "w").join(" ");
+    expect(parseDecisionsFile(halfMinOk).questions[0]?.readingTimeMinutes).toBe(0.5);
+    q.context = Array.from({ length: 81 }, () => "w").join(" ");
+    refuse(() => parseDecisionsFile(halfMinOk), "BAD_SHAPE", "$.questions[0]");
   });
 });

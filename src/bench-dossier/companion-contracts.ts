@@ -16,9 +16,15 @@ const strFields = <const K extends string>(...keys: K[]) => fieldsOf(keys, nonEm
 const countFields = <const K extends string>(...keys: K[]) => fieldsOf(keys, countInt);
 const seatMethod = <M extends string>(m: M): Validator<M> =>
   (v, p) => { enumValue(R.SEAT_METHODS)(v, p); if (v !== m) fail("BAD_SHAPE", p); };
+const strLen = (min: number, max = Infinity): Validator<string> => (v, p) => { nonEmptyString(v, p);
+  const len = (v as string).trim().length; if (len < min || len > max) fail("BAD_SHAPE", p); };
 const posInt: Validator<number> = (v, p) => { countInt(v, p); if ((v as number) < 1) fail("NON_POSITIVE", p); };
 const inRange = (min: number, max: number, code: BenchResultsErrorCode = "BAD_SHAPE"): Validator<number> => (v, p) => {
   positiveNumber(v, p); if ((v as number) < min || (v as number) > max) fail(code, p); };
+const digitFree: Validator<string> = (v, p) => { nonEmptyString(v, p); if ((v as string).match(/\S+/g)?.some((t) =>
+  /\d/.test(t) && !/^(?:h2a|utf-8)$/i.test(t.replace(/^[^\w-]+|[^\w-]+$/g, "")))) fail("BAD_SHAPE", p); };
+const dossierRef: Validator<string> = (v, p) => { nonEmptyString(v, p); const s = v as string;
+  if (!/^(?:report|decision):[^\s\x00-\x1f\x7f]+$/.test(s) || s.length > 122) fail("BAD_SHAPE", p); };
 const SEAT_ID = schemaId(T.SEAT_OBSERVATION_SCHEMA_ID), SEAT_OPT = { schemaId: SEAT_ID, planCurrency: CURRENCY };
 const SEAT_PLAN = { windowMinutes: literalValue(T.SEAT_OBSERVATION_WINDOW_MINUTES, "BAD_SHAPE", countInt),
   ...strFields("plan", "planSource", "planAsOf"), planMonthlyPrice: nonNegativeNumber };
@@ -72,6 +78,37 @@ const METRICS_SCHEMA = objectSchema<T.BenchMetricsImportFile>({ schemaId: schema
   missingDigestRuns: arrayOf(nonEmptyString), annotatorRunStats: stringMapOf(objectSchema(countFields("answered",
     "failed", "missing"))), supportFloors: objectSchema({ ...countFields("recallMinPositives",
     "precisionMinPredictions"), failureCeiling: unitInterval }) });
+const META_OBJ = objectSchema<T.DossierMetaFile>({ schemaId: schemaId(T.DOSSIER_META_SCHEMA_ID), ref: dossierRef,
+  language: enumValue(T.DOSSIER_LANGUAGES), ...strFields("title", "subject"), ownerRequestQuote: strLen(8), stakes:
+  strLen(20), stakesLevel: enumValue(T.STAKES_LEVELS), provenance: objectSchema(strFields("source", "readAt")),
+  reviewStatus: objectSchema({ complete: booleanValue, summaryProse: digitFree }), origins: objectSchema({
+    ...strFields("defaultRepo", "defaultRevision") }, { sourcePaths: stringMapOf((v, p) => (Object.hasOwn(
+    assertPlainObject(v, p), "uri") ? objectSchema<T.SourceOrigin>({ uri: nonEmptyString })
+    : objectSchema<T.SourceOrigin>(strFields("repo", "revision", "path")))(v, p)) }) }, {
+  cursor: nonEmptyString, readingBudgetMinutes: inRange(1, 30), fieldLabels: stringMapOf(objectSchema(strFields("en",
+    "fr"))), amendmentTrace: arrayOf(objectSchema<T.AmendmentStep>(strFields("at", "author", "summary"))),
+  glossaryExtra: arrayOf(objectSchema(strFields("term", "definition"))) });
+const META_SCHEMA: Validator<T.DossierMetaFile> = (v, p) => { META_OBJ(v, p); const m = v as T.DossierMetaFile;
+  if (m.readingBudgetMinutes !== undefined && m.readingBudgetMinutes > ({ low: 2, medium: 8, high: 30 })[m.stakesLevel])
+    fail("BAD_SHAPE", `${p}.readingBudgetMinutes`); };
+const QUESTION_OBJ = objectSchema<T.BenchDecisionQuestion>({ ...strFields("id", "title", "question", "context",
+  "recommendedOptionId", "recommendedAnswer", "strongestObjectionProse", "overturnConditionProse",
+  "failureScenarioProse", "presenterConvenienceProse"), options: arrayOf(objectSchema<T.BenchDecisionOption>({
+  ...strFields("id", "label", "body"), consequence: strLen(1, 160) })) }, { completionCriterion: nonEmptyString,
+  readingTimeMinutes: inRange(0, 2) });
+const uniq = (xs: readonly { id: string }[], at: (i: number) => string): Set<string> => { const s = new Set<string>();
+  xs.forEach((x, i) => { if (s.has(x.id)) fail("BAD_SHAPE", at(i)); s.add(x.id); }); return s; };
+const validateQuestion: Validator<T.BenchDecisionQuestion> = (v, p) => { QUESTION_OBJ(v, p);
+  const q = v as T.BenchDecisionQuestion; if (q.options.length < 2 || q.options.length > 4) fail("BAD_SHAPE",
+  `${p}.options`); if (!uniq(q.options, (i) => `${p}.options[${i}].id`).has(q.recommendedOptionId))
+  fail("BAD_SHAPE", `${p}.recommendedOptionId`); const words = [q.title, q.question, q.context, q.recommendedAnswer,
+  q.completionCriterion ?? "", ...q.options.flatMap((o) => [o.label, o.consequence, o.body])].join(" ")
+  .match(/\S+/gu)?.length ?? 0; if (words > (q.readingTimeMinutes ?? 2) * 180) fail("BAD_SHAPE", p); };
+const DECISIONS_SCHEMA = objectSchema<T.BenchDecisionsFile>({ schemaId: schemaId(T.DECISIONS_SCHEMA_ID),
+  questions: (v, p) => { arrayOf(validateQuestion)(v, p); const qs = v as readonly T.BenchDecisionQuestion[];
+    if (qs.length < 1) fail("BAD_SHAPE", p); uniq(qs, (i) => `${p}[${i}].id`); },
+  ownerCriteria: arrayOf(objectSchema<T.OwnerCriterionRow>({ ...strFields("criterion", "requestSource", "addressedBy"),
+    gapOrDeparture: requireString })) });
 const reader = <T>(schema: Validator<T>): readonly [(v: unknown) => T, (p: string) => T] => {
   const parse = (v: unknown): T => { schema(v, "$"); return v as T; };
   return [parse, (p: string): T => { let raw: string, val: unknown;
@@ -84,3 +121,5 @@ export const [parseArmManifest, readArmManifest] = reader(ARM_SCHEMA);
 export const [parseSeatObservationInput, readSeatObservationInput] = reader(validateSeat);
 export const [parseSeatObservationsFile, readSeatObservationsFile] = reader(SEAT_FILE);
 export const [parseMetricsImportFile, readMetricsImportFile] = reader(METRICS_SCHEMA);
+export const [parseDossierMetaFile, readDossierMetaFile] = reader(META_SCHEMA);
+export const [parseDecisionsFile, readDecisionsFile] = reader(DECISIONS_SCHEMA);
