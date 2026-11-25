@@ -359,7 +359,9 @@ describe("scrap tier 0.2", () => {
     );
     const rows1 = readRows(d1);
     // (1000*2 + 200*10 + 500*10) / 1_000_000 = 0.009 per id
-    expect(rows1[0].cost).toEqual({ api_equivalent: 0.009, seat_quota: { remaining: 88, window: "5h" } });
+    expect(rows1[0].cost).toEqual({
+      currency: "USD", api_equivalent: 0.009, seat_quota: { remaining: 88, window: "5h" },
+    });
     expect(rows1[0].tokens).toEqual(usage);
     const summary1 = logs1.find((l) => l.includes("scrap extract summary"));
     expect(summary1).toBeDefined();
@@ -455,7 +457,7 @@ describe("scrap tier 0.2", () => {
       id: "dir-ok",
       fields: { company: { value: "Acme Canada Inc.", quote: "Acme Canada Inc.", sha256: S1 } },
       tokens: { inputTokens: 240, outputTokens: 50, totalTokens: 290 },
-      cost: { api_equivalent: 0.00098, seat_quota: "unknown" },
+      cost: { currency: "USD", api_equivalent: 0.00098, seat_quota: "unknown" },
     });
     expect(rows[1]).toMatchObject({ id: "dir-fail", error: "parse_error", fields: null });
 
