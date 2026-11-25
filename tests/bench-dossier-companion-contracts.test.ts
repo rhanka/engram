@@ -740,3 +740,147 @@ describe("metrics.json record, sitePresence, weighted, diagnostics and tokens re
     }
   });
 });
+
+describe("dossier-meta.json boundaries, digit-free and Focus budget refusals", () => {
+  it("accepts optional deletions, boundaries, lowercase utf-8 and non-parenthetical summaryProse", () => {
+    for (const k of ["cursor", "readingBudgetMinutes", "amendmentTrace", "fieldLabels", "glossaryExtra"]) {
+      const doc = clone(makeDossierMeta()) as any;
+      delete doc[k];
+      expect(parseDossierMetaFile(doc).language).toBe("en");
+    }
+    for (const lang of ["en", "fr"]) {
+      const doc = clone(makeDossierMeta()) as any;
+      doc.language = lang;
+      expect(parseDossierMetaFile(doc).language).toBe(lang);
+    }
+    const noBudget = clone(makeDossierMeta()) as any;
+    delete noBudget.readingBudgetMinutes;
+    for (const lvl of ["low", "medium", "high"]) {
+      const doc = clone(noBudget) as any;
+      doc.stakesLevel = lvl;
+      expect(parseDossierMetaFile(doc).stakesLevel).toBe(lvl);
+    }
+    const metaSingles: [(d: any) => void, (r: DossierMetaFile) => unknown, unknown][] = [
+      [(d) => { d.ref = `report:${"x".repeat(115)}`; }, (r) => r.ref.length, 122],
+      [(d) => { d.ref = `decision:${"y".repeat(113)}`; }, (r) => r.ref.length, 122],
+      [(d) => { d.ownerRequestQuote = "12345678"; }, (r) => r.ownerRequestQuote, "12345678"],
+      [(d) => { d.stakes = "a".repeat(20); }, (r) => r.stakes.length, 20],
+      [(d) => { d.readingBudgetMinutes = 1; }, (r) => r.readingBudgetMinutes, 1],
+      [(d) => { d.reviewStatus.summaryProse = "Awaiting h2a, and utf-8 check."; },
+        (r) => r.reviewStatus.summaryProse, "Awaiting h2a, and utf-8 check."],
+      [(d) => { d.reviewStatus.summaryProse = "Awaiting H2A and UTF-8 check."; },
+        (r) => r.reviewStatus.summaryProse, "Awaiting H2A and UTF-8 check."],
+    ];
+    for (const [mutate, pick, expected] of metaSingles) {
+      const doc = clone(makeDossierMeta()) as any;
+      mutate(doc);
+      expect(pick(parseDossierMetaFile(doc))).toEqual(expected);
+    }
+    const highDoc = { ...makeDossierMeta(), stakesLevel: "high" as const };
+    expect(parseDossierMetaFile(highDoc).stakesLevel).toBe("high");
+    const highBudgetOk = { ...highDoc, readingBudgetMinutes: 30 };
+    expect(parseDossierMetaFile(highBudgetOk).readingBudgetMinutes).toBe(30);
+    const medBudgetOk = { ...makeDossierMeta(), readingBudgetMinutes: 8 };
+    expect(parseDossierMetaFile(medBudgetOk).readingBudgetMinutes).toBe(8);
+    refuse(() => parseDossierMetaFile({ ...medBudgetOk, readingBudgetMinutes: 8.01 }),
+      "BAD_SHAPE", "$.readingBudgetMinutes");
+  });
+
+  it("refuses empty/control ref, sub-block strings, digit rules and disproportionate budgets", () => {
+    for (const bad of [null, [], "meta"]) {
+      refuse(() => parseDossierMetaFile(bad), "NOT_OBJECT", "$");
+    }
+    const cases: [(d: any) => void, BenchResultsErrorCode, string][] = [
+      [(d) => { d.schemaId = "bad"; }, "BAD_SCHEMA", "$.schemaId"],
+      [(d) => { d.extra = 1; }, "UNKNOWN_KEY", "$.extra"],
+      [(d) => { d.provenance.extra = 1; }, "UNKNOWN_KEY", "$.provenance.extra"],
+      [(d) => { d.reviewStatus.extra = 1; }, "UNKNOWN_KEY", "$.reviewStatus.extra"],
+      [(d) => { d.origins.extra = 1; }, "UNKNOWN_KEY", "$.origins.extra"],
+      [(d) => { d.origins.sourcePaths.results.extra = 1; }, "UNKNOWN_KEY", "$.origins.sourcePaths.results.extra"],
+      [(d) => { d.origins.sourcePaths.brief.extra = 1; }, "UNKNOWN_KEY", "$.origins.sourcePaths.brief.extra"],
+      [(d) => { d.origins.sourcePaths.brief.repo = "r"; }, "UNKNOWN_KEY", "$.origins.sourcePaths.brief.repo"],
+      [(d) => { d.amendmentTrace[0].extra = "x"; }, "UNKNOWN_KEY", "$.amendmentTrace[0].extra"],
+      [(d) => { d.fieldLabels["office.city"].de = "Stadt"; }, "UNKNOWN_KEY", "$.fieldLabels.office.city.de"],
+      [(d) => { d.glossaryExtra[0].extra = "x"; }, "UNKNOWN_KEY", "$.glossaryExtra[0].extra"],
+      [(d) => { delete d.provenance; }, "MISSING_KEY", "$.provenance"],
+      [(d) => { delete d.provenance.readAt; }, "MISSING_KEY", "$.provenance.readAt"],
+      [(d) => { delete d.amendmentTrace[0].summary; }, "MISSING_KEY", "$.amendmentTrace[0].summary"],
+      [(d) => { delete d.origins.sourcePaths.results.path; }, "MISSING_KEY", "$.origins.sourcePaths.results.path"],
+      [(d) => { d.ref = ""; }, "EMPTY_STRING", "$.ref"],
+      [(d) => { d.ref = "   "; }, "EMPTY_STRING", "$.ref"],
+      [(d) => { d.ref = "report:"; }, "BAD_SHAPE", "$.ref"],
+      [(d) => { d.ref = "decision:"; }, "BAD_SHAPE", "$.ref"],
+      [(d) => { d.ref = "other:slug"; }, "BAD_SHAPE", "$.ref"],
+      [(d) => { d.ref = "report:has space"; }, "BAD_SHAPE", "$.ref"],
+      [(d) => { d.ref = " report:slug"; }, "BAD_SHAPE", "$.ref"],
+      [(d) => { d.ref = "report:slug "; }, "BAD_SHAPE", "$.ref"],
+      [(d) => { d.ref = "report:has\nnewline"; }, "BAD_SHAPE", "$.ref"],
+      [(d) => { d.ref = "report:bad\x07char"; }, "BAD_SHAPE", "$.ref"],
+      [(d) => { d.ref = "decision:bad\x7fchar"; }, "BAD_SHAPE", "$.ref"],
+      [(d) => { d.ref = `report:${"x".repeat(116)}`; }, "BAD_SHAPE", "$.ref"],
+      [(d) => { d.ref = `decision:${"y".repeat(114)}`; }, "BAD_SHAPE", "$.ref"],
+      [(d) => { d.language = "es"; }, "BAD_ENUM", "$.language"],
+      [(d) => { d.stakesLevel = "critical"; }, "BAD_ENUM", "$.stakesLevel"],
+      [(d) => { d.title = " "; }, "EMPTY_STRING", "$.title"],
+      [(d) => { d.subject = ""; }, "EMPTY_STRING", "$.subject"],
+      [(d) => { d.ownerRequestQuote = "       "; }, "EMPTY_STRING", "$.ownerRequestQuote"],
+      [(d) => { d.ownerRequestQuote = "1234567"; }, "BAD_SHAPE", "$.ownerRequestQuote"],
+      [(d) => { d.ownerRequestQuote = "  1234567  "; }, "BAD_SHAPE", "$.ownerRequestQuote"],
+      [(d) => { d.stakes = "   "; }, "EMPTY_STRING", "$.stakes"],
+      [(d) => { d.stakes = "a".repeat(19); }, "BAD_SHAPE", "$.stakes"],
+      [(d) => { d.stakes = `  ${"a".repeat(19)}  `; }, "BAD_SHAPE", "$.stakes"],
+      [(d) => { d.provenance.source = " "; }, "EMPTY_STRING", "$.provenance.source"],
+      [(d) => { d.provenance.readAt = ""; }, "EMPTY_STRING", "$.provenance.readAt"],
+      [(d) => { d.origins.defaultRepo = " "; }, "EMPTY_STRING", "$.origins.defaultRepo"],
+      [(d) => { d.origins.defaultRevision = ""; }, "EMPTY_STRING", "$.origins.defaultRevision"],
+      [(d) => { d.origins.sourcePaths.brief.uri = " "; }, "EMPTY_STRING", "$.origins.sourcePaths.brief.uri"],
+      [(d) => { d.origins.sourcePaths.results.repo = " "; }, "EMPTY_STRING", "$.origins.sourcePaths.results.repo"],
+      [(d) => { d.origins.sourcePaths.results.revision = ""; },
+        "EMPTY_STRING", "$.origins.sourcePaths.results.revision"],
+      [(d) => { d.origins.sourcePaths.results.path = " "; }, "EMPTY_STRING", "$.origins.sourcePaths.results.path"],
+      [(d) => { d.cursor = " "; }, "EMPTY_STRING", "$.cursor"],
+      [(d) => { d.readingBudgetMinutes = 0; }, "NON_POSITIVE", "$.readingBudgetMinutes"],
+      [(d) => { d.readingBudgetMinutes = 0.99; }, "BAD_SHAPE", "$.readingBudgetMinutes"],
+      [(d) => {
+        d.stakesLevel = "high";
+        d.readingBudgetMinutes = 30.01;
+      }, "BAD_SHAPE", "$.readingBudgetMinutes"],
+      [(d) => { d.reviewStatus.complete = "no"; }, "WRONG_TYPE", "$.reviewStatus.complete"],
+      [(d) => { d.reviewStatus.summaryProse = " "; }, "EMPTY_STRING", "$.reviewStatus.summaryProse"],
+      [(d) => { d.reviewStatus.summaryProse = "Pending until 2026-11-27."; },
+        "BAD_SHAPE", "$.reviewStatus.summaryProse"],
+      [(d) => { d.reviewStatus.summaryProse = "Astra 6.2 review pending."; },
+        "BAD_SHAPE", "$.reviewStatus.summaryProse"],
+      [(d) => { d.reviewStatus.summaryProse = "Round 2 open."; }, "BAD_SHAPE", "$.reviewStatus.summaryProse"],
+      [(d) => { d.reviewStatus.summaryProse = "h2a2 check pending."; }, "BAD_SHAPE", "$.reviewStatus.summaryProse"],
+      [(d) => { d.fieldLabels["office.city"].en = " "; }, "EMPTY_STRING", "$.fieldLabels.office.city.en"],
+      [(d) => { d.fieldLabels["office.city"].fr = " "; }, "EMPTY_STRING", "$.fieldLabels.office.city.fr"],
+      [(d) => { d.amendmentTrace[0].at = ""; }, "EMPTY_STRING", "$.amendmentTrace[0].at"],
+      [(d) => { d.amendmentTrace[0].author = " "; }, "EMPTY_STRING", "$.amendmentTrace[0].author"],
+      [(d) => { d.amendmentTrace[0].summary = ""; }, "EMPTY_STRING", "$.amendmentTrace[0].summary"],
+      [(d) => { d.glossaryExtra[0].term = " "; }, "EMPTY_STRING", "$.glossaryExtra[0].term"],
+      [(d) => { d.glossaryExtra[0].definition = ""; }, "EMPTY_STRING", "$.glossaryExtra[0].definition"],
+      [(d) => { d.amendmentTrace = {}; }, "NOT_ARRAY", "$.amendmentTrace"],
+      [(d) => { d.glossaryExtra = {}; }, "NOT_ARRAY", "$.glossaryExtra"],
+      [(d) => { delete d.glossaryExtra[0].term; }, "MISSING_KEY", "$.glossaryExtra[0].term"],
+      [(d) => { delete d.origins.sourcePaths.results.repo; }, "MISSING_KEY", "$.origins.sourcePaths.results.repo"],
+    ];
+    for (const [mutate, code, path] of cases) {
+      const doc = clone(makeDossierMeta());
+      mutate(doc);
+      refuse(() => parseDossierMetaFile(doc), code, path);
+    }
+    for (const badKey of ["", "__proto__", "constructor", "prototype"]) {
+      const sp = clone(makeDossierMeta()) as any;
+      const m1: Record<string, unknown> = {};
+      Object.defineProperty(m1, badKey, { value: { uri: "https://example.invalid/x" }, enumerable: true });
+      sp.origins.sourcePaths = m1;
+      refuse(() => parseDossierMetaFile(sp), "BAD_MAP_KEY", `$.origins.sourcePaths.${badKey}`);
+      const fl = clone(makeDossierMeta()) as any;
+      const m2: Record<string, unknown> = {};
+      Object.defineProperty(m2, badKey, { value: { en: "a", fr: "b" }, enumerable: true });
+      fl.fieldLabels = m2;
+      refuse(() => parseDossierMetaFile(fl), "BAD_MAP_KEY", `$.fieldLabels.${badKey}`);
+    }
+  });
+});
