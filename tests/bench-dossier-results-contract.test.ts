@@ -13,13 +13,14 @@ import {
   validateClosedObject, type BenchResultsErrorCode,
 } from "../src/bench-dossier/results-guards.js";
 
-function refuse(fn: () => void, code: BenchResultsErrorCode, expectedPath: string): void {
+function refuse(fn: () => void, code: BenchResultsErrorCode, expectedPath: string): BenchResultsValidationError {
   let caught: unknown;
   try { fn(); } catch (err) { caught = err; }
   expect(caught).toBeInstanceOf(BenchResultsValidationError);
   const err = caught as BenchResultsValidationError;
   expect(err.name).toBe("BenchResultsValidationError");
   expect([err.code, err.path]).toEqual([code, expectedPath]);
+  return err;
 }
 
 describe("BenchResults guards", () => {
@@ -56,6 +57,11 @@ describe("BenchResults guards", () => {
     expect([ioErr.name, ioErr.code, ioErr.errno, ioErr.message]).toEqual([
       "BenchResultsValidationError", "IO_ERROR", "ENOENT", "IO_ERROR at /missing.json (ENOENT)",
     ]);
+    const cause = new SyntaxError("bad");
+    const plainErr = new BenchResultsValidationError("BAD_JSON", "$", { cause });
+    expect([plainErr.errno, plainErr.cause, plainErr.message]).toEqual([undefined, cause, "BAD_JSON at $"]);
+    const bareErr = new BenchResultsValidationError("BAD_COUNT", "$.tp");
+    expect([bareErr.errno, bareErr.cause, bareErr.message]).toEqual([undefined, undefined, "BAD_COUNT at $.tp"]);
   });
 
   it("validates literal, enum, nullable, unknownOr, array, map and BenchInterval guards", () => {
@@ -134,15 +140,17 @@ describe("BenchResultsFile envelope and file reader", () => {
       writeFileSync(okPath, JSON.stringify(valid), "utf8");
       expect(readBenchResultsFile(okPath)).toEqual(valid);
       const missingPath = join(dir, "missing.json");
-      refuse(() => readBenchResultsFile(missingPath), "IO_ERROR", missingPath);
-      try { readBenchResultsFile(missingPath); } catch (e) {
-        expect((e as BenchResultsValidationError).errno).toBe("ENOENT");
-      }
-      refuse(() => readBenchResultsFile(dir), "IO_ERROR", dir);
+      const missingErr = refuse(() => readBenchResultsFile(missingPath), "IO_ERROR", missingPath);
+      expect([missingErr.errno, missingErr.cause instanceof Error,
+        (missingErr.cause as NodeJS.ErrnoException).code]).toEqual(["ENOENT", true, "ENOENT"]);
+      const dirErr = refuse(() => readBenchResultsFile(dir), "IO_ERROR", dir);
+      expect([dirErr.errno, dirErr.cause instanceof Error,
+        (dirErr.cause as NodeJS.ErrnoException).code]).toEqual(["EISDIR", true, "EISDIR"]);
       const badJson = join(dir, "bad.json"), emptyObj = join(dir, "empty.json");
       writeFileSync(badJson, "{not-json", "utf8");
       writeFileSync(emptyObj, "{}", "utf8");
-      refuse(() => readBenchResultsFile(badJson), "BAD_JSON", "$");
+      const jsonErr = refuse(() => readBenchResultsFile(badJson), "BAD_JSON", "$");
+      expect([jsonErr.errno, jsonErr.cause instanceof SyntaxError]).toEqual([undefined, true]);
       refuse(() => readBenchResultsFile(emptyObj), "MISSING_KEY", "$.schemaId");
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
@@ -615,5 +623,98 @@ describe("BenchResultsFile negative helper, sub-block and interval matrices", ()
       doc.records[0].sitePresence[siteCount] = 1.5;
       refuse(() => parseBenchResultsFile(doc), "BAD_COUNT", `$.records[0].sitePresence.${siteCount}`);
     }
+  });
+
+  it("refuses R2 sub-fields, shared sibling bindings and sparse schema arrays", () => {
+    const cases: [(d: any) => void, BenchResultsErrorCode, string][] = [
+      [(d) => { d.records[0].weighted.precision = 1.01; }, "UNIT_RANGE", "$.records[0].weighted.precision"],
+      [(d) => { d.records[0].weighted.recall = -0.01; }, "UNIT_RANGE", "$.records[0].weighted.recall"],
+      [(d) => { d.records[0].weighted.f1 = 1.01; }, "UNIT_RANGE", "$.records[0].weighted.f1"],
+      [(d) => { d.records[0].weighted.scheme = " "; }, "EMPTY_STRING", "$.records[0].weighted.scheme"],
+      [(d) => { d.records[0].weighted.precisionInterval.low = -0.1; }, "INTERVAL_RANGE",
+        "$.records[0].weighted.precisionInterval.low"],
+      [(d) => { d.records[0].weighted.recallInterval.high = 1.1; }, "INTERVAL_RANGE",
+        "$.records[0].weighted.recallInterval.high"],
+      [(d) => { d.records[0].cost.fxApplied.source = " "; }, "EMPTY_STRING", "$.records[0].cost.fxApplied.source"],
+      [(d) => { d.records[0].cost.fxApplied.asOf = ""; }, "EMPTY_STRING", "$.records[0].cost.fxApplied.asOf"],
+      [(d) => { d.records[0].cost.tariffSource = " "; }, "EMPTY_STRING", "$.records[0].cost.tariffSource"],
+      [(d) => { d.records[0].cost.apiEquivalentPerItem = -0.01; }, "NEGATIVE",
+        "$.records[0].cost.apiEquivalentPerItem"],
+      [(d) => { d.corpus.missingDigestRuns = [""]; }, "EMPTY_STRING", "$.corpus.missingDigestRuns[0]"],
+      [(d) => { d.corpus.missingDigestRuns = "r1"; }, "NOT_ARRAY", "$.corpus.missingDigestRuns"],
+      [(d) => { d.supportFloors.recallMinPositives = 1.5; }, "BAD_COUNT", "$.supportFloors.recallMinPositives"],
+      [(d) => { d.supportFloors.precisionMinPredictions = -1; }, "BAD_COUNT",
+        "$.supportFloors.precisionMinPredictions"],
+      [(d) => { d.generatedAt = " "; }, "EMPTY_STRING", "$.generatedAt"],
+      [(d) => { d.corpus.goldenLabel = " "; }, "EMPTY_STRING", "$.corpus.goldenLabel"],
+      [(d) => { d.corpus.maxValuesChanged = "yes"; }, "WRONG_TYPE", "$.corpus.maxValuesChanged"],
+      [(d) => { d.corpus.captureSuppliedIds = -1; }, "BAD_COUNT", "$.corpus.captureSuppliedIds"],
+      [(d) => { d.corpus.captureAttemptedIds = 1.5; }, "BAD_COUNT", "$.corpus.captureAttemptedIds"],
+      [(d) => { d.corpus.annotatorRunStats.r1.failed = -1; }, "BAD_COUNT", "$.corpus.annotatorRunStats.r1.failed"],
+      [(d) => { d.corpus.annotatorRunStats.r1.missing = 1.5; }, "BAD_COUNT",
+        "$.corpus.annotatorRunStats.r1.missing"],
+      [(d) => { d.records[0].unweighted.precision = -0.01; }, "UNIT_RANGE", "$.records[0].unweighted.precision"],
+      [(d) => { d.records[0].unweighted.recall = 1.01; }, "UNIT_RANGE", "$.records[0].unweighted.recall"],
+      [(d) => { d.records[0].precision = 1.01; }, "UNIT_RANGE", "$.records[0].precision"],
+      [(d) => { d.records[0].recall = -0.01; }, "UNIT_RANGE", "$.records[0].recall"],
+      [(d) => { d.records[0].f1 = 1.01; }, "UNIT_RANGE", "$.records[0].f1"],
+      [(d) => { d.records[0].recallInterval.clustering = "clustered_record_invalid"; }, "BAD_INTERVAL",
+        "$.records[0].recallInterval"],
+      [(d) => { d.records[0].independentGroupSupport.positives = 1.5; }, "BAD_COUNT",
+        "$.records[0].independentGroupSupport.positives"],
+      [(d) => { d.records[0].diagnostics.broad.fp = 1.5; }, "BAD_COUNT", "$.records[0].diagnostics.broad.fp"],
+      [(d) => { d.records[0].diagnostics.broad.fn = -1; }, "BAD_COUNT", "$.records[0].diagnostics.broad.fn"],
+      [(d) => { d.records[0].diagnostics.broad.recall = -0.01; }, "UNIT_RANGE",
+        "$.records[0].diagnostics.broad.recall"],
+      [(d) => { d.records[0].diagnostics.broad.f1 = 1.01; }, "UNIT_RANGE", "$.records[0].diagnostics.broad.f1"],
+    ];
+    for (const [mutate, code, path] of cases) {
+      const doc = clone(makeValidFile());
+      mutate(doc);
+      refuse(() => parseBenchResultsFile(doc), code, path);
+    }
+    for (const k of ["tariffAsOf", "seatPlan", "seatPlanSource", "seatPlanAsOf"]) {
+      const doc = clone(makeValidFile()) as any;
+      doc.records[0].cost[k] = " ";
+      refuse(() => parseBenchResultsFile(doc), "EMPTY_STRING", `$.records[0].cost.${k}`);
+    }
+    for (const k of ["goldenMissionSha256", "candidateMissionSha256", "goldenSha256"]) {
+      const doc = clone(makeValidFile()) as any;
+      doc.corpus[k] = " ";
+      refuse(() => parseBenchResultsFile(doc), "EMPTY_STRING", `$.corpus.${k}`);
+    }
+    for (const k of ["armId", "armMissionSha256", "provider", "model", "modelLabel", "proseName",
+      "field", "comparator"]) {
+      const doc = clone(makeValidFile()) as any;
+      doc.records[0][k] = " ";
+      refuse(() => parseBenchResultsFile(doc), "EMPTY_STRING", `$.records[0].${k}`);
+    }
+    for (const k of ["missingDigestAllowed", "isHighlighted", "incomplete", "isPrimaryComparator"]) {
+      const doc = clone(makeValidFile()) as any;
+      doc.records[0][k] = "yes";
+      refuse(() => parseBenchResultsFile(doc), "WRONG_TYPE", `$.records[0].${k}`);
+    }
+    for (const k of ["attempted", "accepted", "failed", "unverifiedQuotesNulled", "goldPositive", "goldAbsent",
+      "fp", "fpOnPresent", "fpOnAbsent", "fn", "tn", "failedOnAbsent", "unresolved"]) {
+      const doc = clone(makeValidFile()) as any;
+      doc.records[0][k] = 1.5;
+      refuse(() => parseBenchResultsFile(doc), "BAD_COUNT", `$.records[0].${k}`);
+    }
+    for (const k of ["precision", "recall", "f1"]) {
+      const doc = clone(makeValidFile()) as any;
+      doc.records[0].indeterminate[k] = 1;
+      refuse(() => parseBenchResultsFile(doc), "WRONG_TYPE", `$.records[0].indeterminate.${k}`);
+    }
+    for (const k of ["output", "reasoning", "total"]) {
+      const doc = clone(makeValidFile()) as any;
+      doc.records[0].tokens[k] = 1.5;
+      refuse(() => parseBenchResultsFile(doc), "BAD_COUNT", `$.records[0].tokens.${k}`);
+    }
+    const sfDoc = clone(makeValidFile()) as any;
+    const sf: string[] = []; sf[1] = "office.city"; sfDoc.corpus.fields = sf;
+    refuse(() => parseBenchResultsFile(sfDoc), "WRONG_TYPE", "$.corpus.fields[0]");
+    const srDoc = clone(makeValidFile()) as any;
+    const sr: unknown[] = []; sr[1] = srDoc.records[0]; srDoc.records = sr;
+    refuse(() => parseBenchResultsFile(srDoc), "NOT_OBJECT", "$.records[0]");
   });
 });
