@@ -2,9 +2,9 @@
 import { readFileSync } from "node:fs"; import { join } from "node:path"; import { describe, expect, it } from "vitest";
 import { digestOfPreimage } from "../src/ontology-guardian/canonical.js"; import { deepFreeze } from
   "../src/ontology-profile.js"; import type { Entry } from "../src/annotation-trust/types.js";
-import { exportStreamJsonLd as go, type JsonLdRef } from "../src/annotation-trust/export.js"; import { parseEntry }
-  from "../src/annotation-trust/parse.js"; import { PREFIXES, PROFILE_PIN, standardTerms, TEMPLATE_REF } from
-  "../src/annotation-trust/profile.js";
+import { exportStreamJsonLd as go, formatJsonLd, type JsonLdDocument, type JsonLdRef }
+  from "../src/annotation-trust/export.js"; import { parseEntry } from "../src/annotation-trust/parse.js";
+import { PREFIXES, PROFILE_PIN, standardTerms, TEMPLATE_REF } from "../src/annotation-trust/profile.js";
 const [HERE, D, D2] = [import.meta.dirname, "a".repeat(64), "b".repeat(64)], IRIS = new Set(Object.values(
   standardTerms).flat()), ex = expect, R = (id: string) => ({ "@id": id }), cls = (c: string) => ({ kind:
   "class" as const, vocabulary: PROFILE_PIN, code: c }), seal = ({ contentDigest: _d, ...r }: Entry) =>
@@ -230,4 +230,57 @@ describe("lot 6 json-ld export", () => {
     const src = readFileSync(join(HERE, "../src/annotation-trust/export.ts"), "utf8");
     ex(src).not.toMatch(/\bnode:|Date\.now|new Date|Math\.random|randomUUID|\bfetch\b|parseEntry|reduceEntries/);
     for (const f of ["profile", "types", "parse", "reduce"])
-      ex(readFileSync(join(HERE, `../src/annotation-trust/${f}.ts`), "utf8")).not.toMatch(/\.\/export/); }); });
+      ex(readFileSync(join(HERE, `../src/annotation-trust/${f}.ts`), "utf8")).not.toMatch(/\.\/export/); });
+  it("formats JSON-LD 1.1 greedily at width boundaries, handles null/keys and round-trips (E20)", () => {
+    const emptyDoc = go([]), emptyFmt = formatJsonLd(emptyDoc);
+    ex(emptyFmt).toContain('"@graph": []'); ex(JSON.parse(emptyFmt)).toEqual(emptyDoc);
+    ex(JSON.parse(formatJsonLd(emptyDoc, 10))).toEqual(emptyDoc);
+    const tiny: JsonLdDocument = { "@context": {}, "@graph": [] }, t10 = formatJsonLd(tiny, 10);
+    ex(t10).toContain('"@context": {}'); ex(t10).toContain('"@graph": []'); ex(JSON.parse(t10)).toEqual(tiny);
+    ex(JSON.parse(formatJsonLd(tiny))).toEqual(tiny);
+    const tg: JsonLdDocument = { "@context": { k: 1 }, "@graph": [{ "@id": "_:a" }, { "@id": "_:c" }] };
+    ex(formatJsonLd(tg)).toBe('{ "@context": { "k": 1 },\n  "@graph": [\n' +
+      '    { "@id": "_:a" },\n    { "@id": "_:c" }\n  ]\n}\n');
+    const nullDoc = go([seal({ ...a1, actor: { ...a1.actor, modelVersion: null } })]),
+      nullFmt = formatJsonLd(nullDoc, 25);
+    ex(JSON.parse(nullFmt)).toEqual(nullDoc); ex(nullFmt).toContain('"modelVersion": null');
+    const nSyn: JsonLdDocument = { "@context": {}, "@graph": [{ "@id": "_:a", mv: null }] };
+    ex(JSON.parse(formatJsonLd(nSyn, 15))).toEqual(nSyn);
+    const kDoc: JsonLdDocument = { "@context": {}, "@graph": [{ "@id": "_:a", 'k"\\1': 1, p: "x".repeat(30) }] };
+    ex([JSON.parse(formatJsonLd(kDoc, 120)), JSON.parse(formatJsonLd(kDoc, 40))]).toEqual([kDoc, kDoc]);
+    const chk = (d: JsonLdDocument, w: number) => { const s = formatJsonLd(d, w), ls = s.slice(0, -1).split("\n");
+      ex(JSON.parse(s)).toEqual(d); ex(ls.every((l) => l.length <= w)).toBe(true); return ls; };
+    const b1: JsonLdDocument = { "@context": { k: 1 }, "@graph": [{ "@id": "_:a", x: "x".repeat(30) },
+      { "@id": "_:b" }] };
+    ex([chk(b1, 59)[2], chk(b1, 60)[2], chk(b1, 61)[2]]).toEqual([
+      '    { "@id": "_:a",', `    { "@id": "_:a", "x": "${"x".repeat(30)}" },`,
+      `    { "@id": "_:a", "x": "${"x".repeat(30)}" },`]);
+    const b2: JsonLdDocument = { "@context": { k: 1 }, "@graph": [{ "@id": "_:a", a: 1, b: "x".repeat(44) },
+      { "@id": "_:b" }] };
+    ex([chk(b2, 59)[4], chk(b2, 60)[3], chk(b2, 61)[3]]).toEqual([
+      "    },", `      "b": "${"x".repeat(44)}" },`, `      "b": "${"x".repeat(44)}" },`]);
+    const b3: JsonLdDocument = { "@context": { k: 1 }, "@graph": [{ "@id": "_:a", obj: { k: "x".repeat(37), m: 1 },
+      z: 1 }] };
+    ex([chk(b3, 59)[3], chk(b3, 60)[3], chk(b3, 61)[3]]).toEqual([
+      '      "obj": {', `      "obj": { "k": "${"x".repeat(37)}",`, `      "obj": { "k": "${"x".repeat(37)}",`]);
+    const b4: JsonLdDocument = { "@context": { k: 1 }, "@graph": [{ "@id": "_:a", obj: { a: "x".repeat(29), b: 1 } },
+      { "@id": "_:b" }] };
+    ex([chk(b4, 60)[4], chk(b4, 63)[4], chk(b4, 64)[3]]).toEqual([
+      '        "b": 1 } },', '        "b": 1 } },', `      "obj": { "a": "${"x".repeat(29)}", "b": 1 } },`]);
+    const synth: JsonLdDocument = { "@context": { "@version": 1.1, "oa": "http://www.w3.org/ns/oa#" }, "@graph": [
+      { "@id": "_:a", "oa:x": "1" }, { "@id": "_:c" },
+      { "@id": "_:b", a: 1, b: 2, c: 3, d: 4, e: 5, f: 6, g: 7, h: 8, i: 9 }] };
+    ex(chk(synth, 60).some((l) => l.includes('"a": 1, "b": 2'))).toBe(true);
+    const worked = deepFreeze([a1, c2, ai(3, "pertinent", "run-b"), ai(4, "ecarte", "run-c", D2)].map(seal)),
+      wDoc = go(worked), wFmt = formatJsonLd(wDoc);
+    ex(wFmt).toBe(formatJsonLd(wDoc)); ex(wFmt.endsWith("\n}\n") && !wFmt.endsWith("\n\n")).toBe(true);
+    ex(JSON.parse(wFmt)).toEqual(wDoc);
+    const wLines = wFmt.slice(0, -1).split("\n");
+    ex(wLines.length).toBeLessThanOrEqual(115); ex(wLines.every((l) => l.length <= 120)).toBe(true);
+    chk(wDoc, 95);
+    const escDoc = go([
+      { ...u(1, a1.actor, { kind: "assert", value: { kind: "note", text: 'line1\n"q"\\élicitation' } }),
+        stream: { ...a1.stream, slot: "note" } },
+      { ...u(2, analyst, { kind: "needs-elicitation", judged: 1, question: 'why "x"\\?\né' },
+        { exposure: ns }), stream: { ...a1.stream, slot: "note" } }].map(seal));
+    ex(JSON.parse(formatJsonLd(escDoc))).toEqual(escDoc); }); });

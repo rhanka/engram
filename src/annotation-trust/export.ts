@@ -84,3 +84,35 @@ export function exportStreamJsonLd(entries: readonly Entry[]): JsonLdDocument {
       else { const _never: never = k; throw new Error(`annotation-trust: unexpected ${String(_never)}`); } } }
   return { "@context": ctx, "@graph": [{ "@id": subjId, "@type": ["prov:Entity"] },
     ...svs.values(), ...actors.values(), ...roles.values(), ...plans.values(), ...srcs.values(), ...out] }; }
+export function formatJsonLd(doc: JsonLdDocument, maxLine = 120): string {
+  const inline = (v: unknown): string => Array.isArray(v) ? `[${v.map(inline).join(", ")}]`
+    : v && typeof v === "object" ? ((es) => es.length ? `{ ${es.map(([k, x]) =>
+      `${JSON.stringify(k)}: ${inline(x)}`).join(", ")} }` : "{}")(Object.entries(v)) : JSON.stringify(v);
+  const fmt = (v: unknown, ind: number, pfx: string, endRes: number, fg = false): string => {
+    if (typeof v !== "object" || v === null) return pfx + JSON.stringify(v);
+    if (!fg && ind + pfx.length + inline(v).length + endRes <= maxLine) return pfx + inline(v);
+    const isArr = Array.isArray(v), kids = isArr ? v : Object.entries(v);
+    if (!kids.length) return `${pfx}${isArr ? "[]" : "{}"}`;
+    const cPad = " ".repeat(ind + 2), items = isArr
+      ? kids.map((x, i) => fmt(x, ind + 2, "", i < kids.length - 1 ? 1 : 1 + endRes))
+      : (kids as [string, unknown][]).map(([k, x], i) => fmt(x, ind + 2, `${JSON.stringify(k)}: `,
+        i < kids.length - 1 ? 1 : 2 + endRes, ind === 0 && k === "@graph" && Array.isArray(x)));
+    if (fg && isArr) return `${pfx}[\n${items.map((x, i) =>
+      `${cPad}${x}${i < items.length - 1 ? "," : ""}`).join("\n")}\n${" ".repeat(ind)}]`;
+    const [open, close] = isArr ? ["[", "]"] : ["{", "}"], sp = isArr ? "" : " ";
+    const ls: string[] = []; let cur = `${pfx}${open}`, emptyOpen = true;
+    for (let i = 0; i < items.length; i++) {
+      const x = items[i]!, c = i < items.length - 1 ? 1 : (isArr ? 1 : 2) + endRes;
+      if (emptyOpen && !x.includes("\n") && ind + cur.length + sp.length + x.length + c <= maxLine) {
+        cur += sp + x; emptyOpen = false;
+      } else if (!emptyOpen && !x.includes("\n") && !cur.includes("\n") &&
+        (ls.length === 0 ? ind : 0) + cur.length + 2 + x.length + c <= maxLine) cur += `, ${x}`;
+      else { ls.push(emptyOpen ? cur : `${cur},`); cur = cPad + x; emptyOpen = false; }
+    }
+    const tail = `${sp}${close}`, nl = cur.lastIndexOf("\n");
+    const lastLen = nl >= 0 ? cur.length - nl - 1 : (ls.length === 0 ? ind : 0) + cur.length;
+    if (ind > 0 && lastLen + tail.length + endRes <= maxLine) return `${[...ls, cur + tail].join("\n")}`;
+    return `${[...ls, cur, `${" ".repeat(ind)}${close}`].join("\n")}`;
+  };
+  return `${fmt(doc, 0, "", 0, doc["@graph"].length > 0)}\n`;
+}
