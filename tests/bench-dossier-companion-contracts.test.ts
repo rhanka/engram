@@ -1000,3 +1000,57 @@ describe("decisions.json word budget, options and ownerCriteria refusal matrix",
     }
   });
 });
+
+describe("arm, seat and dossier-meta single-field optionality and perMillion.output sign", () => {
+  it("refuses negative perMillion.output and accepts each nested optional field omitted on its own", () => {
+    const negOut = clone(makeArmManifest()) as any;
+    negOut.tariffOverride.perMillion.output = -0.01;
+    refuse(() => parseArmManifest(negOut), "NEGATIVE", "$.tariffOverride.perMillion.output");
+
+    const unknownFull = {
+      schemaId: "urn:engram:seat-observation:1.0.0",
+      status: "unknown",
+      method: "unknown",
+      reason: "missing-usage",
+    };
+    for (const k of ["schemaId", "method"] as const) {
+      const doc = clone(unknownFull) as any;
+      delete doc[k];
+      const parsed = parseSeatObservationInput(doc);
+      expect([parsed.status, Object.hasOwn(parsed, k)]).toEqual(["unknown", false]);
+    }
+
+    for (const k of ["schemaId", "planCurrency"] as const) {
+      const doc = clone(makeMeasuredSeat()) as any;
+      delete doc[k];
+      const parsed = parseSeatObservationInput(doc);
+      expect([parsed.status, Object.hasOwn(parsed, k)]).toEqual(["measured", false]);
+    }
+
+    const estWithSchema = { ...makeEstimatedSeat(), schemaId: "urn:engram:seat-observation:1.0.0" };
+    expect(parseSeatObservationInput(estWithSchema).schemaId).toBe("urn:engram:seat-observation:1.0.0");
+    for (const k of ["schemaId", "planCurrency", "isolatedSeat", "observedCurrency"] as const) {
+      const doc = clone(estWithSchema) as any;
+      delete doc[k];
+      const parsed = parseSeatObservationInput(doc);
+      expect([parsed.status, Object.hasOwn(parsed, k)]).toEqual(["estimated", false]);
+    }
+    const zeroEstPrice = { ...makeEstimatedSeat(), planMonthlyPrice: 0 };
+    expect(parseSeatObservationInput(zeroEstPrice)).toMatchObject({ status: "estimated", planMonthlyPrice: 0 });
+
+    const noSourcePaths = clone(makeDossierMeta()) as any;
+    delete noSourcePaths.origins.sourcePaths;
+    const parsedMeta = parseDossierMetaFile(noSourcePaths);
+    expect([parsedMeta.origins.defaultRepo, parsedMeta.origins.sourcePaths]).toEqual(["rhanka/engram", undefined]);
+
+    const missRev = clone(makeDossierMeta()) as any;
+    delete missRev.origins.sourcePaths.results.revision;
+    refuse(() => parseDossierMetaFile(missRev), "MISSING_KEY", "$.origins.sourcePaths.results.revision");
+
+    const twoQuestions = clone(makeDecisionsFile()) as any;
+    const secondQ = clone(twoQuestions.questions[0]);
+    secondQ.id = "q-charts";
+    twoQuestions.questions.push(secondQ);
+    expect(parseDecisionsFile(twoQuestions).questions).toHaveLength(2);
+  });
+});
