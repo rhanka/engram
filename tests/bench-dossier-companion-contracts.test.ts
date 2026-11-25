@@ -884,3 +884,119 @@ describe("dossier-meta.json boundaries, digit-free and Focus budget refusals", (
     }
   });
 });
+
+describe("decisions.json word budget, options and ownerCriteria refusal matrix", () => {
+  it("accepts 2..4 options, 160-char consequence, 360-word default budget and optional deletions", () => {
+    const noCriterion = clone(makeDecisionsFile()) as any;
+    delete noCriterion.questions[0].completionCriterion;
+    expect(parseDecisionsFile(noCriterion).questions[0]?.completionCriterion).toBeUndefined();
+    const noReadingTime = clone(makeDecisionsFile()) as any;
+    delete noReadingTime.questions[0].readingTimeMinutes;
+    expect(parseDecisionsFile(noReadingTime).questions[0]?.readingTimeMinutes).toBeUndefined();
+    const maxCons = clone(makeDecisionsFile()) as any;
+    maxCons.questions[0].options[0].consequence = "c".repeat(160);
+    expect(parseDecisionsFile(maxCons).questions[0]?.options[0]?.consequence).toHaveLength(160);
+    const maxRt = clone(makeDecisionsFile()) as any;
+    maxRt.questions[0].readingTimeMinutes = 2.0;
+    expect(parseDecisionsFile(maxRt).questions[0]?.readingTimeMinutes).toBe(2);
+    const fourOpts = clone(makeDecisionsFile()) as any;
+    fourOpts.questions[0].options.push(
+      { id: "opt-3", label: "Option three", consequence: "Adds one overview chart.", body: "Body three." },
+      { id: "opt-4", label: "Option four", consequence: "Waits for upstream change.", body: "Body four." },
+    );
+    expect(parseDecisionsFile(fourOpts).questions[0]?.options).toHaveLength(4);
+    const nonEmptyGap = clone(makeDecisionsFile()) as any;
+    nonEmptyGap.ownerCriteria[0].gapOrDeparture = "None";
+    expect(parseDecisionsFile(nonEmptyGap).ownerCriteria[0]?.gapOrDeparture).toBe("None");
+
+    const exact360 = clone(makeDecisionsFile()) as any;
+    const q = exact360.questions[0];
+    delete q.readingTimeMinutes;
+    q.title = "w";
+    q.question = "w";
+    q.recommendedAnswer = "w";
+    q.completionCriterion = "w";
+    q.options = [
+      { id: "opt-per-field", label: "w", consequence: "w", body: "w" },
+      { id: "opt-2", label: "w", consequence: "w", body: "w" },
+    ];
+    q.context = Array.from({ length: 350 }, () => "w").join(" ");
+    expect(parseDecisionsFile(exact360).questions).toHaveLength(1);
+    q.context = Array.from({ length: 351 }, () => "w").join(" ");
+    refuse(() => parseDecisionsFile(exact360), "BAD_SHAPE", "$.questions[0]");
+  });
+
+  it("refuses option bounds, empty question/option fields, word overflow and non-4-col ownerCriteria", () => {
+    for (const bad of [null, [], "decisions"]) {
+      refuse(() => parseDecisionsFile(bad), "NOT_OBJECT", "$");
+    }
+    for (const k of [
+      "id", "title", "question", "context", "recommendedOptionId", "recommendedAnswer",
+      "strongestObjectionProse", "overturnConditionProse", "failureScenarioProse", "presenterConvenienceProse",
+    ]) {
+      const emptyDoc = clone(makeDecisionsFile()) as any;
+      emptyDoc.questions[0][k] = " ";
+      refuse(() => parseDecisionsFile(emptyDoc), "EMPTY_STRING", `$.questions[0].${k}`);
+      const missDoc = clone(makeDecisionsFile()) as any;
+      delete missDoc.questions[0][k];
+      refuse(() => parseDecisionsFile(missDoc), "MISSING_KEY", `$.questions[0].${k}`);
+    }
+    const cases: [(d: any) => void, BenchResultsErrorCode, string][] = [
+      [(d) => { d.schemaId = "bad"; }, "BAD_SCHEMA", "$.schemaId"],
+      [(d) => { d.extra = 1; }, "UNKNOWN_KEY", "$.extra"],
+      [(d) => { d.questions = {}; }, "NOT_ARRAY", "$.questions"],
+      [(d) => { d.questions = []; }, "BAD_SHAPE", "$.questions"],
+      [(d) => { d.questions[0].options = {}; }, "NOT_ARRAY", "$.questions[0].options"],
+      [(d) => { d.ownerCriteria = {}; }, "NOT_ARRAY", "$.ownerCriteria"],
+      [(d) => { delete d.questions[0].options[0].id; }, "MISSING_KEY", "$.questions[0].options[0].id"],
+      [(d) => { delete d.questions[0].options[0].label; }, "MISSING_KEY", "$.questions[0].options[0].label"],
+      [(d) => { delete d.questions[0].options[0].consequence; },
+        "MISSING_KEY", "$.questions[0].options[0].consequence"],
+      [(d) => { delete d.ownerCriteria[0].criterion; }, "MISSING_KEY", "$.ownerCriteria[0].criterion"],
+      [(d) => { delete d.ownerCriteria[0].requestSource; }, "MISSING_KEY", "$.ownerCriteria[0].requestSource"],
+      [(d) => { delete d.ownerCriteria[0].addressedBy; }, "MISSING_KEY", "$.ownerCriteria[0].addressedBy"],
+      [(d) => { d.questions.push(clone(d.questions[0])); }, "BAD_SHAPE", "$.questions[1].id"],
+      [(d) => { d.questions[0].extra = 1; }, "UNKNOWN_KEY", "$.questions[0].extra"],
+      [(d) => { d.questions[0].completionCriterion = " "; }, "EMPTY_STRING", "$.questions[0].completionCriterion"],
+      [(d) => { d.questions[0].options[0].extra = 1; }, "UNKNOWN_KEY", "$.questions[0].options[0].extra"],
+      [(d) => { delete d.questions[0].options[0].body; }, "MISSING_KEY", "$.questions[0].options[0].body"],
+      [(d) => { d.questions[0].options[0].id = " "; }, "EMPTY_STRING", "$.questions[0].options[0].id"],
+      [(d) => { d.questions[0].options[0].label = ""; }, "EMPTY_STRING", "$.questions[0].options[0].label"],
+      [(d) => { d.questions[0].options[0].body = " "; }, "EMPTY_STRING", "$.questions[0].options[0].body"],
+      [(d) => { d.questions[0].options[0].consequence = " "; },
+        "EMPTY_STRING", "$.questions[0].options[0].consequence"],
+      [(d) => { d.questions[0].options.pop(); }, "BAD_SHAPE", "$.questions[0].options"],
+      [(d) => {
+        d.questions[0].options.push(
+          { id: "o3", label: "Three", consequence: "C3.", body: "B3." },
+          { id: "o4", label: "Four", consequence: "C4.", body: "B4." },
+          { id: "o5", label: "Five", consequence: "C5.", body: "B5." },
+        );
+      }, "BAD_SHAPE", "$.questions[0].options"],
+      [(d) => { d.questions[0].options[1].id = "opt-per-field"; }, "BAD_SHAPE", "$.questions[0].options[1].id"],
+      [(d) => { d.questions[0].recommendedOptionId = "opt-missing"; },
+        "BAD_SHAPE", "$.questions[0].recommendedOptionId"],
+      [(d) => { d.questions[0].options[0].consequence = "c".repeat(161); },
+        "BAD_SHAPE", "$.questions[0].options[0].consequence"],
+      [(d) => { d.questions[0].readingTimeMinutes = 0; }, "NON_POSITIVE", "$.questions[0].readingTimeMinutes"],
+      [(d) => { d.questions[0].readingTimeMinutes = 2.01; }, "BAD_SHAPE", "$.questions[0].readingTimeMinutes"],
+      [(d) => { d.questions[0].readingTimeMinutes = Number.NaN; }, "NON_FINITE", "$.questions[0].readingTimeMinutes"],
+      [(d) => {
+        delete d.questions[0].readingTimeMinutes;
+        d.questions[0].context = `${"word ".repeat(361)}end`;
+      }, "BAD_SHAPE", "$.questions[0]"],
+      [(d) => { d.ownerCriteria = [["crit", "src", "addr", "gap"]]; }, "NOT_OBJECT", "$.ownerCriteria[0]"],
+      [(d) => { d.ownerCriteria[0].extra = "x"; }, "UNKNOWN_KEY", "$.ownerCriteria[0].extra"],
+      [(d) => { delete d.ownerCriteria[0].gapOrDeparture; }, "MISSING_KEY", "$.ownerCriteria[0].gapOrDeparture"],
+      [(d) => { d.ownerCriteria[0].criterion = " "; }, "EMPTY_STRING", "$.ownerCriteria[0].criterion"],
+      [(d) => { d.ownerCriteria[0].requestSource = ""; }, "EMPTY_STRING", "$.ownerCriteria[0].requestSource"],
+      [(d) => { d.ownerCriteria[0].addressedBy = " "; }, "EMPTY_STRING", "$.ownerCriteria[0].addressedBy"],
+      [(d) => { d.ownerCriteria[0].gapOrDeparture = 123; }, "WRONG_TYPE", "$.ownerCriteria[0].gapOrDeparture"],
+    ];
+    for (const [mutate, code, path] of cases) {
+      const doc = clone(makeDecisionsFile());
+      mutate(doc);
+      refuse(() => parseDecisionsFile(doc), code, path);
+    }
+  });
+});
