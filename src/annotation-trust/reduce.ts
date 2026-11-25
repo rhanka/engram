@@ -151,6 +151,7 @@ export function reduceEntries(entries: readonly Entry[], at: { stream: StreamRef
       aiValue.set(e.revision, values.get(e.revision) as ValueAt & { author: AI });
   const slots = new Map<number, { blind: EvaluationPair | null; other: EvaluationPair | null }>();
   const keep = (n: number, p: EvaluationPair): void => {
+    if ("kind" in p.humanValue && p.humanValue.kind !== "class") return;
     const s = slots.get(n) ?? { blind: null, other: null };
     if (p.role === "blind") s.blind = p; else s.other = p;
     slots.set(n, s);
