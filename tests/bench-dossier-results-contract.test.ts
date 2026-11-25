@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   BENCH_RESULTS_SCHEMA_ID, BENCH_RESULTS_SCHEMA_VERSION, parseBenchResultsFile,
-  readBenchResultsFile, type BenchResultsFile,
+  readBenchResultsFile, type BenchInterval, type BenchResultsFile,
 } from "../src/bench-dossier/results-contract.js";
 import {
   arrayOf, BenchResultsValidationError, booleanValue, countInt, enumValue, fieldsOf, finiteNumber,
@@ -162,6 +162,75 @@ describe("BenchResultsFile envelope and file reader", () => {
     ];
     for (const [mutate, code, path] of cases) {
       const doc = clone(makeValidEnvelope());
+      mutate(doc);
+      refuse(() => parseBenchResultsFile(doc), code, path);
+    }
+  });
+});
+
+const Z95 = 1.959963984540054;
+function wilson(k: number, n: number): BenchInterval {
+  const p = k / n, z2 = Z95 * Z95, d = 1 + z2 / n, c = (p + z2 / (2 * n)) / d;
+  const h = (Z95 * Math.sqrt((p * (1 - p) + z2 / (4 * n)) / n)) / d;
+  return {
+    estimator: "unweighted", method: "wilson_95_unweighted", clustering: "independent_site",
+    valid: true, low: Math.max(0, c - h), high: Math.min(1, c + h),
+  };
+}
+
+function makePrimaryRecord(): BenchResultsFile["records"][number] {
+  const wTwoThirds = wilson(20, 30), wHalf = wilson(9, 18);
+  const wBoot = (low: number, high: number): BenchInterval => ({
+    estimator: "weighted", method: "design_bootstrap_95", clustering: "group_resampled", valid: true, low, high,
+  });
+  return {
+    armId: "arm-gpt-6-low", armMissionSha256: "d".repeat(64), missingDigestAllowed: false,
+    provider: "OpenAI", model: "gpt-6-astra-low", modelLabel: "Astra low", proseName: "OpenAI Astra low",
+    effort: "low", isCascade: false, isHighlighted: true, incomplete: false, field: "office.city",
+    comparator: "lotb_ca_post_v1", isPrimaryComparator: true, attempted: 30, accepted: 28, failed: 2,
+    failuresByCode: { llm_error: 2 }, unverifiedQuotesNulled: 3, unverifiedWholeRecordsDropped: 1,
+    goldPositive: 30, goldAbsent: 12, tp: 20, fp: 10, fpOnPresent: 5, fpOnAbsent: 2, fpElementsOnAbsent: 5,
+    fn: 10, tn: 9, failedOnAbsent: 1, unresolved: 2, insufficient: 3, abstentionSpecificity: 9 / 11,
+    sitePresence: { goldPresentSites: 30, goldAbsentSites: 12, unresolvedSites: 2, insufficientSites: 3,
+      tpSites: 20, fnSites: 10, wrongValueOnPresentSites: 4, fpOnAbsentSites: 2, tnSites: 9,
+      failedOnAbsentSites: 1, siteRecall: 2 / 3, siteRecallInterval: wTwoThirds,
+      siteAbstentionSpecificity: 9 / 11, siteAbstentionInterval: wHalf },
+    unweighted: { precision: 2 / 3, recall: 2 / 3, f1: 2 / 3,
+      precisionInterval: wTwoThirds, recallInterval: wTwoThirds },
+    weighted: { scheme: "horvitz_thompson_s1_s2_v1", deff: 1.14, nEff: 26.315789, precision: 0.681,
+      recall: 0.654, f1: 0.667227, precisionInterval: wBoot(0.51, 0.82), recallInterval: wBoot(0.49, 0.79),
+      f1Interval: wBoot(0.52, 0.78) },
+    precision: 0.681, recall: 0.654, f1: 0.667227,
+    precisionInterval: wBoot(0.51, 0.82), recallInterval: wBoot(0.49, 0.79),
+    independentGroupSupport: { predictions: 27, positives: 28 },
+    indeterminate: { precision: true, recall: true, f1: true }, calls: 37, callsPerItem: 37 / 1705,
+    tokens: { input: 12000, output: 1800, reasoning: 300, cached: "unknown", total: 14100 },
+    cost: { currency: "CAD", costBasisItems: 1705, costUnknownReason: null, apiEquivalentTotal: 1.2345,
+      apiEquivalentPerItem: 1.2345 / 1705, tariffStatus: "primary", tariffSource: "openai-pricing",
+      tariffAsOf: "2026-11-01",
+      fxApplied: { from: "USD", to: "CAD", rate: 1.385, source: "boc-daily", asOf: "2026-11-22" },
+      seatStatus: "measured", seatMethod: "weekly_burn_delta", seatUnknownReason: null,
+      seatSharePerItem: 0.003, seatCostPerItem: 0.087, seatPlan: "Pro", seatMonthlyPrice: 280,
+      seatLimitScale: 1.5, seatPlanSource: "manual", seatPlanAsOf: "2026-11-20" },
+    diagnostics: { broad: { tp: 21, fp: 9, fn: 9, precision: 21 / 30, recall: 21 / 30, f1: 21 / 30 },
+      conditionalRetainedRecall: 0.71 },
+  };
+}
+
+describe("BenchResultRecord schema validation", () => {
+  it("accepts non-degenerate record and enforces deff, clustered interval and sub-block bounds", () => {
+    const file = { ...makeValidEnvelope(), records: [makePrimaryRecord()] };
+    expect(parseBenchResultsFile(file)).toEqual(file);
+    const bad: [(d: any) => void, BenchResultsErrorCode, string][] = [
+      [(d) => { d.records[0].precisionInterval.clustering = "clustered_record_invalid"; },
+        "BAD_INTERVAL", "$.records[0].precisionInterval"],
+      [(d) => { d.records[0].weighted.deff = 0; }, "NON_POSITIVE", "$.records[0].weighted.deff"],
+      [(d) => { d.records[0].cost.seatMonthlyPrice = -10; }, "NEGATIVE", "$.records[0].cost.seatMonthlyPrice"],
+      [(d) => { d.records[0].diagnostics.broad.precision = 1.01; },
+        "UNIT_RANGE", "$.records[0].diagnostics.broad.precision"],
+    ];
+    for (const [mutate, code, path] of bad) {
+      const doc = clone(file);
       mutate(doc);
       refuse(() => parseBenchResultsFile(doc), code, path);
     }
