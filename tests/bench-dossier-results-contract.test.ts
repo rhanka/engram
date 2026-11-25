@@ -355,3 +355,106 @@ describe("BenchResultsFile cascade, single-field variations and enum coverage", 
     }
   });
 });
+
+describe("BenchResultsFile closed keys, map keys and required fields", () => {
+  it("refuses unknown keys at all 25 closed object levels and unsafe or non-plain map containers (N03)", () => {
+    const targets: [(d: any) => void, string][] = [
+      [(d) => { d.extra = 1; }, "$.extra"],
+      [(d) => { d.corpus.extra = 1; }, "$.corpus.extra"],
+      [(d) => { d.corpus.fieldLabels["office.city"].de = "x"; }, "$.corpus.fieldLabels.office.city.de"],
+      [(d) => { d.corpus.annotatorRunStats.r1.extra = 0; }, "$.corpus.annotatorRunStats.r1.extra"],
+      [(d) => { d.supportFloors.extra = 1; }, "$.supportFloors.extra"],
+      [(d) => { d.records[0].extra = 1; }, "$.records[0].extra"],
+      [(d) => { d.records[0].sitePresence.extra = 1; }, "$.records[0].sitePresence.extra"],
+      [(d) => { d.records[0].sitePresence.siteRecallInterval.extra = 1; },
+        "$.records[0].sitePresence.siteRecallInterval.extra"],
+      [(d) => { d.records[0].sitePresence.siteAbstentionInterval.extra = 1; },
+        "$.records[0].sitePresence.siteAbstentionInterval.extra"],
+      [(d) => { d.records[0].unweighted.f1Interval = null; }, "$.records[0].unweighted.f1Interval"],
+      [(d) => { d.records[0].unweighted.precisionInterval.extra = 1; },
+        "$.records[0].unweighted.precisionInterval.extra"],
+      [(d) => { d.records[0].unweighted.recallInterval.extra = 1; },
+        "$.records[0].unweighted.recallInterval.extra"],
+      [(d) => { d.records[0].weighted.extra = 1; }, "$.records[0].weighted.extra"],
+      [(d) => { d.records[0].weighted.precisionInterval.extra = 1; },
+        "$.records[0].weighted.precisionInterval.extra"],
+      [(d) => { d.records[0].weighted.recallInterval.extra = 1; },
+        "$.records[0].weighted.recallInterval.extra"],
+      [(d) => { d.records[0].weighted.f1Interval.extra = 1; }, "$.records[0].weighted.f1Interval.extra"],
+      [(d) => { d.records[0].precisionInterval.extra = 1; }, "$.records[0].precisionInterval.extra"],
+      [(d) => { d.records[0].recallInterval.extra = 1; }, "$.records[0].recallInterval.extra"],
+      [(d) => { d.records[0].independentGroupSupport.extra = 1; }, "$.records[0].independentGroupSupport.extra"],
+      [(d) => { d.records[0].indeterminate.extra = false; }, "$.records[0].indeterminate.extra"],
+      [(d) => { d.records[0].tokens.extra = 0; }, "$.records[0].tokens.extra"],
+      [(d) => { d.records[0].cost.cacheRead = 0; }, "$.records[0].cost.cacheRead"],
+      [(d) => { d.records[0].cost.fxApplied.extra = "x"; }, "$.records[0].cost.fxApplied.extra"],
+      [(d) => { d.records[0].diagnostics.extra = 1; }, "$.records[0].diagnostics.extra"],
+      [(d) => { d.records[0].diagnostics.broad.extra = 1; }, "$.records[0].diagnostics.broad.extra"],
+    ];
+    for (const [mutate, path] of targets) {
+      const doc = clone(makeValidFile());
+      mutate(doc);
+      refuse(() => parseBenchResultsFile(doc), "UNKNOWN_KEY", path);
+    }
+    const protoRoot = JSON.parse(JSON.stringify(makeValidFile()).replace("{", "{\"__proto__\":1,"));
+    refuse(() => parseBenchResultsFile(protoRoot), "UNKNOWN_KEY", "$.__proto__");
+
+    const mapMutators: [(d: any, v: any) => void, string][] = [
+      [(d, v) => { d.records[0].failuresByCode = v; }, "$.records[0].failuresByCode"],
+      [(d, v) => { d.corpus.fieldLabels = v; }, "$.corpus.fieldLabels"],
+      [(d, v) => { d.corpus.annotatorRunStats = v; }, "$.corpus.annotatorRunStats"],
+      [(d, v) => { d.corpus.krippendorffAlphaByField = v; }, "$.corpus.krippendorffAlphaByField"],
+    ];
+    for (const [setMap, mapPath] of mapMutators) {
+      for (const badContainer of [[], null, new Date()]) {
+        const doc = clone(makeValidFile());
+        setMap(doc, badContainer);
+        refuse(() => parseBenchResultsFile(doc), "NOT_OBJECT", mapPath);
+      }
+      for (const badKey of ["", "   ", "__proto__", "constructor", "prototype"]) {
+        const doc = clone(makeValidFile());
+        const m: Record<string, unknown> = {};
+        Object.defineProperty(m, badKey, { value: 1, enumerable: true, configurable: true });
+        setMap(doc, m);
+        refuse(() => parseBenchResultsFile(doc), "BAD_MAP_KEY", `${mapPath}.${badKey}`);
+      }
+    }
+  });
+
+  it("refuses missing required fields across all object levels", () => {
+    const missing: [(d: any) => void, string][] = [
+      [(d) => delete d.schemaId, "$.schemaId"],
+      [(d) => delete d.schemaVersion, "$.schemaVersion"],
+      [(d) => delete d.generatedAt, "$.generatedAt"],
+      [(d) => delete d.campaignId, "$.campaignId"],
+      [(d) => delete d.corpus, "$.corpus"],
+      [(d) => delete d.supportFloors, "$.supportFloors"],
+      [(d) => delete d.records, "$.records"],
+      [(d) => delete d.corpus.goldenMissionSha256, "$.corpus.goldenMissionSha256"],
+      [(d) => delete d.corpus.candidateMissionSha256, "$.corpus.candidateMissionSha256"],
+      [(d) => delete d.corpus.costBasisLabel, "$.corpus.costBasisLabel"],
+      [(d) => delete d.corpus.fieldShapeVerified, "$.corpus.fieldShapeVerified"],
+      [(d) => delete d.corpus.fieldLabels["office.city"].fr, "$.corpus.fieldLabels.office.city.fr"],
+      [(d) => delete d.corpus.annotatorRunStats.r1.missing, "$.corpus.annotatorRunStats.r1.missing"],
+      [(d) => delete d.supportFloors.failureCeiling, "$.supportFloors.failureCeiling"],
+      [(d) => delete d.records[0].insufficient, "$.records[0].insufficient"],
+      [(d) => delete d.records[0].fpElementsOnAbsent, "$.records[0].fpElementsOnAbsent"],
+      [(d) => delete d.records[0].sitePresence.insufficientSites, "$.records[0].sitePresence.insufficientSites"],
+      [(d) => delete d.records[0].sitePresence.siteRecallInterval.low,
+        "$.records[0].sitePresence.siteRecallInterval.low"],
+      [(d) => delete d.records[0].unweighted.recallInterval, "$.records[0].unweighted.recallInterval"],
+      [(d) => delete d.records[0].weighted.scheme, "$.records[0].weighted.scheme"],
+      [(d) => delete d.records[0].independentGroupSupport.positives, "$.records[0].independentGroupSupport.positives"],
+      [(d) => delete d.records[0].indeterminate.f1, "$.records[0].indeterminate.f1"],
+      [(d) => delete d.records[0].tokens.cached, "$.records[0].tokens.cached"],
+      [(d) => delete d.records[0].cost.costBasisItems, "$.records[0].cost.costBasisItems"],
+      [(d) => delete d.records[0].cost.fxApplied.rate, "$.records[0].cost.fxApplied.rate"],
+      [(d) => delete d.records[0].diagnostics.broad.tp, "$.records[0].diagnostics.broad.tp"],
+    ];
+    for (const [mutate, path] of missing) {
+      const doc = clone(makeValidFile());
+      mutate(doc);
+      refuse(() => parseBenchResultsFile(doc), "MISSING_KEY", path);
+    }
+  });
+});
