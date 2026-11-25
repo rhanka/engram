@@ -458,3 +458,151 @@ describe("BenchResultsFile closed keys, map keys and required fields", () => {
     }
   });
 });
+
+describe("BenchResultsFile negative helper, sub-block and interval matrices", () => {
+  it("refuses wrong container, type, string, undefined nullable (N12) and enum (N01, N30-N31) inputs", () => {
+    for (const bad of [null, [], "x", 42, new Date()]) refuse(() => parseBenchResultsFile(bad), "NOT_OBJECT", "$");
+    const cases: [(d: any) => void, BenchResultsErrorCode, string][] = [
+      [(d) => { d.schemaId = 1; }, "WRONG_TYPE", "$.schemaId"],
+      [(d) => { d.schemaVersion = "1"; }, "WRONG_TYPE", "$.schemaVersion"],
+      [(d) => { d.corpus.fieldShapeVerified = "true"; }, "WRONG_TYPE", "$.corpus.fieldShapeVerified"],
+      [(d) => { d.corpus = []; }, "NOT_OBJECT", "$.corpus"],
+      [(d) => { d.records[0].diagnostics = []; }, "NOT_OBJECT", "$.records[0].diagnostics"],
+      [(d) => { d.records = {}; }, "NOT_ARRAY", "$.records"],
+      [(d) => { d.corpus.fields = "office.city"; }, "NOT_ARRAY", "$.corpus.fields"],
+      [(d) => { d.corpus.fields = ["office.city", ""]; }, "EMPTY_STRING", "$.corpus.fields[1]"],
+      [(d) => { d.records[0].tokens = "bogus"; }, "NOT_OBJECT", "$.records[0].tokens"],
+      [(d) => { d.records[0].isCascade = "no"; }, "WRONG_TYPE", "$.records[0].isCascade"],
+      [(d) => { d.campaignId = "   "; }, "EMPTY_STRING", "$.campaignId"],
+      [(d) => { d.corpus.fieldLabels["office.city"].en = "  "; }, "EMPTY_STRING",
+        "$.corpus.fieldLabels.office.city.en"],
+      [(d) => { d.corpus.fieldLabels["office.city"].fr = ""; }, "EMPTY_STRING",
+        "$.corpus.fieldLabels.office.city.fr"],
+      [(d) => { d.corpus.goldenLabel = undefined; }, "WRONG_TYPE", "$.corpus.goldenLabel"],
+      [(d) => { d.records[0].precision = undefined; }, "WRONG_TYPE", "$.records[0].precision"],
+      [(d) => { d.records[0].weighted = undefined; }, "NOT_OBJECT", "$.records[0].weighted"],
+      [(d) => { d.records[0].diagnostics.conditionalRetainedRecall = undefined; }, "WRONG_TYPE",
+        "$.records[0].diagnostics.conditionalRetainedRecall"],
+      [(d) => { d.corpus.partition = 123; }, "WRONG_TYPE", "$.corpus.partition"],
+      [(d) => { d.records[0].effort = 1; }, "WRONG_TYPE", "$.records[0].effort"],
+      [(d) => { d.records[0].cost.currency = true; }, "WRONG_TYPE", "$.records[0].cost.currency"],
+      [(d) => { d.corpus.partition = "train"; }, "BAD_ENUM", "$.corpus.partition"],
+      [(d) => { d.corpus.primaryEstimator = "bayes"; }, "BAD_ENUM", "$.corpus.primaryEstimator"],
+      [(d) => { d.corpus.costBasisLabel = "raw_id"; }, "BAD_ENUM", "$.corpus.costBasisLabel"],
+      [(d) => { d.corpus.currency = "EUR"; }, "BAD_ENUM", "$.corpus.currency"],
+      [(d) => { d.records[0].effort = "ultra"; }, "BAD_ENUM", "$.records[0].effort"],
+      [(d) => { d.records[0].precisionInterval.method = "bootstrap"; }, "BAD_ENUM",
+        "$.records[0].precisionInterval.method"],
+      [(d) => { d.records[0].precisionInterval.clustering = "none"; }, "BAD_ENUM",
+        "$.records[0].precisionInterval.clustering"],
+      [(d) => { d.records[0].cost.currency = "EUR"; }, "BAD_ENUM", "$.records[0].cost.currency"],
+      [(d) => { d.records[0].cost.fxApplied.from = "GBP"; }, "BAD_ENUM", "$.records[0].cost.fxApplied.from"],
+      [(d) => { d.records[0].cost.fxApplied.to = "JPY"; }, "BAD_ENUM", "$.records[0].cost.fxApplied.to"],
+      [(d) => { d.records[0].cost.costUnknownReason = "other"; }, "BAD_ENUM",
+        "$.records[0].cost.costUnknownReason"],
+      [(d) => { d.records[0].cost.tariffStatus = "verified"; }, "BAD_ENUM", "$.records[0].cost.tariffStatus"],
+      [(d) => { d.records[0].cost.seatStatus = "approx"; }, "BAD_ENUM", "$.records[0].cost.seatStatus"],
+      [(d) => { d.records[0].cost.seatMethod = "guess"; }, "BAD_ENUM", "$.records[0].cost.seatMethod"],
+      [(d) => { d.records[0].cost.seatUnknownReason = "busy"; }, "BAD_ENUM",
+        "$.records[0].cost.seatUnknownReason"],
+    ];
+    for (const [mutate, code, path] of cases) {
+      const doc = clone(makeValidFile());
+      mutate(doc);
+      refuse(() => parseBenchResultsFile(doc), code, path);
+    }
+  });
+
+  it("refuses nested sub-block numeric bounds (N10, N20-N21, N24-N29, N40-N45) and interval defects", () => {
+    const cases: [(d: any) => void, BenchResultsErrorCode, string][] = [
+      [(d) => { d.records[0].precision = Number.NaN; }, "NON_FINITE", "$.records[0].precision"],
+      [(d) => { d.corpus.krippendorffAlphaByField["office.city"] = Number.POSITIVE_INFINITY; },
+        "NON_FINITE", "$.corpus.krippendorffAlphaByField.office.city"],
+      [(d) => { d.corpus.krippendorffAlphaByField["office.city"] = Number.NEGATIVE_INFINITY; },
+        "NON_FINITE", "$.corpus.krippendorffAlphaByField.office.city"],
+      [(d) => { d.records[0].tp = -1; }, "BAD_COUNT", "$.records[0].tp"],
+      [(d) => { d.records[0].tp = Number.MAX_SAFE_INTEGER + 1; }, "BAD_COUNT", "$.records[0].tp"],
+      [(d) => { d.records[0].insufficient = 1.5; }, "BAD_COUNT", "$.records[0].insufficient"],
+      [(d) => { d.records[0].fpElementsOnAbsent = -2; }, "BAD_COUNT", "$.records[0].fpElementsOnAbsent"],
+      [(d) => { d.records[0].calls = 2.5; }, "BAD_COUNT", "$.records[0].calls"],
+      [(d) => { d.corpus.goldenIds = 30.5; }, "BAD_COUNT", "$.corpus.goldenIds"],
+      [(d) => { d.corpus.annotatorCount = 2.5; }, "BAD_COUNT", "$.corpus.annotatorCount"],
+      [(d) => { d.corpus.captureOkIds = 1.5; }, "BAD_COUNT", "$.corpus.captureOkIds"],
+      [(d) => { d.records[0].unverifiedWholeRecordsDropped = 1.5; }, "BAD_COUNT",
+        "$.records[0].unverifiedWholeRecordsDropped"],
+      [(d) => { d.records[0].cost.costBasisItems = 1.5; }, "BAD_COUNT", "$.records[0].cost.costBasisItems"],
+      [(d) => { d.records[0].failuresByCode.llm_error = 1.5; }, "BAD_COUNT", "$.records[0].failuresByCode.llm_error"],
+      [(d) => { d.corpus.annotatorRunStats.r1.answered = 28.5; }, "BAD_COUNT",
+        "$.corpus.annotatorRunStats.r1.answered"],
+      [(d) => { d.records[0].tokens.cached = 12.5; }, "BAD_COUNT", "$.records[0].tokens.cached"],
+      [(d) => { d.records[0].tokens.input = -1; }, "BAD_COUNT", "$.records[0].tokens.input"],
+      [(d) => { d.records[0].independentGroupSupport.predictions = 27.5; }, "BAD_COUNT",
+        "$.records[0].independentGroupSupport.predictions"],
+      [(d) => { d.records[0].diagnostics.broad.tp = 1.5; }, "BAD_COUNT", "$.records[0].diagnostics.broad.tp"],
+      [(d) => { d.records[0].callsPerItem = -0.001; }, "NEGATIVE", "$.records[0].callsPerItem"],
+      [(d) => { d.records[0].cost.apiEquivalentTotal = -0.5; }, "NEGATIVE", "$.records[0].cost.apiEquivalentTotal"],
+      [(d) => { d.records[0].cost.seatMonthlyPrice = -10; }, "NEGATIVE", "$.records[0].cost.seatMonthlyPrice"],
+      [(d) => { d.records[0].cost.seatSharePerItem = -0.01; }, "NEGATIVE", "$.records[0].cost.seatSharePerItem"],
+      [(d) => { d.records[0].cost.seatCostPerItem = -0.01; }, "NEGATIVE", "$.records[0].cost.seatCostPerItem"],
+      [(d) => { d.records[0].weighted.nEff = -1; }, "NEGATIVE", "$.records[0].weighted.nEff"],
+      [(d) => { d.records[0].weighted.deff = 0; }, "NON_POSITIVE", "$.records[0].weighted.deff"],
+      [(d) => { d.records[0].weighted.deff = -0.5; }, "NON_POSITIVE", "$.records[0].weighted.deff"],
+      [(d) => { d.records[0].cost.fxApplied.rate = 0; }, "NON_POSITIVE", "$.records[0].cost.fxApplied.rate"],
+      [(d) => { d.records[0].cost.seatLimitScale = -1; }, "NON_POSITIVE", "$.records[0].cost.seatLimitScale"],
+      [(d) => { d.supportFloors.failureCeiling = 1.01; }, "UNIT_RANGE", "$.supportFloors.failureCeiling"],
+      [(d) => { d.records[0].abstentionSpecificity = 1.01; }, "UNIT_RANGE", "$.records[0].abstentionSpecificity"],
+      [(d) => { d.records[0].sitePresence.siteRecall = -0.0001; }, "UNIT_RANGE",
+        "$.records[0].sitePresence.siteRecall"],
+      [(d) => { d.records[0].sitePresence.siteAbstentionSpecificity = 1.01; }, "UNIT_RANGE",
+        "$.records[0].sitePresence.siteAbstentionSpecificity"],
+      [(d) => { d.records[0].unweighted.f1 = 1.0001; }, "UNIT_RANGE", "$.records[0].unweighted.f1"],
+      [(d) => { d.records[0].diagnostics.broad.precision = 1.01; }, "UNIT_RANGE",
+        "$.records[0].diagnostics.broad.precision"],
+      [(d) => { d.records[0].diagnostics.conditionalRetainedRecall = -0.1; }, "UNIT_RANGE",
+        "$.records[0].diagnostics.conditionalRetainedRecall"],
+      [(d) => { d.records[0].sitePresence.siteRecallInterval.low = -1e-9; }, "INTERVAL_RANGE",
+        "$.records[0].sitePresence.siteRecallInterval.low"],
+      [(d) => { d.records[0].sitePresence.siteRecallInterval.low = 1.001; }, "INTERVAL_RANGE",
+        "$.records[0].sitePresence.siteRecallInterval.low"],
+      [(d) => { d.records[0].sitePresence.siteAbstentionInterval.high = -0.01; }, "INTERVAL_RANGE",
+        "$.records[0].sitePresence.siteAbstentionInterval.high"],
+      [(d) => { d.records[0].unweighted.precisionInterval.high = 1.0001; }, "INTERVAL_RANGE",
+        "$.records[0].unweighted.precisionInterval.high"],
+      [(d) => { d.records[0].sitePresence.siteRecallInterval.low = 0.85; }, "INTERVAL_ORDER",
+        "$.records[0].sitePresence.siteRecallInterval"],
+      [(d) => { d.records[0].sitePresence.siteRecallInterval.high = 0.4; }, "INTERVAL_ORDER",
+        "$.records[0].sitePresence.siteRecallInterval"],
+      [(d) => { d.records[0].weighted.f1Interval.low = 0.8; }, "INTERVAL_ORDER",
+        "$.records[0].weighted.f1Interval"],
+      [(d) => { d.records[0].sitePresence.siteRecallInterval.low = Number.NaN; }, "NON_FINITE",
+        "$.records[0].sitePresence.siteRecallInterval.low"],
+      [(d) => { d.records[0].sitePresence.siteRecallInterval.low = null; }, "BAD_INTERVAL",
+        "$.records[0].sitePresence.siteRecallInterval"],
+      [(d) => { d.records[0].unweighted.recallInterval.high = null; }, "BAD_INTERVAL",
+        "$.records[0].unweighted.recallInterval"],
+      [(d) => { d.records[0].unweighted.recallInterval.method = "none"; }, "BAD_INTERVAL",
+        "$.records[0].unweighted.recallInterval"],
+      [(d) => { d.records[0].unweighted.recallInterval.clustering = "clustered_record_invalid"; },
+        "BAD_INTERVAL", "$.records[0].unweighted.recallInterval"],
+      [(d) => { d.records[0].precisionInterval.clustering = "clustered_record_invalid"; },
+        "BAD_INTERVAL", "$.records[0].precisionInterval"],
+      [(d) => { d.records[1].precisionInterval.low = 0.2; }, "BAD_INTERVAL", "$.records[1].precisionInterval"],
+      [(d) => { d.records[1].precisionInterval.high = 0.7; }, "BAD_INTERVAL", "$.records[1].precisionInterval"],
+      [(d) => { d.records[1].sitePresence.siteRecallInterval.low = null; }, "BAD_INTERVAL",
+        "$.records[1].sitePresence.siteRecallInterval"],
+      [(d) => { d.records[1].sitePresence.siteRecallInterval.clustering = "clustered_record_invalid"; },
+        "BAD_INTERVAL", "$.records[1].sitePresence.siteRecallInterval"],
+    ];
+    for (const [mutate, code, path] of cases) {
+      const doc = clone(makeValidFile());
+      mutate(doc);
+      refuse(() => parseBenchResultsFile(doc), code, path);
+    }
+    for (const siteCount of ["goldPresentSites", "goldAbsentSites", "unresolvedSites", "insufficientSites",
+      "tpSites", "fnSites", "wrongValueOnPresentSites", "fpOnAbsentSites", "tnSites", "failedOnAbsentSites"]) {
+      const doc = clone(makeValidFile()) as any;
+      doc.records[0].sitePresence[siteCount] = 1.5;
+      refuse(() => parseBenchResultsFile(doc), "BAD_COUNT", `$.records[0].sitePresence.${siteCount}`);
+    }
+  });
+});
