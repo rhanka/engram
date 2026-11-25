@@ -176,6 +176,13 @@ export function median(values) {
 
 const normalizeZero = (value) => (value === 0 ? 0 : value);
 
+function assertNonNegativeFinite(value, name) {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    throw new Error(`${name} must be a non-negative finite number`);
+  }
+  return normalizeZero(value);
+}
+
 export function scoreReadSideCase({
   state,
   t0FirstMs,
@@ -193,28 +200,35 @@ export function scoreReadSideCase({
   if (typeof baselineCapMs !== "number" || !Number.isFinite(baselineCapMs) || baselineCapMs <= 0) {
     throw new Error("baselineCapMs must be a positive finite number");
   }
-  const rawT1 = Number.isFinite(t1FirstMs) && t1FirstMs >= 0 ? t1FirstMs : 0;
-  const rawClass = Number.isFinite(classificationMs) && classificationMs >= 0 ? classificationMs : 0;
+  const hasT0Error = typeof t0Error === "string" && t0Error.length > 0;
+  const safeT0 = assertNonNegativeFinite(t0FirstMs, "t0FirstMs");
+  if (safeT0 === 0 && !hasT0Error) {
+    throw new Error("t0FirstMs must be positive when t0Error is absent");
+  }
+  const rawT1 = assertNonNegativeFinite(t1FirstMs, "t1FirstMs");
+  const rawClass = assertNonNegativeFinite(classificationMs, "classificationMs");
   const t1TimeToNonSuccess = rawT1 + rawClass;
-  const t0ExceededCap = Boolean(t0TimedOut || (Number.isFinite(t0FirstMs) && t0FirstMs > baselineCapMs));
-  const t0ReachedVerified =
-    t0Error === null && !t0ExceededCap && Number.isFinite(t0FirstMs) && t0FirstMs > 0 && t0FirstMs <= baselineCapMs;
-  const t0ScoredMs = t0ReachedVerified ? t0FirstMs : baselineCapMs;
+  const t0ExceededCap = Boolean(t0TimedOut || safeT0 > baselineCapMs);
+  const t0ReachedVerified = !hasT0Error && !t0ExceededCap && safeT0 > 0 && safeT0 <= baselineCapMs;
+  const t0ScoredMs = t0ReachedVerified ? safeT0 : baselineCapMs;
   const baselineFailed = !t0ReachedVerified;
   const baselineTimedOut = t0ExceededCap;
 
   let finalState = t1Error ? "failed" : state;
   let finalMatched = false;
   let t1ReachedVerified = false;
-  const safeEmittedBytes = Number.isFinite(emittedBytes) && emittedBytes >= 0 ? emittedBytes : 0;
+  const hasValidEmittedBytes = typeof emittedBytes === "number" && Number.isFinite(emittedBytes) && emittedBytes >= 0;
+  const safeEmittedBytes = hasValidEmittedBytes ? normalizeZero(emittedBytes) : null;
 
   if (isExpectedRefusal) {
-    // G4 closed safety: leaked bytes fail closed; only an active zero-byte verified refusal can succeed.
-    if (safeEmittedBytes !== 0) {
+    // G4 closed safety: leaked or unmeasured bytes fail closed; only an active
+    // zero-byte verified refusal with matched expectation can succeed.
+    if (!hasValidEmittedBytes || safeEmittedBytes !== 0) {
       finalState = "failed";
       finalMatched = false;
       t1ReachedVerified = false;
-    } else if (activeRefusalVerified && t1Error === null && !NON_SUCCESS.has(finalState)) {
+    } else if (activeRefusalVerified === true && matchedExpectation === true &&
+        t1Error === null && !NON_SUCCESS.has(finalState)) {
       finalMatched = true;
       t1ReachedVerified = true;
     } else {
@@ -471,7 +485,10 @@ async function main() {
       manifest.protocol.continuationThreshold !== CONTINUATION_THRESHOLD) {
     fail(`manifest.protocol.continuationThreshold must stay ${CONTINUATION_THRESHOLD} (threshold retuning forbidden)`);
   }
-  const t0TimeoutMs = args.timeoutMs !== null ? Math.min(args.timeoutMs, baselineCapMs) : baselineCapMs;
+  if (args.timeoutMs !== null && args.timeoutMs < baselineCapMs) {
+    fail(`--timeout-ms (${args.timeoutMs}) must be >= manifest.protocol.baselineCapMs (${baselineCapMs})`);
+  }
+  const t0TimeoutMs = baselineCapMs;
   const t1TimeoutMs = args.timeoutMs !== null ? args.timeoutMs : Math.max(BASELINE_CAP_MS, baselineCapMs);
 
   // Freeze expectations BEFORE timing; the timed runner never sees them.
@@ -543,6 +560,7 @@ async function main() {
     const timedOutputs = { T0: null, T1: null };
     const timedSpawnErrors = { T0: null, T1: null };
     const timedTimedOut = { T0: false, T1: false };
+    const timedOracleRuns = { T0: 0, T1: 0 };
     let oracleRuns = 0;
 
     // T0: Git-component baseline (timed; ids/commands only, no expectations).
@@ -590,6 +608,7 @@ async function main() {
       timedOutputs[arm] = result.outputs ?? [];
       timedSpawnErrors[arm] = result.spawnError ?? null;
       timedTimedOut[arm] = Boolean(result.timedOut);
+      timedOracleRuns[arm] = result.oracleRuns ?? 0;
     }
     // Warm repetitions, kept separate from first answers (timed only).
     const t0WarmRepeatsMs = [];
@@ -693,6 +712,7 @@ async function main() {
       countsAsSaving: scored.countsAsSaving,
       emittedBytes: scored.emittedBytes,
       oracleRuns,
+      t0FirstOracleRuns: timedOracleRuns.T0,
       error: statusError,
       t0Error,
     });

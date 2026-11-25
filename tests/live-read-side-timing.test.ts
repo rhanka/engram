@@ -371,6 +371,9 @@ describe("counterbalanced first investigations retain all twenty cases and class
         } else {
           expect(entry.gain).toBe(0);
         }
+      } else {
+        expect(entry.t1EffectiveMs).toBeCloseTo(entry.t1TotalMs, 6);
+        expect(entry.gain).toBeCloseTo(1 - entry.t1TotalMs / entry.t0FirstMs, 10);
       }
     }
     expect(evidence.medianGain).toBe(median(allGains as number[]));
@@ -596,8 +599,11 @@ it("runs the pinned engram oracles offline with package identity and no native-s
       expect(entry.reasonValueSha256).toBe(sha256(control.expected.reason?.value ?? ""));
       expect(typeof entry.gain).toBe("number");
       expect(Number.isFinite(entry.gain)).toBe(true);
-      if (control.expected.state === "oracle-ready") expect(entry.state).toBe("verified");
-      else {
+      if (control.expected.state === "oracle-ready") {
+        expect(entry.state).toBe("verified");
+        expect(entry.t1EffectiveMs).toBeCloseTo(entry.t1TotalMs, 6);
+        expect(entry.gain).toBeCloseTo(1 - entry.t1TotalMs / entry.t0FirstMs, 10);
+      } else {
         expect(entry.gain <= 0).toBe(true);
         expect(entry.gain).toBeCloseTo(entry.t1TotalMs === 0 ? 0 : -entry.t1TotalMs / entry.t0FirstMs, 10);
         expect(entry.countsAsSaving).toBe(false);
@@ -784,6 +790,56 @@ it("a non-success first investigation scores its refusal time plus the baseline 
   expect(leakedG4.countsAsSaving).toBe(false);
   expect((leakedG4.gain as number) <= 0).toBe(true);
 
+  const nanBytesG4 = bench.scoreReadSideCase({
+    state: "verified",
+    t0FirstMs: 100,
+    t1FirstMs: 5,
+    classificationMs: 1,
+    baselineCapMs: 30_000,
+    matchedExpectation: true,
+    isExpectedRefusal: true,
+    activeRefusalVerified: true,
+    emittedBytes: Number.NaN,
+  });
+  expect(nanBytesG4.state).toBe("failed");
+  expect(nanBytesG4.matchedExpectation).toBe(false);
+  expect(nanBytesG4.countsAsSaving).toBe(false);
+  expect(nanBytesG4.emittedBytes).toBeNull();
+  expect((nanBytesG4.gain as number) <= 0).toBe(true);
+
+  const negativeBytesG4 = bench.scoreReadSideCase({
+    state: "verified",
+    t0FirstMs: 100,
+    t1FirstMs: 5,
+    classificationMs: 1,
+    baselineCapMs: 30_000,
+    matchedExpectation: true,
+    isExpectedRefusal: true,
+    activeRefusalVerified: true,
+    emittedBytes: -1,
+  });
+  expect(negativeBytesG4.state).toBe("failed");
+  expect(negativeBytesG4.matchedExpectation).toBe(false);
+  expect(negativeBytesG4.countsAsSaving).toBe(false);
+  expect(negativeBytesG4.emittedBytes).toBeNull();
+  expect((negativeBytesG4.gain as number) <= 0).toBe(true);
+
+  const unmatchedActiveG4 = bench.scoreReadSideCase({
+    state: "verified",
+    t0FirstMs: 100,
+    t1FirstMs: 5,
+    classificationMs: 1,
+    baselineCapMs: 30_000,
+    matchedExpectation: false,
+    isExpectedRefusal: true,
+    activeRefusalVerified: true,
+    emittedBytes: 0,
+  });
+  expect(unmatchedActiveG4.state).toBe("policy-unavailable");
+  expect(unmatchedActiveG4.matchedExpectation).toBe(false);
+  expect(unmatchedActiveG4.countsAsSaving).toBe(false);
+  expect((unmatchedActiveG4.gain as number) <= 0).toBe(true);
+
   const activeG4 = bench.scoreReadSideCase({
     state: "verified",
     t0FirstMs: 100,
@@ -802,6 +858,8 @@ it("a non-success first investigation scores its refusal time plus the baseline 
 
 it("a baseline arm that does not reach the verified answer is scored at the time cap recorded in the manifest before measurement and a manifest without a cap is refused", async () => {
   // 1. Refuse any manifest missing a valid positive finite protocol.baselineCapMs before measurement.
+  const notAGitDir = join(root, "not-a-git-dir");
+  mkdirSync(notAGitDir, { recursive: true });
   for (const invalidCap of [undefined, null, 0, -50, "30000"]) {
     const altered = structuredClone(manifest) as Record<string, any>;
     if (invalidCap === undefined) delete altered.protocol.baselineCapMs;
@@ -812,11 +870,13 @@ it("a baseline arm that does not reach the verified answer is scored at the time
     writeFileSync(badPath, JSON.stringify(altered));
     const res = spawnSync(
       process.execPath,
-      [BENCH, "--manifest", badPath, "--repo", `synthetic-h2a=${repoA}`, "--repo", `synthetic-s=${repoB}`, "--out", badOut],
+      [BENCH, "--manifest", badPath, "--repo", `synthetic-h2a=${notAGitDir}`,
+        "--repo", `synthetic-s=${notAGitDir}`, "--out", badOut],
       { encoding: "utf8", timeout: 30_000 },
     );
     expect(res.status, `cap=${String(invalidCap)} must exit 2`).toBe(2);
     expect(res.stderr).toContain("baselineCapMs");
+    expect(res.stderr).not.toContain("harness failure:");
     expect(existsSync(badOut)).toBe(false);
   }
 
@@ -861,6 +921,8 @@ it("a baseline arm that does not reach the verified answer is scored at the time
     matchedExpectation: true,
   });
   expect(capEvidence.cases[0].gain).toBeCloseTo(1 - capEvidence.cases[0].t1TotalMs / 5, 10);
+  expect(typeof capEvidence.cases[0].t0FirstOracleRuns).toBe("number");
+  expect(capEvidence.cases[0].t0FirstOracleRuns).toBeLessThan(60);
 
   // 4. Scoring helper: when T0 hits C=30000ms and T1 answers in 150ms, gain = 1 - 150/30000 = 0.995.
   const bench = (await import(pathToFileURL(BENCH).href)) as {
@@ -925,4 +987,41 @@ it("a baseline arm that does not reach the verified answer is scored at the time
     countsAsSaving: false,
     gain: 0,
   });
+});
+it("refuses --timeout-ms below manifest.protocol.baselineCapMs before measurement", () => {
+  const notAGitDir = join(root, "not-a-git-dir-timeout");
+  mkdirSync(notAGitDir, { recursive: true });
+  const badOut = join(root, "timeout-below-cap-out.json");
+  rmSync(badOut, { force: true });
+  const belowDefaultCap = spawnSync(
+    process.execPath,
+    [BENCH, "--manifest", manifestPath, "--repo", `synthetic-h2a=${notAGitDir}`,
+      "--repo", `synthetic-s=${notAGitDir}`, "--out", badOut, "--timeout-ms", "29999"],
+    { encoding: "utf8", timeout: 30_000 },
+  );
+  expect(belowDefaultCap.status).toBe(2);
+  expect(belowDefaultCap.stderr).toContain("--timeout-ms");
+  expect(belowDefaultCap.stderr).toContain("baselineCapMs");
+  expect(belowDefaultCap.stderr).not.toContain("harness failure:");
+  expect(existsSync(badOut)).toBe(false);
+
+  const smallCapManifest = structuredClone(manifest) as Record<string, any>;
+  smallCapManifest.protocol.baselineCapMs = 200;
+  const smallCapPath = join(root, "small-cap-timeout.json");
+  writeFileSync(smallCapPath, JSON.stringify(smallCapManifest));
+  const belowSmallCap = spawnSync(
+    process.execPath,
+    [BENCH, "--manifest", smallCapPath, "--repo", `synthetic-h2a=${notAGitDir}`,
+      "--repo", `synthetic-s=${notAGitDir}`, "--out", badOut, "--timeout-ms", "199"],
+    { encoding: "utf8", timeout: 30_000 },
+  );
+  expect(belowSmallCap.status).toBe(2);
+  expect(belowSmallCap.stderr).toContain("--timeout-ms");
+  expect(belowSmallCap.stderr).toContain("baselineCapMs");
+  expect(existsSync(badOut)).toBe(false);
+
+  const equalCapOut = join(root, "timeout-equal-cap-out.json");
+  const equalCapEvidence = runBench(smallCapPath, { "synthetic-h2a": repoA, "synthetic-s": repoB },
+    equalCapOut, ["--timeout-ms", "200"]);
+  expect(equalCapEvidence.baselineCapMs).toBe(200);
 });
