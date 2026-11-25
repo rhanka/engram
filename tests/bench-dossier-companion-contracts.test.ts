@@ -521,3 +521,104 @@ describe("SeatObservationInput and SeatObservationsFile refusal and boundary mat
     }), "EMPTY_STRING", "$.observations.a.planSource");
   });
 });
+
+describe("metrics.json top-level, optional, enum, count and string-map matrix", () => {
+  it("accepts optional deletions, all enums, and refuses top-level closed keys, strings and counts", () => {
+    for (const k of [
+      "goldenLabel", "costBasisLabel", "currency", "annotatorRunStats", "missingDigestRuns", "supportFloors",
+    ] as const) {
+      const doc = clone(makeMetricsImport()) as any;
+      delete doc[k];
+      expect(parseMetricsImportFile(doc).campaignId).toBe("lotb-eval-2026");
+    }
+    for (const k of [
+      "independentGroupSupport", "diagnostics", "armMissionSha256", "calls",
+      "tokens", "costBasisItems", "apiEquivalentTotal",
+    ] as const) {
+      const doc = clone(makeMetricsImport()) as any;
+      delete doc.records[0][k];
+      expect(parseMetricsImportFile(doc).records[0]?.armId).toBe("arm-openai-astra-low");
+    }
+    for (const v of ["pilot", "eval", "sealed", "blind", "full"]) {
+      const doc = clone(makeMetricsImport()) as any;
+      doc.partition = v;
+      expect(parseMetricsImportFile(doc).partition).toBe(v);
+    }
+    for (const v of ["unweighted", "weighted"]) {
+      const doc = clone(makeMetricsImport()) as any;
+      doc.primaryEstimator = v;
+      expect(parseMetricsImportFile(doc).primaryEstimator).toBe(v);
+    }
+    for (const v of ["extracted_packet", "attempted_id", "supplied_id"]) {
+      const doc = clone(makeMetricsImport()) as any;
+      doc.costBasisLabel = v;
+      expect(parseMetricsImportFile(doc).costBasisLabel).toBe(v);
+    }
+    for (const v of ["USD", "CAD"]) {
+      const doc = clone(makeMetricsImport()) as any;
+      doc.currency = v;
+      expect(parseMetricsImportFile(doc).currency).toBe(v);
+    }
+    for (const bad of [null, [], 42]) {
+      refuse(() => parseMetricsImportFile(bad), "NOT_OBJECT", "$");
+    }
+    for (const k of [
+      "campaignId", "goldenSha256", "goldenMissionSha256", "candidateMissionSha256", "goldenLabel",
+    ]) {
+      const doc = clone(makeMetricsImport()) as any;
+      doc[k] = " ";
+      refuse(() => parseMetricsImportFile(doc), "EMPTY_STRING", `$.${k}`);
+    }
+    const cases: [(d: any) => void, BenchResultsErrorCode, string][] = [
+      [(d) => { d.schemaId = "urn:engram:bench-results:1.0.0"; }, "BAD_SCHEMA", "$.schemaId"],
+      [(d) => { d.fieldShapeVerified = false; }, "BAD_SHAPE", "$.fieldShapeVerified"],
+      [(d) => { d.extra = 1; }, "UNKNOWN_KEY", "$.extra"],
+      [(d) => { d.supportFloors.extra = 1; }, "UNKNOWN_KEY", "$.supportFloors.extra"],
+      [(d) => { d.annotatorRunStats.r1.extra = 1; }, "UNKNOWN_KEY", "$.annotatorRunStats.r1.extra"],
+      [(d) => { delete d.goldenMissionSha256; }, "MISSING_KEY", "$.goldenMissionSha256"],
+      [(d) => { delete d.candidateMissionSha256; }, "MISSING_KEY", "$.candidateMissionSha256"],
+      [(d) => { d.partition = "train"; }, "BAD_ENUM", "$.partition"],
+      [(d) => { d.primaryEstimator = "ols"; }, "BAD_ENUM", "$.primaryEstimator"],
+      [(d) => { d.costBasisLabel = "raw"; }, "BAD_ENUM", "$.costBasisLabel"],
+      [(d) => { d.currency = "EUR"; }, "BAD_ENUM", "$.currency"],
+      [(d) => { d.goldenIds = 1.5; }, "BAD_COUNT", "$.goldenIds"],
+      [(d) => { d.annotatorCount = 2.5; }, "BAD_COUNT", "$.annotatorCount"],
+      [(d) => { d.fields = "office.city"; }, "NOT_ARRAY", "$.fields"],
+      [(d) => { d.fields = ["office.city", " "]; }, "EMPTY_STRING", "$.fields[1]"],
+      [(d) => { d.missingDigestRuns = "r1"; }, "NOT_ARRAY", "$.missingDigestRuns"],
+      [(d) => { d.missingDigestRuns = [""]; }, "EMPTY_STRING", "$.missingDigestRuns[0]"],
+      [(d) => { d.annotatorRunStats.r1.answered = 28.5; }, "BAD_COUNT", "$.annotatorRunStats.r1.answered"],
+      [(d) => { d.annotatorRunStats.r1.failed = 0.5; }, "BAD_COUNT", "$.annotatorRunStats.r1.failed"],
+      [(d) => { d.annotatorRunStats.r1.missing = -1; }, "BAD_COUNT", "$.annotatorRunStats.r1.missing"],
+      [(d) => { d.supportFloors.recallMinPositives = 1.5; }, "BAD_COUNT", "$.supportFloors.recallMinPositives"],
+      [(d) => { d.supportFloors.precisionMinPredictions = 1.5; },
+        "BAD_COUNT", "$.supportFloors.precisionMinPredictions"],
+      [(d) => { d.supportFloors.failureCeiling = 1.1; }, "UNIT_RANGE", "$.supportFloors.failureCeiling"],
+      [(d) => { d.krippendorffAlphaByField["office.city"] = Number.POSITIVE_INFINITY; },
+        "NON_FINITE", "$.krippendorffAlphaByField.office.city"],
+      [(d) => { d.records = {}; }, "NOT_ARRAY", "$.records"],
+    ];
+    for (const [mutate, code, path] of cases) {
+      const doc = clone(makeMetricsImport());
+      mutate(doc);
+      refuse(() => parseMetricsImportFile(doc), code, path);
+    }
+    for (const badKey of ["", "__proto__", "constructor", "prototype"]) {
+      const doc = clone(makeMetricsImport()) as any;
+      const m: Record<string, any> = {};
+      Object.defineProperty(m, badKey, { value: 0.5, enumerable: true });
+      doc.krippendorffAlphaByField = m;
+      refuse(() => parseMetricsImportFile(doc), "BAD_MAP_KEY", `$.krippendorffAlphaByField.${badKey}`);
+      const rm = clone(makeMetricsImport()) as any;
+      const fm: Record<string, number> = {};
+      Object.defineProperty(fm, badKey, { value: 1, enumerable: true });
+      rm.records[0].failuresByCode = fm;
+      refuse(() => parseMetricsImportFile(rm), "BAD_MAP_KEY", `$.records[0].failuresByCode.${badKey}`);
+      const am = clone(makeMetricsImport()) as any;
+      const sm: Record<string, unknown> = {};
+      Object.defineProperty(sm, badKey, { value: { answered: 1, failed: 0, missing: 0 }, enumerable: true });
+      am.annotatorRunStats = sm;
+      refuse(() => parseMetricsImportFile(am), "BAD_MAP_KEY", `$.annotatorRunStats.${badKey}`);
+    }
+  });
+});
