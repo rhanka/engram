@@ -78,13 +78,89 @@ describe("lot 6 json-ld export", () => {
     const s = (k: string, v: string) => ({ ...ai(2, "pertinent", "run-b"), stream: { ...a1.stream, [k]: v } });
     for (const x of [a1, s("scopeRef", "s2"), s("subjectRef", "o2"), s("slot", "note")])
       ex(() => go([seal(a1), seal(x)])).toThrow(/sequence/); });
-  it("fails closed on unimplemented arms and obeys static zero-I/O and no-read-back", () => {
+  const sh = (w: number[]) => ({ proposal: "shown" as const, shown: w }), ns = { proposal: "not-shown" as const };
+  const goC = (xs: Entry[], live = true) => { const d = go(xs.map(({ contentDigest: _d, ...r }) => parseEntry({ ...r,
+    contentDigest: digestOfPreimage(r) }, { live }))); checkDoc(d); return [(i: string) => byId(d, i), d] as const; };
+  const [A1, huA, qU1] = [R("_:ann-1"), "_:actor-human-analyst-b", { "@type": "prov:Usage", "prov:entity":
+    R("_:ann-1"), "prov:hadRole": R("_:role-displayed") }];
+  const c2: Entry = { ...env(2), subjectVersion: "sv1", actor: analyst, exposure: sh([1]),
+    action: { kind: "correct", judged: 1, value: cls("a_surveiller") }, classReasonCode: "S-PLANIFIE" };
+  it("exports worked correction (full _:ann-2), exposure.shown range/dedupe and metadata", () => {
+    const sealed = deepFreeze([a1, c2, ai(3, "pertinent", "run-b"), ai(4, "ecarte", "run-c", D2)].map(seal)),
+      doc = go(sealed), g = (id: string) => byId(doc, id); checkDoc(doc);
+    ex(doc["@graph"].map((n) => n["@id"])).toEqual(["_:sub-o", "_:sv-sv1", recA, aiA, huA, "_:role-decider",
+      "_:role-recorder", "_:role-displayed", `_:plan-${D}`, `_:plan-${D2}`, "_:ann-1", "_:act-1", "_:ann-2-verdict",
+      "_:ann-2", "_:act-2", "_:ann-3", "_:act-3", "_:ann-4", "_:act-4"]);
+    ex([g(huA), g("_:role-displayed")]).toStrictEqual([{ "@id": huA, "@type": ["prov:Agent", "prov:Person"] },
+      { "@id": "_:role-displayed", "rdf:value": "displayed" }]);
+    ex(g("_:ann-1")?.["prov:wasInvalidatedBy"]).toEqual(R("_:act-2"));
+    ex([g("_:ann-2-verdict"), g("_:ann-2"), g("_:act-2")]).toStrictEqual([{ "@id": "_:ann-2-verdict", "@type": [
+      "oa:Annotation", "prov:Entity"], "dcterms:creator": R(huA), "prov:wasAttributedTo": R(huA), "as:generator":
+      R(recA), "dcterms:created": "2026-11-24T00:00:02Z", "prov:generatedAtTime": "2026-11-24T00:00:02Z",
+      "prov:wasGeneratedBy": R("_:act-2"), scopeRef: "s", slot: "class", revision: 2, contentDigest:
+      sealed[1]!.contentDigest, "oa:motivatedBy": R("oa:assessing"), "oa:hasTarget": A1, "oa:hasBody": { decision:
+      "correct", classReasonCode: "S-PLANIFIE" } }, { "@id": "_:ann-2", "@type": ["oa:Annotation", "prov:Entity"],
+      "dcterms:creator": R(huA), "prov:wasAttributedTo": R(huA), "as:generator": R(recA), "dcterms:created":
+      "2026-11-24T00:00:02Z", "prov:generatedAtTime": "2026-11-24T00:00:02Z", "prov:wasGeneratedBy": R("_:act-2"),
+      scopeRef: "s", slot: "class", revision: 2, contentDigest: sealed[1]!.contentDigest, "oa:motivatedBy":
+      R("oa:classifying"), "oa:hasTarget": R("_:sv-sv1"), "oa:hasBody": { "@type": "oa:TextualBody", "rdf:value":
+      "a_surveiller", vocabulary: PROFILE_PIN }, "prov:wasDerivedFrom": A1 }, { "@id": "_:act-2", "@type": [
+      "prov:Activity"], channel: "ui-select", actor: analyst, exposure: { proposal: "shown", shown: [1] },
+      "prov:wasAssociatedWith": [R(huA), R(recA)], "prov:qualifiedAssociation": [{ "@type": "prov:Association",
+      "prov:agent": R(huA), "prov:hadRole": R("_:role-decider") }, { "@type": "prov:Association", "prov:agent": R(recA),
+      "prov:hadRole": R("_:role-recorder") }], "prov:used": [A1], "prov:qualifiedUsage": [qU1] }]);
+    ex(g("_:act-2")?.exposure).not.toBe(c2.exposure);
+    ex(noOwn(g("_:ann-3"), "prov:wasInvalidatedBy")).toBe(true);
+    const { classReasonCode: _c, ...c2No } = c2;
+    ex(goC([a1, c2No])[0]("_:ann-2-verdict")?.["oa:hasBody"]).toStrictEqual({ decision: "correct" });
+    const [gCr] = goC([a1, { ...c2, rationale: "w" }]); ex(noOwn(gCr("_:ann-2"), "rationale")).toBe(true);
+    ex(gCr("_:ann-2-verdict")?.["oa:hasBody"]).toStrictEqual({ decision: "correct", classReasonCode: "S-PLANIFIE",
+      rationale: "w" });
+    const shF = (w: number[]) => go([seal(a1), seal({ ...c2, exposure: sh(w) })]);
+    for (const xs of [[1, 2], [1, 99]]) ex(() => shF(xs)).toThrow(/out-of-range/);
+    ex(byId(shF([1, 1]), "_:act-2")).toMatchObject({ "prov:used": [A1], "prov:qualifiedUsage": [qU1] }); });
+  it("exports confirm, reject, human assert, AI-only filter (E21b/E19) and double-invalidation", () => {
+    const cf = u(2, { ...analyst, channel: "ui-thumbs" }, { kind: "confirm", judged: 1 }, { exposure: sh([1]) });
+    const [gCf] = goC([a1, cf]); ex(noOwn(gCf("_:ann-1"), "prov:wasInvalidatedBy")).toBe(true);
+    ex(gCf("_:ann-2")).toMatchObject({ "dcterms:creator": R(huA), "prov:wasAttributedTo": R(huA),
+      "oa:motivatedBy": R("oa:assessing"), "oa:hasTarget": A1, "oa:hasBody": { decision: "confirm" } });
+    ex(gCf("_:act-2")).toMatchObject({ channel: "ui-thumbs", "prov:used": [A1], "prov:qualifiedUsage": [qU1] });
+    ex(goC([a1, { ...cf, rationale: "ok" }])[0]("_:ann-2")?.["oa:hasBody"]).toStrictEqual({ decision: "confirm",
+      rationale: "ok" });
+    const [gRj] = goC([a1, u(2, analyst, { kind: "reject", judged: 1, reason: "contradicted" }, { exposure: sh([1]),
+      rationale: "err" })]);
+    ex(gRj("_:ann-1")?.["prov:wasInvalidatedBy"]).toEqual(R("_:act-2"));
+    ex(gRj("_:ann-2")).toMatchObject({ "oa:motivatedBy": R("oa:assessing"), "oa:hasTarget": A1,
+      "oa:hasBody": { decision: "reject", reason: "contradicted", rationale: "err" } });
+    const h2 = u(2, analyst, { kind: "assert", value: cls("ecarte") }, { exposure: ns, classReasonCode: "H",
+      rationale: "f" }), [gHa] = goC([a1, h2, u(3, analyst, a1.action, { exposure: sh([1, 2]) })]);
+    ex(gHa("_:ann-2")).toMatchObject({ "oa:motivatedBy": R("oa:classifying"), "oa:hasTarget": R("_:sv-sv1"),
+      classReasonCode: "H", rationale: "f", "oa:hasBody": { "@type": "oa:TextualBody", "rdf:value": "ecarte",
+        vocabulary: PROFILE_PIN } });
+    ex(gHa("_:act-3")).toMatchObject({ "prov:used": [A1], "prov:qualifiedUsage": [qU1] });
+    const hk = u(1, analyst, a1.action, { exposure: { proposal: "unknown" } });
+    for (const xs of [[a1, u(2, analyst, a1.action, { exposure: sh([]) })], [u(1, analyst, a1.action,
+      { exposure: ns })], [hk]]) { const [g, d] = goC(xs, false); ex(!g("_:role-displayed") &&
+      d["@graph"].every((n) => noOwn(n, "prov:used", "prov:qualifiedUsage"))).toBe(true); }
+    ex(goC([hk], false)[0]("_:act-1")?.exposure).toEqual({ proposal: "unknown" });
+    const [gC3] = goC([a1, c2, u(3, analyst, { kind: "correct", judged: 2, value: cls("ecarte") },
+      { replacesHuman: 2, exposure: sh([2]) })]);
+    ex(gC3("_:ann-2")?.["prov:wasInvalidatedBy"]).toEqual(R("_:act-3"));
+    ex(noOwn(gC3("_:act-3"), "prov:used", "prov:qualifiedUsage")).toBe(true);
+    const q = u(2, analyst, { kind: "reject", judged: 1, reason: "obsolete" }, { exposure: sh([1]) }),
+      r = { ...q, ...env(3), replacesHuman: 2 }, k = { ...c2, ...env(3), replacesHuman: 2 };
+    for (const t of [[a1, c2, r], [a1, q, r], [a1, c2, k]]) ex(() => go(t.map(seal))).toThrow(/invalidated twice/); });
+  it("fails closed on C3 unimplemented arms and obeys static zero-I/O and no-read-back", () => {
+    const el = { clientRef: "c", requestRef: "q", assurance: "server-asserted" as const, trace: "complete" as const,
+      protocolRevision: "2025-11-25", sessionRef: "s", requestDigest: D, responseDigest: D, startedAt:
+      "2026-11-24T00:00:01Z", endedAt: "2026-11-24T00:00:02Z", auditRef: "au" }, nt = { kind: "note" as const,
+      text: "n" };
     for (const fs of [[u(1, { kind: "ai", actorRef: "m", model: "m", channel: "mcp", clientRef: "c" }, a1.action)],
-      [u(1, a1.actor, { kind: "assert", value: { kind: "note", text: "n" } })],
-      [a1, u(2, a1.actor, { kind: "uncertain", judged: 1 })], [a1, u(2, analyst, { kind: "correct", judged: 1,
-        value: cls("ecarte") }, { exposure: { proposal: "shown", shown: [1] } })],
-      [u(1, analyst, a1.action, { exposure: { proposal: "not-shown" } })]] as Entry[][])
-      ex(() => go(fs.map(seal))).toThrow(/unimplemented/);
+      [u(1, { kind: "human", actorRef: "h", receiptRef: "r", channel: "mcp-elicitation", elicitation: el }, a1.action,
+        { exposure: ns })], [a1, u(2, a1.actor, { kind: "uncertain", judged: 1 })], [a1, u(2, a1.actor,
+      { kind: "needs-elicitation", judged: 1, question: "q?" })], [u(1, a1.actor, { kind: "assert", value: nt })],
+      [u(1, { kind: "adapter", actorRef: "imp", channel: "import" }, { kind: "preserve-source", row: { sourceRef: "r",
+        sourceDigest: D } }, { subjectVersion: null })]] as Entry[][]) ex(() => go(fs.map(seal))).toThrow(/unimp/);
     const src = readFileSync(join(HERE, "../src/annotation-trust/export.ts"), "utf8");
     ex(src).not.toMatch(/\bnode:|Date\.now|new Date|Math\.random|randomUUID|\bfetch\b|parseEntry|reduceEntries/);
     for (const f of ["profile", "types", "parse", "reduce"])
