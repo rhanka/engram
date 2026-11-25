@@ -1,5 +1,12 @@
 import { validateExtraction } from "./validate.js";
-import type { Extraction, GraphEdge, GraphNode, NormalizedOntologyProfile } from "./types.js";
+import type { MetamodelTemplateDocument, StateMachineDecl } from "./metamodel/types.js";
+import type {
+  Extraction,
+  GraphEdge,
+  GraphNode,
+  NormalizedOntologyProfile,
+  OntologyRelationCardinality,
+} from "./types.js";
 
 export const INVALID_RELATION_CARDINALITY = "MM_REL_INVALID_CARDINALITY";
 
@@ -11,17 +18,25 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 
 export function validateRelationCardinality(cardinality: unknown, path: string): string[] {
   if (cardinality === undefined) return [];
-  if (!isRecord(cardinality) || Object.keys(cardinality).some((key) => key !== "in" && key !== "out")) {
+  if (!isRecord(cardinality)) {
+    return [`${path} ${INVALID_RELATION_CARDINALITY}: expected an object with optional in and out bounds`];
+  }
+  const entries = Object.entries(cardinality);
+  if (entries.some(([key]) => key !== "in" && key !== "out")) {
     return [`${path} ${INVALID_RELATION_CARDINALITY}: expected an object with optional in and out bounds`];
   }
 
   const errors: string[] = [];
-  for (const direction of ["in", "out"] as const) {
-    const bound = cardinality[direction];
+  for (const [direction, bound] of entries) {
     if (bound === undefined) continue;
-    if (!isRecord(bound) || Object.keys(bound).some((key) => key !== "min" && key !== "max") ||
-      typeof bound.min !== "number" || !Number.isInteger(bound.min) || bound.min < 0 ||
-      (bound.max !== "many" && (typeof bound.max !== "number" || !Number.isInteger(bound.max) || bound.max < bound.min))) {
+    if (
+      !isRecord(bound) ||
+      Object.entries(bound).some(([key]) => key !== "min" && key !== "max") ||
+      typeof bound.min !== "number" ||
+      !Number.isInteger(bound.min) ||
+      bound.min < 0 ||
+      (bound.max !== "many" && (typeof bound.max !== "number" || !Number.isInteger(bound.max) || bound.max < bound.min))
+    ) {
       errors.push(`${path}.${direction} ${INVALID_RELATION_CARDINALITY}: expected integer min >= 0 and integer max >= min or "many"`);
     }
   }
@@ -42,6 +57,7 @@ export interface ProfileValidationIssue {
 export interface ProfileValidationContext {
   profile: NormalizedOntologyProfile;
   registryExtraction?: Extraction;
+  metamodelTemplate?: MetamodelTemplateDocument;
 }
 
 export interface ProfileValidationResult {
@@ -247,6 +263,197 @@ function isRegistrySeed(node: GraphNode): boolean {
   return Boolean(stringValue(node.registry_id) && stringValue(node.registry_record_id));
 }
 
+function isStateMachineDecl(value: unknown): value is StateMachineDecl {
+  return (
+    isRecord(value) &&
+    Array.isArray(value.states) &&
+    value.states.every((state) => typeof state === "string") &&
+    typeof value.initial_state === "string" &&
+    Array.isArray(value.transitions)
+  );
+}
+
+function getNodeStateMachine(
+  profileNodeType: Record<string, unknown>,
+  nodeType: string,
+  metamodelTemplate?: MetamodelTemplateDocument,
+): StateMachineDecl | undefined {
+  if (isStateMachineDecl(profileNodeType.state_machine)) return profileNodeType.state_machine;
+  const tmplNode = metamodelTemplate?.node_types[nodeType];
+  return tmplNode && isStateMachineDecl(tmplNode.state_machine) ? tmplNode.state_machine : undefined;
+}
+
+function getNodeStateMachines(
+  profileNodeType: Record<string, unknown>,
+  nodeType: string,
+  metamodelTemplate?: MetamodelTemplateDocument,
+): Readonly<Record<string, StateMachineDecl>> | undefined {
+  const raw = isRecord(profileNodeType.state_machines)
+    ? profileNodeType.state_machines
+    : metamodelTemplate?.node_types[nodeType]?.state_machines;
+  if (!isRecord(raw)) return undefined;
+  const axes: Record<string, StateMachineDecl> = {};
+  for (const [axis, machine] of Object.entries(raw)) {
+    if (isStateMachineDecl(machine)) axes[axis] = machine;
+  }
+  return Object.keys(axes).length > 0 ? axes : undefined;
+}
+
+function validateAgainstStateMachine(
+  currentStatus: string,
+  previousStatus: string,
+  machine: StateMachineDecl,
+  issues: ProfileValidationIssue[],
+  where: { nodeId?: string; edgeIndex?: number; path: string },
+  axisLabel?: string,
+): void {
+  if (!currentStatus) return;
+  const label = axisLabel ? ` axis ${axisLabel}` : "";
+  if (!machine.states.includes(currentStatus)) {
+    addIssue(issues, {
+      severity: "error",
+      code: "unknown_status",
+      message: `${where.path}${label} has unknown status ${currentStatus}`,
+      ...where,
+    });
+    return;
+  }
+  if (!previousStatus || previousStatus === currentStatus) return;
+  if (!machine.states.includes(previousStatus)) {
+    addIssue(issues, {
+      severity: "error",
+      code: "unknown_previous_status",
+      message: `${where.path}${label} has unknown previous_status ${previousStatus}`,
+      ...where,
+    });
+    return;
+  }
+  const allowed = machine.transitions.some(
+    (transition) =>
+      Array.isArray(transition.from) &&
+      Array.isArray(transition.to) &&
+      transition.from.includes(previousStatus) &&
+      transition.to.includes(currentStatus),
+  );
+  if (!allowed) {
+    addIssue(issues, {
+      severity: "error",
+      code: "invalid_status_transition",
+      message: `${where.path}${label} cannot transition from ${previousStatus} to ${currentStatus}`,
+      ...where,
+    });
+  }
+}
+
+function validateNodeStateMachines(
+  node: GraphNode,
+  profileNodeType: Record<string, unknown>,
+  nodeType: string,
+  profile: NormalizedOntologyProfile,
+  metamodelTemplate: MetamodelTemplateDocument | undefined,
+  issues: ProfileValidationIssue[],
+  where: { nodeId?: string; path: string },
+): void {
+  const singleMachine = getNodeStateMachine(profileNodeType, nodeType, metamodelTemplate);
+  const multiMachines = getNodeStateMachines(profileNodeType, nodeType, metamodelTemplate);
+
+  if (singleMachine) {
+    validateAgainstStateMachine(
+      stringValue(node.status),
+      stringValue(node.previous_status),
+      singleMachine,
+      issues,
+      where,
+    );
+  }
+
+  if (multiMachines) {
+    if (node.states !== undefined && !isRecord(node.states)) {
+      addIssue(issues, {
+        severity: "error",
+        code: "unknown_status",
+        message: `${where.path}.states must be a plain object mapping state axes to statuses`,
+        nodeId: where.nodeId,
+        path: `${where.path}.states`,
+      });
+    }
+    if (node.previous_states !== undefined && !isRecord(node.previous_states)) {
+      addIssue(issues, {
+        severity: "error",
+        code: "unknown_previous_status",
+        message: `${where.path}.previous_states must be a plain object mapping state axes to statuses`,
+        nodeId: where.nodeId,
+        path: `${where.path}.previous_states`,
+      });
+    }
+
+    const rawStates = isRecord(node.states) ? node.states : undefined;
+    const rawPrevStates = isRecord(node.previous_states) ? node.previous_states : undefined;
+    const rawAttrs = isRecord(node.attributes) ? node.attributes : undefined;
+
+    for (const [label, map] of [
+      ["states", rawStates],
+      ["previous_states", rawPrevStates],
+    ] as const) {
+      if (!map) continue;
+      for (const [axisName] of Object.entries(map)) {
+        if (!Object.hasOwn(multiMachines, axisName)) {
+          addIssue(issues, {
+            severity: "error",
+            code: "unknown_state_axis",
+            message: `${where.path} references unknown state axis ${axisName}`,
+            nodeId: where.nodeId,
+            path: `${where.path}.${label}.${axisName}`,
+          });
+        }
+      }
+    }
+
+    for (const [axisName, machine] of Object.entries(multiMachines)) {
+      const rawCurrent = rawStates?.[axisName];
+      if (rawCurrent !== undefined && (typeof rawCurrent !== "string" || rawCurrent.trim().length === 0)) {
+        addIssue(issues, {
+          severity: "error",
+          code: "unknown_status",
+          message: `${where.path} axis ${axisName} status must be a non-empty string`,
+          nodeId: where.nodeId,
+          path: `${where.path}.states.${axisName}`,
+        });
+        continue;
+      }
+      const rawPrev = rawPrevStates?.[axisName];
+      let previousState = "";
+      if (rawPrev !== undefined && (typeof rawPrev !== "string" || rawPrev.trim().length === 0)) {
+        addIssue(issues, {
+          severity: "error",
+          code: "unknown_previous_status",
+          message: `${where.path} axis ${axisName} previous_status must be a non-empty string`,
+          nodeId: where.nodeId,
+          path: `${where.path}.previous_states.${axisName}`,
+        });
+      } else {
+        previousState = stringValue(rawPrev) || stringValue(node[`previous_${axisName}`]);
+      }
+      const currentState =
+        stringValue(rawCurrent) ||
+        stringValue(node[axisName]) ||
+        stringValue(rawAttrs?.[axisName]);
+      validateAgainstStateMachine(
+        currentState,
+        previousState,
+        machine,
+        issues,
+        { nodeId: where.nodeId, path: `${where.path}.states.${axisName}` },
+        axisName,
+      );
+    }
+  }
+
+  if (!singleMachine && !multiMachines) {
+    validateStatus(node, profile, issues, where);
+  }
+}
+
 function validateNode(
   node: GraphNode,
   profile: NormalizedOntologyProfile,
@@ -254,6 +461,7 @@ function validateNode(
   registryRecords: Map<string, Set<string>>,
   issues: ProfileValidationIssue[],
   index: number,
+  metamodelTemplate?: MetamodelTemplateDocument,
 ): void {
   const nodeType = stringValue(node.node_type);
   if (!nodeType) return;
@@ -271,7 +479,15 @@ function validateNode(
     return;
   }
 
-  validateStatus(node, profile, issues, { nodeId: node.id, path: nodePath });
+  validateNodeStateMachines(
+    node,
+    profileNodeType as unknown as Record<string, unknown>,
+    nodeType,
+    profile,
+    metamodelTemplate,
+    issues,
+    { nodeId: node.id, path: nodePath },
+  );
   validateRegistryRefs(node, profile, registryRecords, issues, index);
   const evidencePolicy = profile.evidence_policy ?? {
     require_evidence_refs: false,
@@ -405,6 +621,73 @@ function validateEdge(
   }
 }
 
+function validateRelationCardinalities(
+  typed: Extraction,
+  profile: NormalizedOntologyProfile,
+  issues: ProfileValidationIssue[],
+  metamodelTemplate?: MetamodelTemplateDocument,
+): void {
+  const outCountsByRelation = new Map<string, Map<string, number>>();
+  const inCountsByRelation = new Map<string, Map<string, number>>();
+
+  for (const edge of typed.edges) {
+    const relation = stringValue(edge.relation);
+    if (!relation) continue;
+    const outMap = outCountsByRelation.get(relation) ?? new Map<string, number>();
+    outMap.set(edge.source, (outMap.get(edge.source) ?? 0) + 1);
+    outCountsByRelation.set(relation, outMap);
+
+    const inMap = inCountsByRelation.get(relation) ?? new Map<string, number>();
+    inMap.set(edge.target, (inMap.get(edge.target) ?? 0) + 1);
+    inCountsByRelation.set(relation, inMap);
+  }
+
+  for (const [relationId, relationSpec] of Object.entries(profile.relation_types)) {
+    const cardinality: OntologyRelationCardinality | undefined =
+      relationSpec.cardinality ?? metamodelTemplate?.relation_types?.[relationId]?.cardinality;
+    if (!cardinality || validateRelationCardinality(cardinality, `relation_types.${relationId}.cardinality`).length > 0) {
+      continue;
+    }
+
+    const outCounts = outCountsByRelation.get(relationId);
+    const inCounts = inCountsByRelation.get(relationId);
+
+    typed.nodes.forEach((node, index) => {
+      const nodeType = stringValue(node.node_type);
+      if (!nodeType) return;
+      const nodePath = `nodes[${index}]`;
+
+      if (cardinality.out && relationSpec.source_types.includes(nodeType)) {
+        const count = outCounts?.get(node.id) ?? 0;
+        const { min, max } = cardinality.out;
+        if (count < min || (max !== "many" && count > max)) {
+          addIssue(issues, {
+            severity: "error",
+            code: "relation_cardinality_violation",
+            message: `${nodePath} has ${count} outgoing ${relationId} edge(s), violating cardinality.out [${min}, ${String(max)}]`,
+            path: `${nodePath}.relation_cardinality.${relationId}.out`,
+            nodeId: node.id,
+          });
+        }
+      }
+
+      if (cardinality.in && relationSpec.target_types.includes(nodeType)) {
+        const count = inCounts?.get(node.id) ?? 0;
+        const { min, max } = cardinality.in;
+        if (count < min || (max !== "many" && count > max)) {
+          addIssue(issues, {
+            severity: "error",
+            code: "relation_cardinality_violation",
+            message: `${nodePath} has ${count} incoming ${relationId} edge(s), violating cardinality.in [${min}, ${String(max)}]`,
+            path: `${nodePath}.relation_cardinality.${relationId}.in`,
+            nodeId: node.id,
+          });
+        }
+      }
+    });
+  }
+}
+
 export function validateProfileExtraction(
   extraction: unknown,
   profileState: ProfileValidationContext,
@@ -424,11 +707,12 @@ export function validateProfileExtraction(
     const registryRecords = buildRegistryRecords(profileState.registryExtraction);
     typed.nodes.forEach((node, index) => {
       nodesById.set(node.id, node);
-      validateNode(node, profile, evidenceIds, registryRecords, issues, index);
+      validateNode(node, profile, evidenceIds, registryRecords, issues, index, profileState.metamodelTemplate);
     });
     typed.edges.forEach((edge, index) => {
       validateEdge(edge, profile, nodesById, evidenceIds, issues, index);
     });
+    validateRelationCardinalities(typed, profile, issues, profileState.metamodelTemplate);
   }
 
   return {
