@@ -176,6 +176,10 @@ describe("lot 4a protected selection and veto", () => {
       { ...env(4), subjectVersion: "sv1", actor: analyst, exposure: shown(1),
         action: { kind: "reject", judged: 1, reason: "duplicate" } }], /unlisted transition at revision 4/],
     ["a vetoed alternative still names nothing", [a1, d2, v3, a4, { ...r5keep, replacesHuman: 3 }], /must set replacesHuman to null/],
+    ["an assert over a veto with null replacesHuman", [a1, c2, a3, r4, r5, { ...h6, replacesHuman: null }],
+      /must set replacesHuman to 5/],
+    ["an assert over a veto with stale replacesHuman", [a1, c2, a3, r4, r5, { ...h6, replacesHuman: 2 }],
+      /must set replacesHuman to 5/],
   ])("refuses %s", (_n, fs, msg) => {
     expect(() => replay(...fs)).toThrow(msg);
   });

@@ -1,4 +1,4 @@
-// Lot 1: annotation-trust-feedback@0.2.2 base declaration (§§1,6,7 row 1).
+// Lot 1: annotation-trust-feedback@0.2.3 base declaration (§§1,6,7 row 1).
 import { assertExactKeys } from "../../engram-memory/dist/validation.js";
 import type { OntologyTemplateEnvelopeRef } from "../metamodel-contracts.js";
 import { deepFreeze, hashOntologyProfile, normalizeOntologyProfile } from "../ontology-profile.js";
@@ -7,7 +7,7 @@ import { semanticProfileDigest } from "../ontology-guardian/digests.js";
 import type { Pin } from "../ontology-guardian/types.js";
 import type { OntologyProfile } from "../types.js";
 export const PROFILE_ID = "annotation-trust-feedback";
-export const PROFILE_VERSION = "0.2.2";
+export const PROFILE_VERSION = "0.2.3";
 export const PREFIXES = deepFreeze({ oa: "http://www.w3.org/ns/oa#", prov: "http://www.w3.org/ns/prov#", dcterms: "http://purl.org/dc/terms/", as: "http://www.w3.org/ns/activitystreams#", rdf: "http://www.w3.org/1999/02/22-rdf-syntax-ns#" });
 export const standardTerms: Record<string, readonly string[]> = deepFreeze({ Annotation: ["oa:Annotation", "prov:Entity"], motivation: ["oa:assessing", "oa:classifying", "oa:commenting", "oa:motivatedBy", "oa:questioning"], value: ["oa:TextualBody", "oa:hasBody", "rdf:value"], SubjectVersion: ["oa:SpecificResource", "prov:Entity"], targets: ["oa:hasTarget"], version_of: ["oa:hasSource"], Subject: ["prov:Entity"], SourceRow: ["prov:Entity"], Actor: ["prov:Agent", "prov:Person", "prov:SoftwareAgent"], authored_by: ["dcterms:creator", "prov:wasAttributedTo"], recorded_by: ["as:generator"], recordedAt: ["dcterms:created", "prov:generatedAtTime"], Activity: ["prov:Activity", "prov:wasGeneratedBy"], associated_with: ["prov:Association", "prov:agent", "prov:hadRole", "prov:qualifiedAssociation", "prov:wasAssociatedWith"], PromptTemplate: ["prov:Association", "prov:Plan", "prov:hadPlan"], displayed: ["prov:Usage", "prov:entity", "prov:hadRole", "prov:qualifiedUsage", "prov:used"], derived_from: ["prov:wasDerivedFrom"], invalidated_by: ["prov:wasInvalidatedBy"], slot: [], scopeRef: [], revision: [], contentDigest: [], promptDigest: [], channel: [], exposure: [], validation: [], trust: [], evaluationRole: [], Selection: [], EvaluationPair: [], selects: [], pairs: [] });
 const open = ["unreviewed", "uncertain", "awaiting-elicitation"] as const;
@@ -24,10 +24,23 @@ export const validation = {
     { from: decidable, to: ["rejected"], requires: ["reject"], authority: "own-act-human" }
   ]
 } as const;
+export const channel = {
+  kind: "enum", required: true,
+  values: ["pipeline", "mcp", "ui-select", "ui-thumbs", "mcp-elicitation", "import"],
+} as const;
+export const exposure = { kind: "enum", required: false, values: ["shown", "not-shown", "unknown"] } as const;
+export const trust = { kind: "enum", required: true, values: ["provisional", "trusted", "withheld"] } as const;
+export const role = {
+  kind: "enum", required: true, values: ["blind", "known-error", "anchored", "unscored"],
+} as const;
 const RELATIONS: Record<string, { source_types: string[]; target_types: string[] }> = { targets: { source_types: ["Annotation"], target_types: ["SubjectVersion", "Annotation"] }, version_of: { source_types: ["SubjectVersion"], target_types: ["Subject"] }, authored_by: { source_types: ["Annotation"], target_types: ["Actor"] }, recorded_by: { source_types: ["Annotation"], target_types: ["Actor"] }, displayed: { source_types: ["Annotation"], target_types: ["Annotation"] }, derived_from: { source_types: ["Annotation"], target_types: ["Annotation", "SourceRow"] }, selects: { source_types: ["Selection"], target_types: ["Annotation"] }, pairs: { source_types: ["EvaluationPair"], target_types: ["Annotation"] } };
 export const template = {
   metamodel_version: "engram.metamodel/v1" as const, lineage: "engram" as const, id: PROFILE_ID, version: PROFILE_VERSION,
-  node_types: { Subject: {}, SubjectVersion: {}, Actor: {}, SourceRow: {}, Annotation: { state_machines: { validation } }, Selection: {}, EvaluationPair: {} },
+  node_types: {
+    Subject: {}, SubjectVersion: {}, Actor: {}, SourceRow: {},
+    Annotation: { attributes: { channel, exposure }, state_machines: { validation } },
+    Selection: { attributes: { trust } }, EvaluationPair: { attributes: { role } },
+  },
   relation_types: RELATIONS, standard_terms: standardTerms
 };
 export function baseProfile(): OntologyProfile {

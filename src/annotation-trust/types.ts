@@ -1,10 +1,16 @@
 // Lot 2a: discriminated annotation-trust entry types (§6, §7 row 2a).
 import type { OntologyTemplateEnvelopeRef } from "../metamodel-contracts.js";
-import type { template, validation } from "./profile.js";
+import type { channel, role, template, trust, validation } from "./profile.js";
 import type { Digest, Pin } from "../ontology-guardian/types.js";
 import type { Confidence, GraphEdge, OntologyCitation, OntologyEvidenceRecord } from "../types.js";
-export type Channel = "pipeline" | "mcp" | "ui-select" | "ui-thumbs" | "mcp-elicitation" | "import";
-export type RejectReason = "wrong-subject" | "contradicted" | "insufficient-evidence" | "obsolete" | "duplicate" | "out-of-scope";
+export type Channel = (typeof channel.values)[number];
+export const AI_CHANNELS = ["pipeline", "mcp"] as const satisfies readonly Channel[];
+export const HUMAN_CHANNELS = ["ui-select", "ui-thumbs", "mcp-elicitation"] as const satisfies readonly Channel[];
+export const ADAPTER_CHANNEL = "import" as const satisfies Channel;
+export const REJECT_REASONS = [
+  "wrong-subject", "contradicted", "insufficient-evidence", "obsolete", "duplicate", "out-of-scope",
+] as const;
+export type RejectReason = (typeof REJECT_REASONS)[number];
 export type Value = { kind: "class"; vocabulary: Pin; code: string } | { kind: "note"; text: string };
 export type SourceLink = { sourceRef: string; sourceDigest: Digest };
 export type AI = { kind: "ai"; actorRef: string; model: string } & (
@@ -28,8 +34,8 @@ export type StreamRef = { scopeRef: string; subjectRef: string; slot: string };
 // Lot 3 derived-read types (§3, §7 row 3). ReadModel is §6 verbatim, defined
 // once here; pairs and matchingRejections stay empty until lots 5 and 4a fill them.
 export type Validation = (typeof validation.states)[number];
-export type Trust = "provisional" | "trusted" | "withheld";
-export type EvaluationRole = "blind" | "known-error" | "anchored" | "unscored";
+export type Trust = (typeof trust.values)[number];
+export type EvaluationRole = (typeof role.values)[number];
 export type ValueAt = { revision: number; subjectVersion: string; value: Value; validation: Validation;
   author: AI | Human; contentDigest: Digest; createdAt: string; lastReviewedAt: string | null };
 export type HumanHead = { decision: number; by: Human; exposure: Exposure; decidedAt: string } & (

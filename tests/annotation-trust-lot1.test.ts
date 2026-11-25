@@ -5,7 +5,10 @@ import { fileURLToPath } from "node:url";
 import { hashOntologyProfile, normalizeOntologyProfile, validateOntologyProfile } from "../src/ontology-profile.js";
 import { validateProfileExtraction } from "../src/profile-validate.js";
 import { semanticProfileDigest } from "../src/ontology-guardian/digests.js";
-import { baseProfile, PREFIXES, PROFILE_PIN, standardTerms, template, TEMPLATE_REF, UNVERIFIED_RULE_SHEET_PIN, validation, validateStandardTerms, verifyPins } from "../src/annotation-trust/profile.js";
+import { isInstant } from "../src/time-reference/format.js";
+import { baseProfile, PREFIXES, PROFILE_PIN, PROFILE_VERSION, standardTerms, template, TEMPLATE_REF,
+  UNVERIFIED_RULE_SHEET_PIN, validation, validateStandardTerms, verifyPins } from "../src/annotation-trust/profile.js";
+import { ADAPTER_CHANNEL, AI_CHANNELS, HUMAN_CHANNELS, REJECT_REASONS } from "../src/annotation-trust/types.js";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const spec = readFileSync(join(HERE, "../spec/SPEC_ONTOLOGY_ANNOTATION_TRUST_AND_FEEDBACK.md"), "utf8");
 function specTerms(): Map<string, string[]> {
@@ -68,12 +71,36 @@ describe("lot 1 annotation trust base", () => {
     expect(validateStandardTerms({ ...standardTerms, constructor: ["oa:Annotation"] }).join(" ")).toMatch(/unknown standard_term/);
     const fixture = JSON.parse(readFileSync(join(HERE, "fixtures/annotation-trust/prefix-bindings.json"), "utf8"));
     expect({ ...fixture.bindings["@context"], prov: fixture.prov.iri }).toEqual(PREFIXES);
+    expect(Object.hasOwn(fixture, "_note")).toBe(false);
+    expect(isInstant(fixture.retrieved)).toBe(true);
+    expect(fixture.sha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(typeof fixture.extract === "string" && fixture.extract.length > 0).toBe(true);
+    expect(PROFILE_VERSION).toBe("0.2.3");
+    expect(template.node_types.Annotation.attributes).toEqual({
+      channel: { kind: "enum", required: true,
+        values: ["pipeline", "mcp", "ui-select", "ui-thumbs", "mcp-elicitation", "import"] },
+      exposure: { kind: "enum", required: false, values: ["shown", "not-shown", "unknown"] },
+    });
+    expect(template.node_types.Selection.attributes).toEqual({
+      trust: { kind: "enum", required: true, values: ["provisional", "trusted", "withheld"] },
+    });
+    expect(template.node_types.EvaluationPair.attributes).toEqual({
+      role: { kind: "enum", required: true, values: ["blind", "known-error", "anchored", "unscored"] },
+    });
+    expect([AI_CHANNELS, HUMAN_CHANNELS, ADAPTER_CHANNEL]).toEqual([
+      ["pipeline", "mcp"], ["ui-select", "ui-thumbs", "mcp-elicitation"], "import",
+    ]);
+    expect(REJECT_REASONS).toEqual([
+      "wrong-subject", "contradicted", "insufficient-evidence", "obsolete", "duplicate", "out-of-scope",
+    ]);
   });
   it("mismatched template or rule-sheet pin is refused", () => {
     expect(() => verifyPins(TEMPLATE_REF, UNVERIFIED_RULE_SHEET_PIN)).not.toThrow();
     expect(TEMPLATE_REF.templateDigestSha256).toMatch(/^sha256:[0-9a-f]{64}$/);
     expect(semanticProfileDigest({ ...template, presentation: { label: "x" } })).toBe(TEMPLATE_REF.templateDigestSha256);
-    expect(() => verifyPins({ ...TEMPLATE_REF, templateVersion: "0.2.3" }, UNVERIFIED_RULE_SHEET_PIN)).toThrow(/template pin/);
+    expect(() => verifyPins({ ...TEMPLATE_REF, templateVersion: "0.2.4" }, UNVERIFIED_RULE_SHEET_PIN)).toThrow(
+      /template pin/,
+    );
     expect(() => verifyPins({ ...TEMPLATE_REF, templateDigestSha256: `sha256:${"0".repeat(64)}` }, UNVERIFIED_RULE_SHEET_PIN)).toThrow(/template pin/);
     expect(() => verifyPins({ ...TEMPLATE_REF, extra: true } as unknown as typeof TEMPLATE_REF, UNVERIFIED_RULE_SHEET_PIN)).toThrow();
     expect(() => verifyPins(TEMPLATE_REF, { ...UNVERIFIED_RULE_SHEET_PIN, contentDigest: "0".repeat(64) })).toThrow(/rule-sheet pin/);

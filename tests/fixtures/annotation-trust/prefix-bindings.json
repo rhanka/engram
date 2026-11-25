@@ -1,5 +1,7 @@
 {
-  "_note": "lot 1 binding fixture: transcribed from the W3C context, verified live by the build reviewer on 24/11; prov is separate, sourced to the PROV-O namespace statement",
+  "retrieved": "2026-11-24T07:13:19Z",
+  "sha256": "c10fd886c5c726fbfd51747b8677eb8f7d02c039357269622de7382e5c20d410",
+  "extract": "upstream lines 3, 5, 8, 14, verbatim",
   "upstream": "http://www.w3.org/ns/anno.jsonld",
   "bindings": {
     "@context": {

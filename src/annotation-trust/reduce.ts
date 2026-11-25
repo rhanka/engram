@@ -195,7 +195,7 @@ export function reduceEntries(entries: readonly Entry[], at: { stream: StreamRef
           humanValue: { rejected: he.action.reason }, role: "known-error" });
       }
     }
-    if (e.actor.kind === "ai" && e.action.kind === "assert") aiSeen = true;
+    if ((e.actor.kind === "ai" && e.action.kind === "assert") || e.action.kind === "preserve-source") aiSeen = true;
   }
   const pairs: EvaluationPair[] = [...slots].sort(([a], [b]) => a - b)
     .flatMap(([, s]) => [s.blind, s.other].filter((p): p is EvaluationPair => p !== null));
