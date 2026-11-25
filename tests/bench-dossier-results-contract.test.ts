@@ -3,8 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  BENCH_RESULTS_SCHEMA_ID, BENCH_RESULTS_SCHEMA_VERSION, parseBenchResultsFile,
-  readBenchResultsFile, type BenchInterval, type BenchResultsFile,
+  BENCH_RESULTS_SCHEMA_ID, BENCH_RESULTS_SCHEMA_VERSION, COST_BASIS_KINDS, COST_UNKNOWN_REASONS,
+  CURRENCY_CODES, EFFORT_LEVELS, ESTIMATOR_KINDS, INTERVAL_CLUSTERINGS, INTERVAL_METHODS,
+  PARTITION_KINDS, SEAT_METHODS, SEAT_STATUSES, SEAT_UNKNOWN_REASONS, TARIFF_STATUSES,
+  parseBenchResultsFile, readBenchResultsFile, type BenchInterval, type BenchResultsFile,
 } from "../src/bench-dossier/results-contract.js";
 import {
   arrayOf, BenchResultsValidationError, booleanValue, countInt, enumValue, fieldsOf, finiteNumber,
@@ -233,6 +235,123 @@ describe("BenchResultRecord schema validation", () => {
       const doc = clone(file);
       mutate(doc);
       refuse(() => parseBenchResultsFile(doc), code, path);
+    }
+  });
+});
+
+function makeCascadeRecord(): BenchResultsFile["records"][number] {
+  const invalidIv: BenchInterval = {
+    estimator: "unweighted", method: "none", clustering: "clustered_record_invalid",
+    valid: false, low: null, high: null,
+  };
+  return {
+    armId: "arm-cascade", armMissionSha256: "e".repeat(64), missingDigestAllowed: true,
+    provider: "Cascades", model: "cascade-v1", modelLabel: "Cascade", proseName: "Cascade one",
+    effort: "cascade", isCascade: true, isHighlighted: false, incomplete: true,
+    field: "office.full_address", comparator: "generic", isPrimaryComparator: false,
+    attempted: 30, accepted: 18, failed: 12, failuresByCode: {}, unverifiedQuotesNulled: 0,
+    unverifiedWholeRecordsDropped: null, goldPositive: 18, goldAbsent: 6, tp: 9, fp: 9,
+    fpOnPresent: 6, fpOnAbsent: 3, fpElementsOnAbsent: 3, fn: 9, tn: 3, failedOnAbsent: 0,
+    unresolved: 1, insufficient: 2, abstentionSpecificity: null,
+    sitePresence: { goldPresentSites: 18, goldAbsentSites: 6, unresolvedSites: 1, insufficientSites: 2,
+      tpSites: 9, fnSites: 9, wrongValueOnPresentSites: 5, fpOnAbsentSites: 3, tnSites: 3,
+      failedOnAbsentSites: 0, siteRecall: 0.5, siteRecallInterval: {
+        estimator: "unweighted", method: "clopper_pearson_95_one_sided",
+        clustering: "independent_site", valid: true, low: 0.31, high: null,
+      }, siteAbstentionSpecificity: null, siteAbstentionInterval: invalidIv },
+    unweighted: { precision: 0.5, recall: 0.5, f1: 0.5,
+      precisionInterval: invalidIv, recallInterval: invalidIv },
+    weighted: null, precision: null, recall: null, f1: null,
+    precisionInterval: invalidIv, recallInterval: invalidIv,
+    indeterminate: { precision: false, recall: false, f1: false },
+    calls: "unknown", callsPerItem: "unknown", tokens: "unknown",
+    cost: { currency: "CAD", costBasisItems: 1705, costUnknownReason: "incomplete-invocation-summary",
+      apiEquivalentTotal: "unknown", apiEquivalentPerItem: "unknown", tariffStatus: "unknown",
+      tariffSource: null, tariffAsOf: null, fxApplied: null, seatStatus: "unknown",
+      seatMethod: "unknown", seatUnknownReason: "shared-seat-concurrent",
+      seatSharePerItem: "unknown", seatCostPerItem: "unknown", seatPlan: null,
+      seatMonthlyPrice: null, seatLimitScale: null, seatPlanSource: null, seatPlanAsOf: null },
+  };
+}
+
+function makeValidFile(): BenchResultsFile {
+  return { ...makeValidEnvelope(), records: [makePrimaryRecord(), makeCascadeRecord()] };
+}
+
+describe("BenchResultsFile cascade, single-field variations and enum coverage", () => {
+  it("accepts cascade unknown-cost records and single-field optional or boundary variations", () => {
+    expect(parseBenchResultsFile(makeValidFile()).records).toHaveLength(2);
+    const optCorpus = ["goldenLabel", "maxValuesChanged", "captureSuppliedIds", "captureAttemptedIds",
+      "captureOkIds", "fieldLabels", "annotatorRunStats", "missingDigestRuns"] as const;
+    for (const k of optCorpus) {
+      const doc = clone(makeValidFile()) as any;
+      delete doc.corpus[k];
+      expect(parseBenchResultsFile(doc).corpus[k]).toBeUndefined();
+    }
+    const singleVariations: ((d: any) => void)[] = [
+      (d) => { delete d.records[0].weighted.f1Interval; },
+      (d) => { delete d.records[0].independentGroupSupport; },
+      (d) => { delete d.records[0].diagnostics; },
+      (d) => { delete d.records[0].diagnostics.broad; },
+      (d) => { delete d.records[0].diagnostics.conditionalRetainedRecall; },
+      (d) => { d.supportFloors = Object.assign(Object.create(null), d.supportFloors); },
+      (d) => { d.supportFloors.failureCeiling = 0; },
+      (d) => { d.records[0].sitePresence.siteRecall = 1; },
+      (d) => { d.records[0].calls = 0; },
+      (d) => { d.records[0].callsPerItem = 0; },
+      (d) => { d.records[0].tokens.cached = 123; },
+      (d) => { d.records[0].cost.apiEquivalentTotal = 0; },
+      (d) => { d.records[0].weighted.deff = null; },
+      (d) => { d.records[0].weighted.nEff = null; },
+      (d) => { d.records[0].weighted.f1 = null; },
+      (d) => { d.records[0].unweighted.precisionInterval = { estimator: "unweighted",
+        method: "wilson_95_unweighted", clustering: "independent_site", valid: true, low: 0, high: 1 }; },
+      (d) => { d.records[0].weighted.precisionInterval = { estimator: "weighted",
+        method: "design_bootstrap_95", clustering: "group_resampled", valid: true, low: 0.5, high: 0.5 }; },
+    ];
+    for (const mutate of singleVariations) {
+      const doc = clone(makeValidFile());
+      mutate(doc);
+      expect(parseBenchResultsFile(doc).schemaVersion).toBe(1);
+    }
+  });
+
+  it("exercises every valid enum literal one field at a time (N34-N39)", () => {
+    const check = (mutate: (d: any) => void) => {
+      const doc = clone(makeValidFile());
+      mutate(doc);
+      expect(parseBenchResultsFile(doc).schemaId).toBe(BENCH_RESULTS_SCHEMA_ID);
+    };
+    for (const v of PARTITION_KINDS) check((d) => { d.corpus.partition = v; });
+    for (const v of ESTIMATOR_KINDS) check((d) => { d.corpus.primaryEstimator = v; });
+    for (const v of COST_BASIS_KINDS) check((d) => { d.corpus.costBasisLabel = v; });
+    for (const v of CURRENCY_CODES) {
+      check((d) => { d.corpus.currency = v; });
+      check((d) => { d.records[0].cost.currency = v; });
+      check((d) => { d.records[0].cost.fxApplied.from = v; });
+      check((d) => { d.records[0].cost.fxApplied.to = v; });
+    }
+    for (const v of EFFORT_LEVELS) check((d) => { d.records[0].effort = v; });
+    for (const v of [...COST_UNKNOWN_REASONS, null]) check((d) => { d.records[0].cost.costUnknownReason = v; });
+    for (const v of TARIFF_STATUSES) check((d) => { d.records[0].cost.tariffStatus = v; });
+    for (const v of SEAT_STATUSES) check((d) => { d.records[0].cost.seatStatus = v; });
+    for (const v of SEAT_METHODS) check((d) => { d.records[0].cost.seatMethod = v; });
+    for (const v of [...SEAT_UNKNOWN_REASONS, null]) check((d) => { d.records[0].cost.seatUnknownReason = v; });
+    for (const v of INTERVAL_METHODS) {
+      check((d) => {
+        d.records[0].precisionInterval = v === "none"
+          ? { estimator: "weighted", method: "none", clustering: "group_resampled",
+            valid: false, low: null, high: null }
+          : { estimator: "weighted", method: v, clustering: "group_resampled",
+            valid: true, low: 0.4, high: v === "clopper_pearson_95_one_sided" ? null : 0.8 };
+      });
+    }
+    for (const v of INTERVAL_CLUSTERINGS) {
+      check((d) => {
+        d.records[0].precisionInterval = v === "clustered_record_invalid"
+          ? { estimator: "weighted", method: "none", clustering: v, valid: false, low: null, high: null }
+          : { estimator: "weighted", method: "design_bootstrap_95", clustering: v, valid: true, low: 0.4, high: 0.8 };
+      });
     }
   });
 });
