@@ -1054,3 +1054,85 @@ describe("arm, seat and dossier-meta single-field optionality and perMillion.out
     expect(parseDecisionsFile(twoQuestions).questions).toHaveLength(2);
   });
 });
+
+describe("metrics.json field-by-field nullability, diagnostics optionality and negative alpha", () => {
+  it("accepts null on every nullable field, individual diagnostics omissions and negative alpha", () => {
+    const nullMutations: [(d: any) => void, (r: BenchMetricsImportFile) => unknown][] = [
+      [(d) => { d.krippendorffAlphaByField["office.city"] = null; },
+        (r) => r.krippendorffAlphaByField["office.city"]],
+      [(d) => { d.records[0].unverifiedWholeRecordsDropped = null; },
+        (r) => r.records[0]?.unverifiedWholeRecordsDropped],
+      [(d) => { d.records[0].weighted = null; },
+        (r) => r.records[0]?.weighted],
+      [(d) => { d.records[0].sitePresence.siteRecall = null; },
+        (r) => r.records[0]?.sitePresence.siteRecall],
+      [(d) => { d.records[0].sitePresence.siteAbstentionSpecificity = null; },
+        (r) => r.records[0]?.sitePresence.siteAbstentionSpecificity],
+      [(d) => { d.records[0].unweighted.precision = null; },
+        (r) => r.records[0]?.unweighted.precision],
+      [(d) => { d.records[0].unweighted.recall = null; },
+        (r) => r.records[0]?.unweighted.recall],
+      [(d) => { d.records[0].unweighted.f1 = null; },
+        (r) => r.records[0]?.unweighted.f1],
+      [(d) => { d.records[0].weighted.deff = null; },
+        (r) => r.records[0]?.weighted?.deff],
+      [(d) => { d.records[0].weighted.nEff = null; },
+        (r) => r.records[0]?.weighted?.nEff],
+      [(d) => { d.records[0].weighted.precision = null; },
+        (r) => r.records[0]?.weighted?.precision],
+      [(d) => { d.records[0].weighted.recall = null; },
+        (r) => r.records[0]?.weighted?.recall],
+      [(d) => { d.records[0].weighted.f1 = null; },
+        (r) => r.records[0]?.weighted?.f1],
+      [(d) => { d.records[0].diagnostics.broad.precision = null; },
+        (r) => r.records[0]?.diagnostics?.broad?.precision],
+      [(d) => { d.records[0].diagnostics.broad.recall = null; },
+        (r) => r.records[0]?.diagnostics?.broad?.recall],
+      [(d) => { d.records[0].diagnostics.broad.f1 = null; },
+        (r) => r.records[0]?.diagnostics?.broad?.f1],
+      [(d) => { d.records[0].diagnostics.conditionalRetainedRecall = null; },
+        (r) => r.records[0]?.diagnostics?.conditionalRetainedRecall],
+    ];
+    for (const [mutate, pick] of nullMutations) {
+      const doc = clone(makeMetricsImport()) as any;
+      mutate(doc);
+      expect(pick(parseMetricsImportFile(doc))).toBeNull();
+    }
+
+    const noBroad = clone(makeMetricsImport()) as any;
+    delete noBroad.records[0].diagnostics.broad;
+    expect(parseMetricsImportFile(noBroad).records[0]?.diagnostics).toEqual({ conditionalRetainedRecall: 0.81 });
+
+    const noCondRecall = clone(makeMetricsImport()) as any;
+    delete noCondRecall.records[0].diagnostics.conditionalRetainedRecall;
+    expect(parseMetricsImportFile(noCondRecall).records[0]?.diagnostics?.conditionalRetainedRecall).toBeUndefined();
+
+    const emptyDiag = clone(makeMetricsImport()) as any;
+    emptyDiag.records[0].diagnostics = {};
+    expect(parseMetricsImportFile(emptyDiag).records[0]?.diagnostics).toEqual({});
+
+    const negAlpha = clone(makeMetricsImport()) as any;
+    negAlpha.krippendorffAlphaByField["office.city"] = -0.12;
+    expect(parseMetricsImportFile(negAlpha).krippendorffAlphaByField["office.city"]).toBe(-0.12);
+
+    const zeroAlpha = clone(makeMetricsImport()) as any;
+    zeroAlpha.krippendorffAlphaByField["office.city"] = 0;
+    expect(parseMetricsImportFile(zeroAlpha).krippendorffAlphaByField["office.city"]).toBe(0);
+
+    const zeroNeff = clone(makeMetricsImport()) as any;
+    zeroNeff.records[0].weighted.nEff = 0;
+    expect(parseMetricsImportFile(zeroNeff).records[0]?.weighted?.nEff).toBe(0);
+
+    const intCached = clone(makeMetricsImport()) as any;
+    intCached.records[0].tokens.cached = 12;
+    expect(parseMetricsImportFile(intCached).records[0]?.tokens).toEqual({
+      input: 10000, output: 1500, reasoning: 200, cached: 12, total: 11700,
+    });
+
+    for (const k of ["calls", "tokens", "apiEquivalentTotal"] as const) {
+      const doc = clone(makeMetricsImport()) as any;
+      doc.records[0][k] = "unknown";
+      expect(parseMetricsImportFile(doc).records[0]?.[k]).toBe("unknown");
+    }
+  });
+});
