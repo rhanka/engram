@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  BenchResultsValidationError, booleanValue, countInt, fieldsOf, finiteNumber,
-  nonEmptyString, nonNegativeNumber, objectSchema, positiveNumber, requireString, unitInterval,
+  arrayOf, BenchResultsValidationError, booleanValue, countInt, enumValue, fieldsOf, finiteNumber,
+  literalValue, nonEmptyString, nonNegativeNumber, nullable, objectSchema, positiveNumber,
+  requireString, stringMapOf, unitInterval, unknownOr, validateBenchInterval,
   validateClosedObject, type BenchResultsErrorCode,
 } from "../src/bench-dossier/results-guards.js";
 
@@ -48,5 +49,44 @@ describe("BenchResults guards", () => {
     expect([ioErr.name, ioErr.code, ioErr.errno, ioErr.message]).toEqual([
       "BenchResultsValidationError", "IO_ERROR", "ENOENT", "IO_ERROR at /missing.json (ENOENT)",
     ]);
+  });
+
+  it("validates literal, enum, nullable, unknownOr, array, map and BenchInterval guards", () => {
+    literalValue(1, "BAD_VERSION", finiteNumber)(1, "$.v");
+    refuse(() => literalValue(1, "BAD_VERSION", finiteNumber)(2, "$.v"), "BAD_VERSION", "$.v");
+    const cur = enumValue(["USD", "CAD"]);
+    cur("USD", "$.c");
+    refuse(() => cur(123, "$.c"), "WRONG_TYPE", "$.c");
+    refuse(() => cur("EUR", "$.c"), "BAD_ENUM", "$.c");
+    nullable(countInt)(null, "$.n");
+    refuse(() => nullable(countInt)(undefined, "$.n"), "WRONG_TYPE", "$.n");
+    unknownOr(countInt)("unknown", "$.u");
+    refuse(() => unknownOr(countInt)(1.5, "$.u"), "BAD_COUNT", "$.u");
+    arrayOf(nonEmptyString)(["a"], "$.a");
+    refuse(() => arrayOf(nonEmptyString)("a", "$.a"), "NOT_ARRAY", "$.a");
+    refuse(() => arrayOf(nonEmptyString)(["a", ""], "$.a"), "EMPTY_STRING", "$.a[1]");
+    const sparse: string[] = []; sparse[1] = "a";
+    refuse(() => arrayOf(nonEmptyString)(sparse, "$.a"), "WRONG_TYPE", "$.a[0]");
+    refuse(() => stringMapOf(countInt)([], "$.m"), "NOT_OBJECT", "$.m");
+    for (const k of ["", "  ", "__proto__", "constructor", "prototype"]) {
+      const m: Record<string, number> = {};
+      Object.defineProperty(m, k, { value: 1, enumerable: true, configurable: true });
+      refuse(() => stringMapOf(countInt)(m, "$.m"), "BAD_MAP_KEY", `$.m.${k}`);
+    }
+    const base = { estimator: "unweighted", method: "wilson_95_unweighted",
+      clustering: "independent_site", valid: true, low: 0.4, high: 0.8 };
+    validateBenchInterval(base, "$.iv");
+    validateBenchInterval({ ...base, method: "clopper_pearson_95_one_sided", high: null }, "$.iv");
+    validateBenchInterval({ ...base, method: "none", clustering: "clustered_record_invalid",
+      valid: false, low: null, high: null }, "$.iv");
+    refuse(() => validateBenchInterval({ ...base, low: -0.01 }, "$.iv"), "INTERVAL_RANGE", "$.iv.low");
+    refuse(() => validateBenchInterval({ ...base, high: 1.01 }, "$.iv"), "INTERVAL_RANGE", "$.iv.high");
+    refuse(() => validateBenchInterval({ ...base, low: 0.9 }, "$.iv"), "INTERVAL_ORDER", "$.iv");
+    refuse(() => validateBenchInterval({ ...base, clustering: "clustered_record_invalid" }, "$.iv"),
+      "BAD_INTERVAL", "$.iv");
+    refuse(() => validateBenchInterval({ ...base, method: "none" }, "$.iv"), "BAD_INTERVAL", "$.iv");
+    refuse(() => validateBenchInterval({ ...base, low: null }, "$.iv"), "BAD_INTERVAL", "$.iv");
+    refuse(() => validateBenchInterval({ ...base, high: null }, "$.iv"), "BAD_INTERVAL", "$.iv");
+    refuse(() => validateBenchInterval({ ...base, valid: false }, "$.iv"), "BAD_INTERVAL", "$.iv");
   });
 });

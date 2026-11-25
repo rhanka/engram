@@ -1,3 +1,4 @@
+import { ESTIMATOR_KINDS, INTERVAL_CLUSTERINGS, INTERVAL_METHODS, type BenchInterval } from "./results-types.js";
 
 export type BenchResultsErrorCode =
   | "IO_ERROR" | "BAD_JSON" | "NOT_OBJECT" | "NOT_ARRAY" | "BAD_SCHEMA" | "BAD_VERSION"
@@ -82,3 +83,40 @@ export const countInt = checkNumber((n) => Number.isSafeInteger(n) && n >= 0, "B
 export const nonNegativeNumber = checkNumber((n) => n >= 0, "NEGATIVE");
 export const positiveNumber = checkNumber((n) => n > 0, "NON_POSITIVE");
 export const unitInterval = checkNumber((n) => n >= 0 && n <= 1, "UNIT_RANGE");
+
+export const literalValue = <T>(expected: T, code: BenchResultsErrorCode, pre: Validator<unknown>): Validator<T> =>
+  (v, p) => { pre(v, p); if (v !== expected) fail(code, p); };
+export const enumValue = <const T extends string>(values: readonly T[]): Validator<T> => {
+  const set = new Set<string>(values);
+  return (v, p) => { if (!set.has(requireString(v, p))) fail("BAD_ENUM", p); };
+};
+export const nullable = <T>(inner: Validator<T>): Validator<T | null> => (v, p) => { if (v !== null) inner(v, p); };
+export const unknownOr = <T>(inner: Validator<T>): Validator<T | "unknown"> =>
+  (v, p) => { if (v !== "unknown") inner(v, p); };
+export const arrayOf = <T>(item: Validator<T>): Validator<readonly T[]> => (v, p) => {
+  if (!Array.isArray(v)) fail("NOT_ARRAY", p);
+  for (let idx = 0; idx < v.length; idx++) item(v[idx], `${p}[${idx}]`);
+};
+export const stringMapOf = <T>(entry: Validator<T>): Validator<Readonly<Record<string, T>>> => (v, p) => {
+  for (const [key, val] of Object.entries(assertPlainObject(v, p))) {
+    if (!key.trim() || /^(__proto__|constructor|prototype)$/.test(key)) fail("BAD_MAP_KEY", `${p}.${key}`);
+    entry(val, `${p}.${key}`);
+  }
+};
+
+const INTERVAL_SCHEMA: Record<keyof BenchInterval, Validator<unknown>> = {
+  estimator: enumValue(ESTIMATOR_KINDS),
+  method: enumValue(INTERVAL_METHODS),
+  clustering: enumValue(INTERVAL_CLUSTERINGS),
+  valid: booleanValue, low: nullable(finiteNumber), high: nullable(finiteNumber),
+};
+export const validateBenchInterval: Validator<BenchInterval> = (v, p) => {
+  const o = validateClosedObject(v, p, INTERVAL_SCHEMA);
+  const low = o.low as number | null, high = o.high as number | null;
+  if (low !== null && (low < 0 || low > 1)) fail("INTERVAL_RANGE", `${p}.low`);
+  if (high !== null && (high < 0 || high > 1)) fail("INTERVAL_RANGE", `${p}.high`);
+  if (low !== null && high !== null && low > high) fail("INTERVAL_ORDER", p);
+  const badValid = o.method === "none" || o.clustering === "clustered_record_invalid" || low === null
+    || (o.method !== "clopper_pearson_95_one_sided" && high === null);
+  if (o.valid ? badValid : low !== null || high !== null) fail("BAD_INTERVAL", p);
+};
