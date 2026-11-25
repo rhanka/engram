@@ -988,6 +988,138 @@ it("a baseline arm that does not reach the verified answer is scored at the time
     gain: 0,
   });
 });
+
+it("scoreReadSideCase fails closed on NaN, negative, or zero-ms unfailed timings " +
+  "and honors explicit refusal-before-spawn 0 ms", async () => {
+  const bench = (await import(pathToFileURL(BENCH).href)) as {
+    scoreReadSideCase: (input: Record<string, unknown>) => Record<string, unknown>;
+  };
+
+  for (const badT1 of [Number.NaN, -1, Number.POSITIVE_INFINITY, undefined]) {
+    expect(
+      () =>
+        bench.scoreReadSideCase({
+          state: "verified",
+          t0FirstMs: 100,
+          t1FirstMs: badT1,
+          baselineCapMs: 30_000,
+          matchedExpectation: true,
+        }),
+      `t1FirstMs=${String(badT1)} must throw`,
+    ).toThrow();
+  }
+
+  for (const badT0 of [Number.NaN, -1, Number.POSITIVE_INFINITY, undefined]) {
+    expect(
+      () =>
+        bench.scoreReadSideCase({
+          state: "verified",
+          t0FirstMs: badT0,
+          t1FirstMs: 10,
+          baselineCapMs: 30_000,
+          matchedExpectation: true,
+        }),
+      `t0FirstMs=${String(badT0)} must throw`,
+    ).toThrow();
+  }
+
+  for (const t0TimedOut of [false, true]) {
+    for (const absentT0Error of [null, ""]) {
+      expect(
+        () =>
+          bench.scoreReadSideCase({
+            state: "verified",
+            t0FirstMs: 0,
+            t1FirstMs: 10,
+            t0Error: absentT0Error,
+            t0TimedOut,
+            baselineCapMs: 30_000,
+            matchedExpectation: true,
+          }),
+        `t0FirstMs=0 with t0Error=${JSON.stringify(absentT0Error)} (timedOut=${String(t0TimedOut)}) must throw`,
+      ).toThrow();
+    }
+  }
+
+  for (const badClass of [Number.NaN, -0.5, Number.POSITIVE_INFINITY]) {
+    expect(
+      () =>
+        bench.scoreReadSideCase({
+          state: "verified",
+          t0FirstMs: 100,
+          t1FirstMs: 10,
+          classificationMs: badClass,
+          baselineCapMs: 30_000,
+          matchedExpectation: true,
+        }),
+      `classificationMs=${String(badClass)} must throw`,
+    ).toThrow();
+  }
+
+  const refusalBeforeSpawn = bench.scoreReadSideCase({
+    state: "refused",
+    t0FirstMs: 100,
+    t1FirstMs: 0,
+    classificationMs: 0,
+    t1Error: "T1 refused: committed read not authorized",
+    baselineCapMs: 30_000,
+    matchedExpectation: false,
+  });
+  expect(refusalBeforeSpawn).toMatchObject({
+    state: "failed",
+    matchedExpectation: false,
+    countsAsSaving: false,
+    answeredBy: "baseline-recovery",
+    t1EffectiveMs: 100,
+    gain: 0,
+  });
+
+  const erroredZeroT0 = bench.scoreReadSideCase({
+    state: "verified",
+    t0FirstMs: 0,
+    t1FirstMs: 150,
+    classificationMs: 0,
+    t0Error: "T0 refused before spawn",
+    baselineCapMs: 30_000,
+    matchedExpectation: true,
+  });
+  expect(erroredZeroT0).toMatchObject({
+    t0ScoredMs: 30_000,
+    baselineFailed: true,
+    answeredBy: "native-only",
+    matchedExpectation: true,
+    countsAsSaving: true,
+  });
+  expect(erroredZeroT0.gain).toBeCloseTo(1 - 150 / 30_000, 10);
+
+  const emptyErrorPositiveT0 = bench.scoreReadSideCase({
+    state: "verified",
+    t0FirstMs: 100,
+    t1FirstMs: 25,
+    t0Error: "",
+    baselineCapMs: 30_000,
+    matchedExpectation: true,
+  });
+  expect(emptyErrorPositiveT0).toMatchObject({ t0ScoredMs: 100, baselineFailed: false, answeredBy: "both" });
+
+  const bothWithClassification = bench.scoreReadSideCase({
+    state: "verified",
+    t0FirstMs: 100,
+    t1FirstMs: 20,
+    classificationMs: 30,
+    baselineCapMs: 30_000,
+    matchedExpectation: true,
+  });
+  expect(bothWithClassification).toMatchObject({
+    answeredBy: "both",
+    matchedExpectation: true,
+    countsAsSaving: true,
+    t1TimeToNonSuccess: 50,
+    t1EffectiveMs: 50,
+  });
+  expect(bothWithClassification.gain).toBeCloseTo(0.5, 10);
+});
+
 it("refuses --timeout-ms below manifest.protocol.baselineCapMs before measurement", () => {
   const notAGitDir = join(root, "not-a-git-dir-timeout");
   mkdirSync(notAGitDir, { recursive: true });
