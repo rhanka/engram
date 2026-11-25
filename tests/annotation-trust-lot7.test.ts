@@ -4,6 +4,8 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { receiptDigest } from "../engram-memory/index.js";
+import { captureRequest, createL3Memory, DIGEST, NOW } from "./memory-l3-fixture.js";
 import { ANNOTATION_TRUST_CORPUS_DIGEST, ANNOTATION_TRUST_CORPUS_FIXTURES,
   ANNOTATION_TRUST_CORPUS_REF } from "../src/annotation-trust/corpus.js";
 import { parseEntry } from "../src/annotation-trust/parse.js";
@@ -27,12 +29,12 @@ const shown = (n: number): Shown => ({ proposal: "shown", shown: [n] });
 const seal = (o: Entry): Record<string, unknown> => {
   const { contentDigest: _d, ...rest } = o; return { ...rest, contentDigest: digestOfPreimage(rest) };
 };
-const env = (n: number, sub = "o") => ({
+const env = (n: number, sub = "o", auth = "auth", evRefs: string[] = []) => ({
   stream: { scopeRef: "s", subjectRef: sub, slot: "class" }, template: TEMPLATE_REF, profile: PROFILE_PIN,
   pinsDigest: D, resultDigest: D, revision: n, expectedRevision: n - 1, replacesHuman: null,
   requestId: `77777777-7777-4777-8777-${String(n).padStart(12, "0")}` as Entry["requestId"],
-  commandDigest: D, contentDigest: D, recorderRef: "rec", policyRef: "pol", authorityReceiptRef: "auth",
-  recordedAt: `2026-11-24T00:00:0${n}Z`, evidence: { citations: [], evidenceRefs: [] },
+  commandDigest: D, contentDigest: D, recorderRef: "rec", policyRef: "pol", authorityReceiptRef: auth,
+  recordedAt: `2026-11-24T00:00:0${n}Z`, evidence: { citations: [], evidenceRefs: evRefs },
 });
 const replay = (sv: string, sub: string, ...fs: Entry[]) => reduceEntries(fs.map((f) => parseEntry(seal(f))),
   { stream: { scopeRef: "s", subjectRef: sub, slot: "class" }, subjectVersion: sv, vocabulary: PROFILE_PIN });
@@ -129,5 +131,47 @@ describe("lot 7 cross-contract fixtures and G0 corpus manifest", () => {
     expect([rCtrl.trust, rCtrl.effective?.value]).toEqual(["trusted", pertinent]);
     expect(pairView(rDiag)).toEqual(pairView(rCtrl));
     expect(rDiag.pairs.map((p) => [p.ai.revision, p.role])).toEqual([[1, "anchored"], [2, "known-error"]]);
+  });
+  it("references memory receipts without transitioning store or changing trust/pairs (C10)", async () => {
+    const { memory, store } = createL3Memory();
+    const cap = await memory.capture(captureRequest("idempotency-key-lot7-0001", "1"));
+    expect(cap.ok).toBe(true);
+    if (!cap.ok || cap.value.candidate_id === undefined) throw new Error("capture failed");
+    const adm = await memory.requestAdmission({
+      candidate_id: cap.value.candidate_id, authorization: { credential: "credential:l3" },
+      deadline_at: "2026-08-16T12:40:00.000Z",
+    });
+    expect(adm.ok).toBe(true);
+    if (!adm.ok || adm.value.record_id === undefined) throw new Error("admission failed");
+    const revArg = { record_ids: [adm.value.record_id], valid_as_of: 1, system_as_of: "2",
+      authorization_receipt_digest: DIGEST, operation: "recall_current" as const };
+    const snapArg = { valid_as_of: 1, system_as_of: "2",
+      authorization_receipt_digest: receiptDigest("fixture-auth", { now: NOW }), max_candidates: 10 };
+    const beforeJ = await store.readJournal({ after: "0", limit: 10 });
+    const beforeR = await store.revalidate(revArg);
+    const beforeS = await store.acceptedSnapshot(snapArg);
+    expect(beforeJ).toMatchObject({ ok: true, value: [{ cursor: "1", operation: "capture" },
+      { cursor: "2", operation: "accept" }] });
+    expect(beforeR).toMatchObject({ ok: true, value: { eligible_record_ids: [adm.value.record_id] } });
+    expect(beforeS).toMatchObject({ ok: true, value: { documents: [{ record_id: adm.value.record_id }] } });
+    const vetoActs = (auth = "auth", evRefs: string[] = []): Entry[] => [
+      { ...env(1, "o", auth, evRefs), subjectVersion: "sv1", actor: run(1),
+        action: { kind: "assert", value: pertinent } },
+      { ...env(2, "o", auth, evRefs), subjectVersion: "sv1", actor: analyst, exposure: shown(1),
+        action: { kind: "confirm", judged: 1 } },
+      { ...env(3, "o", auth, evRefs), subjectVersion: "sv1", actor: run(3),
+        action: { kind: "assert", value: surveiller } },
+      { ...env(4, "o", auth, evRefs), subjectVersion: "sv1", replacesHuman: 2, actor: analyst,
+        exposure: shown(1), action: { kind: "reject", judged: 1, reason: "contradicted" } },
+    ];
+    const rMem = replay("sv1", "o", ...vetoActs(adm.value.decision_receipt_digest, [adm.value.record_id]));
+    const rCtrl = replay("sv1", "o", ...vetoActs());
+    expect([rMem.trust, rMem.effective, rMem.human?.kind]).toEqual(["withheld", null, "veto"]);
+    expect([rCtrl.trust, rCtrl.effective, rCtrl.human?.kind]).toEqual(["withheld", null, "veto"]);
+    expect(pairView(rMem)).toEqual(pairView(rCtrl));
+    expect(rMem.pairs.map((p) => [p.ai.revision, p.role])).toEqual([[1, "known-error"]]);
+    expect(await store.readJournal({ after: "0", limit: 10 })).toEqual(beforeJ);
+    expect(await store.revalidate(revArg)).toEqual(beforeR);
+    expect(await store.acceptedSnapshot(snapArg)).toEqual(beforeS);
   });
 });
