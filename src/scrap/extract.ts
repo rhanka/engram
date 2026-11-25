@@ -6,7 +6,13 @@ import { quoteMatches } from "./quote-match.js";
 import { getMeshErrorAttempts, isRoutePlanError, isSeatAcquisitionError } from "../llm-mesh-errors.js";
 export interface RecordSubField { name: string; instruction?: string }
 export interface MissionField { name: string; kind?: "scalar" | "record"; max_values?: number; fields?: RecordSubField[] }
-export interface PriceTable { source: string; as_of: string; per_million: { input: number; output: number; reasoning?: number } }
+export type PriceCurrency = "USD" | "CAD";
+export type PriceStatus = "primary" | "secondary_unverified";
+export interface PriceTable {
+  source: string; as_of: string; currency?: PriceCurrency; status?: PriceStatus;
+  per_million: { input: number; output: number; reasoning?: number };
+}
+export type NormalizedPriceTable = PriceTable & { currency: PriceCurrency; status: PriceStatus };
 export interface ExtractOptions { out: string; mission: string; model: string; tokenCap?: number; retryFailed?: boolean }
 export interface Mission { fields: (string | MissionField)[]; instruction: string; tokenCap?: number; reasoning_budget_tokens?: number; price_table?: PriceTable; calls_window_minutes?: number }
 export type ExtractErrorCode = "missing_credentials" | "llm_error" | "parse_error" | "empty_response" | "write_error";
@@ -90,11 +96,25 @@ function mergeUsage(a: unknown, b: unknown): unknown {
   for (const src of [a, b]) for (const [k, v] of Object.entries(src)) if (num(v) !== undefined) out[k] = (out[k] ?? 0) + (v as number);
   return out;
 }
-function validPriceTable(pt: unknown): PriceTable | null {
-  if (!isObj(pt) || typeof pt.source !== "string" || !pt.source.trim() || typeof pt.as_of !== "string" || !isObj(pt.per_million)) return null;
+export function validPriceTable(pt: unknown): NormalizedPriceTable | null {
+  if (pt === undefined) return null;
+  if (!isObj(pt)) throw new Error("scrap extract: invalid mission price_table (requires object)");
+  if (pt.currency !== undefined && pt.currency !== "USD" && pt.currency !== "CAD") {
+    throw new Error(`scrap extract: invalid mission price_table.currency ${JSON.stringify(pt.currency)}`);
+  }
+  if (pt.status !== undefined && pt.status !== "primary" && pt.status !== "secondary_unverified") {
+    throw new Error(`scrap extract: invalid mission price_table.status ${JSON.stringify(pt.status)}`);
+  }
+  const currency: PriceCurrency = pt.currency ?? "USD", status: PriceStatus = pt.status ?? "secondary_unverified";
+  if (typeof pt.source !== "string" || !pt.source.trim()
+    || typeof pt.as_of !== "string" || !isObj(pt.per_million)) return null;
   const asOf = pt.as_of.trim(), pm = pt.per_million, ok = (v: unknown): v is number => num(v) !== undefined && (v as number) >= 0;
   if (!/\d{4}/.test(asOf) || !Number.isFinite(Date.parse(asOf)) || (/^\d{4}-\d{2}-\d{2}$/.test(asOf) && new Date(asOf).toISOString().slice(0, 10) !== asOf) || !ok(pm.input) || !ok(pm.output) || (pm.reasoning !== undefined && !ok(pm.reasoning))) return null;
-  return { source: pt.source.trim(), as_of: asOf, per_million: { input: pm.input, output: pm.output, ...(pm.reasoning !== undefined ? { reasoning: pm.reasoning } : {}) } };
+  const reasoning = pm.reasoning !== undefined ? { reasoning: pm.reasoning } : {};
+  return {
+    source: pt.source.trim(), as_of: asOf, currency, status,
+    per_million: { input: pm.input, output: pm.output, ...reasoning },
+  };
 }
 function apiEquivalent(pt: PriceTable | null, u: TokenCounts | null): number | "unknown" {
   if (!pt || !u) return "unknown";
@@ -226,6 +246,9 @@ export function fieldsOf(
 export async function runExtract(oc: ExtractOptions, client?: ExtractClient, deps?: MeshClientDeps): Promise<void> {
   const loaded = loadMission(oc.mission), mission = loaded.mission;
   const specs = loaded.specs, names = loaded.names, missionDigest = loaded.digest;
+  const pt = validPriceTable(mission.price_table);
+  const costOf = (api_equivalent: number | "unknown", seat_quota?: Record<string, unknown>) =>
+    ({ ...(pt ? { currency: pt.currency } : {}), api_equivalent, seat_quota: seat_quota ?? "unknown" });
   const meshAlias = oc.model.startsWith("mesh:") ? oc.model.slice("mesh:".length) : null;
   const pm = meshAlias === null ? providerOf(oc.model) : null;
   if (meshAlias !== null && !client && !deps?.createMeshClient) {
@@ -242,7 +265,6 @@ export async function runExtract(oc: ExtractOptions, client?: ExtractClient, dep
   }
   mkdirSync(oc.out, { recursive: true });
   const todo = [...latest.values()].filter((s) => s.status === "ok" && (!lastErr.has(s.id) || (oc.retryFailed === true && lastErr.get(s.id) !== null)));
-  const pt = validPriceTable(mission.price_table);
   const tot: TokenCounts = { input: 0, output: 0, reasoning: 0, total: 0 };
   const rawWin = num(mission.calls_window_minutes);
   const winMin = rawWin !== undefined && Math.floor(rawWin) >= 1 ? Math.floor(rawWin) : 60;
@@ -285,7 +307,7 @@ export async function runExtract(oc: ExtractOptions, client?: ExtractClient, dep
         type: "summary", mission_digest: missionDigest, ok: okCount, failed: failCount,
         calls_total: callsTotal, calls_window_minutes: winMin,
         calls_by_window, calls_by_model: sortRec(callsByModel), routed_mismatches: routedMismatchCount, tokens: { ...tot },
-        cost: { api_equivalent: apiKnown ? Number(totApi.toFixed(9)) : "unknown", seat_quota: lastSeatQuota ?? "unknown" },
+        cost: costOf(apiKnown ? Number(totApi.toFixed(9)) : "unknown", lastSeatQuota),
       };
       try { appendFileSync(resPath, `${JSON.stringify(sum)}\n`, "utf-8"); }
       catch (e) { console.error(`scrap extract: summary write_error: ${e instanceof Error ? e.message : String(e)}`); }
@@ -373,7 +395,7 @@ export async function runExtract(oc: ExtractOptions, client?: ExtractClient, dep
     if (mergedUsage !== undefined) extra.tokens = mergedUsage;
     const apiEq = apiEquivalent(pt, usageCounts(mergedUsage));
     if (apiEq === "unknown") apiKnown = false;
-    extra.cost = { api_equivalent: apiEq, seat_quota: seatQuota ?? "unknown" };
+    extra.cost = costOf(apiEq, seatQuota);
     if (lastAudit?.mesh === true && typeof lastAudit.providerId === "string" && typeof lastAudit.modelId === "string") {
       extra.mesh = { provider: lastAudit.providerId, model: lastAudit.modelId };
       if (resolvedMesh && (lastAudit.providerId !== resolvedMesh.provider || lastAudit.modelId !== resolvedMesh.model)) {

@@ -667,8 +667,8 @@ describe("scrap tier 0.3", () => {
       ],
       unverified_dropped: 0,
     });
-    expect(idRows(d02)[0].cost).toEqual({ api_equivalent: 0.009, seat_quota: "unknown" });
-    expect(summaryRows(d02)[0].cost).toEqual({ api_equivalent: 0.009, seat_quota: "unknown" });
+    expect(idRows(d02)[0].cost).toEqual({ currency: "USD", api_equivalent: 0.009, seat_quota: "unknown" });
+    expect(summaryRows(d02)[0].cost).toEqual({ currency: "USD", api_equivalent: 0.009, seat_quota: "unknown" });
   });
 
   it("rejects malformed record field definitions before any LLM call and summarizes calls already sent before mid-run seat deferral", async () => {
