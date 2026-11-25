@@ -4,12 +4,13 @@ import { join } from "node:path";
 import { describe, expect, expectTypeOf, it } from "vitest";
 import { ARM_MANIFEST_SCHEMA_ID, ARM_TARIFF_STATUSES, DECISIONS_SCHEMA_ID, DOSSIER_LANGUAGES,
   DOSSIER_META_SCHEMA_ID, METRICS_IMPORT_SCHEMA_ID, SEAT_OBSERVATION_SCHEMA_ID, SEAT_OBSERVATION_WINDOW_MINUTES,
-  STAKES_LEVELS, parseArmManifest, parseSeatObservationInput, parseSeatObservationsFile, readArmManifest,
-  readSeatObservationInput, readSeatObservationsFile, type ArmManifestFile, type ArmTariffStatus,
-  type BenchDecisionsFile, type BenchMetricsImportFile, type DossierLanguage, type DossierMetaFile,
-  type SeatObservationInput, type SeatObservationsFile, type StakesLevel
+  STAKES_LEVELS, parseArmManifest, parseMetricsImportFile, parseSeatObservationInput, parseSeatObservationsFile,
+  readArmManifest, readMetricsImportFile, readSeatObservationInput, readSeatObservationsFile, type ArmManifestFile,
+  type ArmTariffStatus, type BenchDecisionsFile, type BenchMetricsImportFile, type DossierLanguage,
+  type DossierMetaFile, type SeatObservationInput, type SeatObservationsFile, type StakesLevel
 } from "../src/bench-dossier/companion-contracts.js";
 import { BenchResultsValidationError, type BenchResultsErrorCode } from "../src/bench-dossier/results-guards.js";
+import type { BenchInterval } from "../src/bench-dossier/results-types.js";
 
 describe("Companion contract types and constants", () => {
   it("exports literal URNs, closed enum tuples, and all 5 companion contract types", () => {
@@ -103,6 +104,91 @@ describe("arm.json and seat observation core contracts and reader", () => {
       const jsonErr = refuse(() => readSeatObservationsFile(badJson), "BAD_JSON", "$");
       expect([jsonErr.errno, jsonErr.cause instanceof SyntaxError]).toEqual([undefined, true]);
       refuse(() => readArmManifest(emptyObj), "MISSING_KEY", "$.schemaId");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+const makeIv = (estimator: "unweighted" | "weighted", valid = true): BenchInterval =>
+  valid
+    ? {
+      estimator,
+      method: estimator === "weighted" ? "design_bootstrap_95" : "wilson_95_unweighted",
+      clustering: estimator === "weighted" ? "group_resampled" : "independent_site",
+      valid: true, low: 0.45, high: 0.85,
+    }
+    : { estimator, method: "none", clustering: "clustered_record_invalid", valid: false, low: null, high: null };
+
+function makeMetricsImport(): BenchMetricsImportFile {
+  const wIv = makeIv("weighted");
+  const uIv = makeIv("unweighted");
+  const badIv = makeIv("unweighted", false);
+  return {
+    schemaId: "urn:engram:bench-metrics-import:1.0.0",
+    campaignId: "lotb-eval-2026", partition: "sealed", goldenLabel: "pass2",
+    primaryEstimator: "weighted", costBasisLabel: "extracted_packet", currency: "CAD",
+    goldenSha256: "b".repeat(64), goldenMissionSha256: "c".repeat(64), candidateMissionSha256: "d".repeat(64),
+    fieldShapeVerified: true, goldenIds: 30, fields: ["office.city", "office.full_address"],
+    annotatorCount: 3, annotatorRunStats: { r1: { answered: 29, failed: 1, missing: 0 } },
+    missingDigestRuns: ["r1"],
+    krippendorffAlphaByField: { "office.city": 0.84, "office.full_address": null },
+    supportFloors: { recallMinPositives: 30, precisionMinPredictions: 30, failureCeiling: 0.05 },
+    records: [
+      {
+        armId: "arm-openai-astra-low", field: "office.city", comparator: "lotb_ca_post_v1",
+        isPrimaryComparator: true, attempted: 30, accepted: 28, failed: 2, failuresByCode: { llm_error: 2 },
+        unverifiedQuotesNulled: 1, unverifiedWholeRecordsDropped: 0,
+        goldPositive: 30, goldAbsent: 10, tp: 21, fp: 7, fpOnPresent: 5, fpOnAbsent: 2,
+        fpElementsOnAbsent: 2, fn: 9, tn: 8, failedOnAbsent: 0, unresolved: 1, insufficient: 2,
+        sitePresence: {
+          goldPresentSites: 30, goldAbsentSites: 10, unresolvedSites: 1, insufficientSites: 2,
+          tpSites: 21, fnSites: 9, wrongValueOnPresentSites: 3, fpOnAbsentSites: 2, tnSites: 8,
+          failedOnAbsentSites: 0, siteRecall: 0.7, siteRecallInterval: uIv,
+          siteAbstentionSpecificity: 0.8, siteAbstentionInterval: uIv,
+        },
+        unweighted: { precision: 0.75, recall: 0.7, f1: 0.724, precisionInterval: uIv, recallInterval: uIv },
+        weighted: {
+          scheme: "horvitz_thompson_s1_s2_v1", deff: 1.14, nEff: 26.3,
+          precision: 0.76, recall: 0.69, f1: 0.723, precisionInterval: wIv, recallInterval: wIv, f1Interval: wIv,
+        },
+        independentGroupSupport: { predictions: 28, positives: 29 },
+        diagnostics: {
+          broad: { tp: 22, fp: 6, fn: 8, precision: 0.78, recall: 0.73, f1: 0.75 },
+          conditionalRetainedRecall: 0.81,
+        },
+        armMissionSha256: "e".repeat(64), calls: 35,
+        tokens: { input: 10000, output: 1500, reasoning: 200, cached: "unknown", total: 11700 },
+        costBasisItems: 1705, apiEquivalentTotal: 1.45,
+      },
+      {
+        armId: "arm-cascade", field: "office.full_address", comparator: "generic",
+        isPrimaryComparator: false, attempted: 30, accepted: 20, failed: 10, failuresByCode: {},
+        unverifiedQuotesNulled: 0, unverifiedWholeRecordsDropped: null,
+        goldPositive: 20, goldAbsent: 5, tp: 10, fp: 5, fpOnPresent: 4, fpOnAbsent: 1,
+        fpElementsOnAbsent: 1, fn: 10, tn: 4, failedOnAbsent: 0, unresolved: 0, insufficient: 1,
+        sitePresence: {
+          goldPresentSites: 20, goldAbsentSites: 5, unresolvedSites: 0, insufficientSites: 1,
+          tpSites: 10, fnSites: 10, wrongValueOnPresentSites: 2, fpOnAbsentSites: 1, tnSites: 4,
+          failedOnAbsentSites: 0, siteRecall: 0.5, siteRecallInterval: badIv,
+          siteAbstentionSpecificity: 0.8, siteAbstentionInterval: badIv,
+        },
+        unweighted: { precision: 0.66, recall: 0.5, f1: 0.569, precisionInterval: badIv, recallInterval: badIv },
+        weighted: null, calls: "unknown", tokens: "unknown", apiEquivalentTotal: "unknown",
+      },
+    ],
+  };
+}
+
+describe("metrics.json (urn:engram:bench-metrics-import:1.0.0) core contract", () => {
+  it("validates metrics.json in memory and on disk", () => {
+    const metrics = makeMetricsImport();
+    expect(parseMetricsImportFile(metrics)).toEqual(metrics);
+    const dir = mkdtempSync(join(tmpdir(), "bd1b-metrics-"));
+    try {
+      const p = join(dir, "metrics.json");
+      writeFileSync(p, JSON.stringify(metrics), "utf8");
+      expect(readMetricsImportFile(p)).toEqual(metrics);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

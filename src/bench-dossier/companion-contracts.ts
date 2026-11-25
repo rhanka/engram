@@ -1,16 +1,19 @@
 import { readFileSync } from "node:fs";
 import * as R from "./results-types.js";
-import { assertPlainObject, BenchResultsValidationError, booleanValue, countInt, enumValue, fail, fieldsOf,
-  literalValue, nonEmptyString, nonNegativeNumber, nullable, objectSchema, positiveNumber, requireString,
-  stringMapOf, unitInterval, type BenchResultsErrorCode, type Validator } from "./results-guards.js";
+import { arrayOf, assertPlainObject, BenchResultsValidationError, booleanValue, countInt, enumValue, fail,
+  fieldsOf, finiteNumber, literalValue, nonEmptyString, nonNegativeNumber, nullable, objectSchema, positiveNumber,
+  requireString, stringMapOf, unitInterval, unknownOr, validateBenchInterval,
+  type BenchResultsErrorCode, type Validator } from "./results-guards.js";
 import * as T from "./companion-types.js";
 export * from "./companion-types.js";
 export { BenchResultsValidationError, type BenchResultsErrorCode } from "./results-guards.js";
 
-const CURRENCY = enumValue(R.CURRENCY_CODES);
+const CURRENCY = enumValue(R.CURRENCY_CODES), METRICS = fieldsOf(["precision", "recall", "f1"], nullable(unitInterval));
+const INTERVALS = fieldsOf(["precisionInterval", "recallInterval"], validateBenchInterval);
 const schemaId = <S extends string>(id: S) => literalValue(id, "BAD_SCHEMA", requireString);
 const seatStatus = <S extends string>(s: S) => literalValue(s, "BAD_ENUM", requireString);
 const strFields = <const K extends string>(...keys: K[]) => fieldsOf(keys, nonEmptyString);
+const countFields = <const K extends string>(...keys: K[]) => fieldsOf(keys, countInt);
 const seatMethod = <M extends string>(m: M): Validator<M> =>
   (v, p) => { enumValue(R.SEAT_METHODS)(v, p); if (v !== m) fail("BAD_SHAPE", p); };
 const posInt: Validator<number> = (v, p) => { countInt(v, p); if ((v as number) < 1) fail("NON_POSITIVE", p); };
@@ -43,6 +46,32 @@ const ARM_SCHEMA = objectSchema<T.ArmManifestFile>({ schemaId: schemaId(T.ARM_MA
   ...fieldsOf(["source", "asOf"], nullable(nonEmptyString)) }, { currency: CURRENCY,
   perMillion: objectSchema(fieldsOf(["input", "output"], nonNegativeNumber), { reasoning: nonNegativeNumber }) }) });
 const SEAT_FILE = objectSchema<T.SeatObservationsFile>({ schemaId: SEAT_ID, observations: stringMapOf(validateSeat) });
+const SITE_SCHEMA: Validator<R.SitePresenceMatrix> = objectSchema({ ...countFields("goldPresentSites",
+  "goldAbsentSites", "unresolvedSites", "insufficientSites", "tpSites", "fnSites", "wrongValueOnPresentSites",
+  "fpOnAbsentSites", "tnSites", "failedOnAbsentSites"),
+  ...fieldsOf(["siteRecall", "siteAbstentionSpecificity"], nullable(unitInterval)),
+  ...fieldsOf(["siteRecallInterval", "siteAbstentionInterval"], validateBenchInterval) });
+const REC_SCHEMA: Validator<T.MetricsImportRecord> = objectSchema({ ...strFields("armId", "field", "comparator"),
+  isPrimaryComparator: booleanValue, failuresByCode: stringMapOf(countInt), ...countFields("attempted", "accepted",
+    "failed", "unverifiedQuotesNulled", "goldPositive", "goldAbsent", "tp", "fp", "fpOnPresent", "fpOnAbsent",
+    "fpElementsOnAbsent", "fn", "tn", "failedOnAbsent", "unresolved", "insufficient"), unverifiedWholeRecordsDropped:
+  nullable(countInt), sitePresence: SITE_SCHEMA, unweighted: objectSchema({ ...METRICS, ...INTERVALS }), weighted:
+  nullable(objectSchema({ scheme: nonEmptyString, deff: nullable(positiveNumber), nEff: nullable(nonNegativeNumber),
+    ...METRICS, ...INTERVALS }, { f1Interval: validateBenchInterval })) }, { independentGroupSupport: objectSchema(
+  countFields("predictions", "positives")), armMissionSha256: nonEmptyString, calls: unknownOr(countInt),
+  diagnostics: objectSchema({}, { broad: objectSchema({ ...countFields("tp", "fp", "fn"), ...METRICS }),
+    conditionalRetainedRecall: nullable(unitInterval) }), costBasisItems: countInt, apiEquivalentTotal:
+  unknownOr(nonNegativeNumber), tokens: unknownOr(objectSchema({ ...countFields("input", "output", "reasoning",
+    "total"), cached: unknownOr(countInt) })) });
+const METRICS_SCHEMA = objectSchema<T.BenchMetricsImportFile>({ schemaId: schemaId(T.METRICS_IMPORT_SCHEMA_ID),
+  campaignId: nonEmptyString, partition: enumValue(R.PARTITION_KINDS), primaryEstimator: enumValue(R.ESTIMATOR_KINDS),
+  fieldShapeVerified: literalValue(true as const, "BAD_SHAPE", booleanValue), ...strFields("goldenSha256",
+    "goldenMissionSha256", "candidateMissionSha256"), ...countFields("goldenIds", "annotatorCount"), fields:
+  arrayOf(nonEmptyString), krippendorffAlphaByField: stringMapOf(nullable(finiteNumber)), records: arrayOf(REC_SCHEMA)
+}, { goldenLabel: nonEmptyString, costBasisLabel: enumValue(R.COST_BASIS_KINDS), currency: CURRENCY,
+  missingDigestRuns: arrayOf(nonEmptyString), annotatorRunStats: stringMapOf(objectSchema(countFields("answered",
+    "failed", "missing"))), supportFloors: objectSchema({ ...countFields("recallMinPositives",
+    "precisionMinPredictions"), failureCeiling: unitInterval }) });
 const reader = <T>(schema: Validator<T>): readonly [(v: unknown) => T, (p: string) => T] => {
   const parse = (v: unknown): T => { schema(v, "$"); return v as T; };
   return [parse, (p: string): T => { let raw: string, val: unknown;
@@ -54,3 +83,4 @@ const reader = <T>(schema: Validator<T>): readonly [(v: unknown) => T, (p: strin
 export const [parseArmManifest, readArmManifest] = reader(ARM_SCHEMA);
 export const [parseSeatObservationInput, readSeatObservationInput] = reader(validateSeat);
 export const [parseSeatObservationsFile, readSeatObservationsFile] = reader(SEAT_FILE);
+export const [parseMetricsImportFile, readMetricsImportFile] = reader(METRICS_SCHEMA);
