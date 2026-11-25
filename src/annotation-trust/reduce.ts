@@ -2,12 +2,12 @@
 // validation.transitions (profile.ts), looked up by each row's requires. Each row
 // adds only what the profile cannot say (actor kind, self, selected-only states,
 // owner); one guard (admits) checks every judging row. No hand-written state
-// remains; every result state comes from its row. pairs (lot 5) stay empty
-// until the pin publishes (§7 line 400).
+// remains; every result state comes from its row.
 import type { Pin } from "../ontology-guardian/types.js";
 import { pinsEqual } from "../ontology-guardian/admission.js";
 import { validation } from "./profile.js";
-import type { AI, Entry, Exposure, Human, HumanHead, ReadModel, RejectReason, StreamRef, Validation, Value, ValueAt } from "./types.js";
+import type { AI, Decide, Entry, EvaluationPair, Exposure, Human, HumanHead } from "./types.js";
+import type { ReadModel, RejectReason, Shown, StreamRef, Validation, Value, ValueAt } from "./types.js";
 type Transition = { action: Entry["action"]["kind"]; actor: Entry["actor"]["kind"]; owner: "3" | "4a";
   requires?: string; to: Validation | null; ambiguousTo?: Validation; self?: boolean;
   selectedOnly?: readonly Validation[] };
@@ -140,8 +140,33 @@ export function reduceEntries(entries: readonly Entry[], at: { stream: StreamRef
     if (j !== undefined && valuesEqual(j.value, ai.value)) rej.push({ decision: e.revision,
       judged: e.action.judged, subjectVersion: j.subjectVersion, reason: e.action.reason });
   }
+  // Lot 5: §4 verdict pairs (confirm → anchored; correct/reject → known-error).
+  const aiValue = new Map<number, ValueAt & { author: AI }>();
+  for (const e of entries)
+    if (e.actor.kind === "ai" && e.action.kind === "assert")
+      aiValue.set(e.revision, values.get(e.revision) as ValueAt & { author: AI });
+  const slots = new Map<number, EvaluationPair>();
+  const keep = (n: number, p: EvaluationPair): void => { slots.set(n, p); };
+  for (const e of entries) {
+    if (e.actor.kind === "human"
+      && (e.action.kind === "confirm" || e.action.kind === "correct" || e.action.kind === "reject")) {
+      const he = e as Entry & { subjectVersion: string; actor: Human; exposure: Shown; action: Decide };
+      const a = aiValue.get(he.action.judged);
+      if (a !== undefined) {
+        if (he.action.kind === "confirm")
+          keep(he.action.judged, { ai: a, human: e.revision, channel: he.actor.channel,
+            humanValue: a.value, role: "anchored" });
+        else if (he.action.kind === "correct")
+          keep(he.action.judged, { ai: a, human: e.revision, channel: he.actor.channel,
+            humanValue: he.action.value, role: "known-error" });
+        else keep(he.action.judged, { ai: a, human: e.revision, channel: he.actor.channel,
+          humanValue: { rejected: he.action.reason }, role: "known-error" });
+      }
+    }
+  }
+  const pairs: EvaluationPair[] = [...slots].sort(([a], [b]) => a - b).map(([, p]) => p);
   const base = { stream: at.stream, revision: entries.length, subjectVersion: at.subjectVersion,
-    ai, human, matchingRejections: rej, unverifiedSources: unverified, pairs: [] };
+    ai, human, matchingRejections: rej, unverifiedSources: unverified, pairs };
   if (human !== null && selected !== null && eligible(selected)) return { ...base, trust: "trusted", effective: selected };
   if (human !== null) return { ...base, trust: "withheld", effective: null };
   if (ai !== null && ai.validation === "unreviewed" && eligible(ai)
