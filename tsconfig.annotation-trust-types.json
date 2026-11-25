@@ -11,7 +11,8 @@
     "tests/annotation-trust-lot2b.test.ts",
     "tests/annotation-trust-lot3.test.ts",
     "tests/annotation-trust-lot4a.test.ts",
-    "tests/annotation-trust-lot5.test.ts"
+    "tests/annotation-trust-lot5.test.ts",
+    "tests/annotation-trust-lot6.test.ts"
   ],
   "exclude": ["node_modules", "dist"]
 }
