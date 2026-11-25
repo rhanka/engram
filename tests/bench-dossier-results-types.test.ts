@@ -2,8 +2,9 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 import {
   COST_BASIS_KINDS, COST_UNKNOWN_REASONS, CURRENCY_CODES, EFFORT_LEVELS, ESTIMATOR_KINDS,
   INTERVAL_CLUSTERINGS, INTERVAL_METHODS, PARTITION_KINDS, SEAT_METHODS, SEAT_STATUSES,
-  SEAT_UNKNOWN_REASONS, TARIFF_STATUSES, type BenchCostBlock, type BenchInterval,
-  type SitePresenceMatrix, type UnknownOrNumber, type WeightedEstimateBlock,
+  SEAT_UNKNOWN_REASONS, TARIFF_STATUSES, type BenchCostBlock, type BenchInterval, type CostBasisKind,
+  type CostUnknownReason, type CurrencyCode, type EffortLevel, type EstimatorKind, type PartitionKind,
+  type SeatUnknownReason, type SitePresenceMatrix, type UnknownOrNumber, type WeightedEstimateBlock,
 } from "../src/bench-dossier/results-types-blocks.js";
 import {
   BENCH_RESULTS_SCHEMA_ID, BENCH_RESULTS_SCHEMA_VERSION,
@@ -12,10 +13,41 @@ import {
 
 describe("BenchResultsFile block types", () => {
   it("covers all leaf union literals and block interfaces", () => {
-    expect(EFFORT_LEVELS.length + CURRENCY_CODES.length + ESTIMATOR_KINDS.length).toBe(12);
-    expect(PARTITION_KINDS.length + COST_BASIS_KINDS.length + COST_UNKNOWN_REASONS.length).toBe(12);
-    expect(SEAT_UNKNOWN_REASONS.length + INTERVAL_METHODS.length + INTERVAL_CLUSTERINGS.length).toBe(16);
-    expect(TARIFF_STATUSES.length + SEAT_STATUSES.length + SEAT_METHODS.length).toBe(9);
+    const enumCases: [readonly string[], readonly string[]][] = [
+      [EFFORT_LEVELS, ["off", "minimal", "low", "medium", "high", "xhigh", "max", "cascade"]],
+      [CURRENCY_CODES, ["USD", "CAD"]],
+      [ESTIMATOR_KINDS, ["unweighted", "weighted"]],
+      [PARTITION_KINDS, ["pilot", "eval", "sealed", "blind", "full"]],
+      [COST_BASIS_KINDS, ["extracted_packet", "attempted_id", "supplied_id"]],
+      [COST_UNKNOWN_REASONS, [
+        "unpriced-mission", "reasoning-rate-missing", "incomplete-invocation-summary", "missing-usage",
+      ]],
+      [SEAT_UNKNOWN_REASONS, [
+        "missing-observation", "weekly-window-source-gap", "non-weekly-window", "shared-seat-concurrent",
+        "no-quota-delta", "plan-source-gap", "transport-mismatch", "missing-usage", "api-equivalent-source-gap",
+      ]],
+      [INTERVAL_METHODS, ["wilson_95_unweighted", "design_bootstrap_95", "clopper_pearson_95_one_sided", "none"]],
+      [INTERVAL_CLUSTERINGS, ["independent_site", "clustered_record_invalid", "group_resampled"]],
+      [TARIFF_STATUSES, ["primary", "secondary_unverified", "unknown"]],
+      [SEAT_STATUSES, ["measured", "estimated", "unknown"]],
+      [SEAT_METHODS, ["weekly_burn_delta", "api_cost_proportional", "unknown"]],
+    ];
+    for (const [actual, expected] of enumCases) {
+      expect(actual).toEqual(expected);
+      expect(new Set(actual).size).toBe(expected.length);
+    }
+    expectTypeOf<(typeof EFFORT_LEVELS)[number]>().toEqualTypeOf<EffortLevel>();
+    expectTypeOf<(typeof CURRENCY_CODES)[number]>().toEqualTypeOf<CurrencyCode>();
+    expectTypeOf<(typeof ESTIMATOR_KINDS)[number]>().toEqualTypeOf<EstimatorKind>();
+    expectTypeOf<(typeof PARTITION_KINDS)[number]>().toEqualTypeOf<PartitionKind>();
+    expectTypeOf<(typeof COST_BASIS_KINDS)[number]>().toEqualTypeOf<CostBasisKind>();
+    expectTypeOf<(typeof COST_UNKNOWN_REASONS)[number]>().toEqualTypeOf<CostUnknownReason>();
+    expectTypeOf<(typeof SEAT_UNKNOWN_REASONS)[number]>().toEqualTypeOf<SeatUnknownReason>();
+    expectTypeOf<(typeof INTERVAL_METHODS)[number]>().toEqualTypeOf<BenchInterval["method"]>();
+    expectTypeOf<(typeof INTERVAL_CLUSTERINGS)[number]>().toEqualTypeOf<BenchInterval["clustering"]>();
+    expectTypeOf<(typeof TARIFF_STATUSES)[number]>().toEqualTypeOf<BenchCostBlock["tariffStatus"]>();
+    expectTypeOf<(typeof SEAT_STATUSES)[number]>().toEqualTypeOf<BenchCostBlock["seatStatus"]>();
+    expectTypeOf<(typeof SEAT_METHODS)[number]>().toEqualTypeOf<BenchCostBlock["seatMethod"]>();
     expectTypeOf<UnknownOrNumber>().toEqualTypeOf<number | "unknown">();
     const iv: BenchInterval = { estimator: "unweighted", method: "wilson_95_unweighted",
       clustering: "independent_site", valid: true, low: 0.48, high: 0.81 };
@@ -67,6 +99,8 @@ describe("BenchResultsFile block types", () => {
         annotatorCount: 1, krippendorffAlphaByField: { "office.city": 0.8 } },
       supportFloors: { recallMinPositives: 10, precisionMinPredictions: 10, failureCeiling: 0.1 },
       records: [rec] };
-    expect([file.schemaVersion, file.records[0]?.tokens]).toEqual([1, "unknown"]);
+    expect([file.schemaId, file.schemaVersion, file.records[0]?.tokens]).toEqual([
+      "urn:engram:bench-results:1.0.0", 1, "unknown",
+    ]);
   });
 });

@@ -3,10 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  BENCH_RESULTS_SCHEMA_ID, BENCH_RESULTS_SCHEMA_VERSION, COST_BASIS_KINDS, COST_UNKNOWN_REASONS,
-  CURRENCY_CODES, EFFORT_LEVELS, ESTIMATOR_KINDS, INTERVAL_CLUSTERINGS, INTERVAL_METHODS,
-  PARTITION_KINDS, SEAT_METHODS, SEAT_STATUSES, SEAT_UNKNOWN_REASONS, TARIFF_STATUSES,
-  parseBenchResultsFile, readBenchResultsFile, type BenchInterval, type BenchResultsFile,
+  BENCH_RESULTS_SCHEMA_ID, BENCH_RESULTS_SCHEMA_VERSION, parseBenchResultsFile,
+  readBenchResultsFile, type BenchInterval, type BenchResultsFile,
 } from "../src/bench-dossier/results-contract.js";
 import {
   arrayOf, BenchResultsValidationError, booleanValue, countInt, enumValue, fieldsOf, finiteNumber,
@@ -320,24 +318,37 @@ describe("BenchResultsFile cascade, single-field variations and enum coverage", 
     const check = (mutate: (d: any) => void) => {
       const doc = clone(makeValidFile());
       mutate(doc);
-      expect(parseBenchResultsFile(doc).schemaId).toBe(BENCH_RESULTS_SCHEMA_ID);
+      expect(parseBenchResultsFile(doc).schemaId).toBe("urn:engram:bench-results:1.0.0");
     };
-    for (const v of PARTITION_KINDS) check((d) => { d.corpus.partition = v; });
-    for (const v of ESTIMATOR_KINDS) check((d) => { d.corpus.primaryEstimator = v; });
-    for (const v of COST_BASIS_KINDS) check((d) => { d.corpus.costBasisLabel = v; });
-    for (const v of CURRENCY_CODES) {
+    for (const v of ["pilot", "eval", "sealed", "blind", "full"]) check((d) => { d.corpus.partition = v; });
+    for (const v of ["unweighted", "weighted"]) check((d) => { d.corpus.primaryEstimator = v; });
+    for (const v of ["extracted_packet", "attempted_id", "supplied_id"]) {
+      check((d) => { d.corpus.costBasisLabel = v; });
+    }
+    for (const v of ["USD", "CAD"]) {
       check((d) => { d.corpus.currency = v; });
       check((d) => { d.records[0].cost.currency = v; });
       check((d) => { d.records[0].cost.fxApplied.from = v; });
       check((d) => { d.records[0].cost.fxApplied.to = v; });
     }
-    for (const v of EFFORT_LEVELS) check((d) => { d.records[0].effort = v; });
-    for (const v of [...COST_UNKNOWN_REASONS, null]) check((d) => { d.records[0].cost.costUnknownReason = v; });
-    for (const v of TARIFF_STATUSES) check((d) => { d.records[0].cost.tariffStatus = v; });
-    for (const v of SEAT_STATUSES) check((d) => { d.records[0].cost.seatStatus = v; });
-    for (const v of SEAT_METHODS) check((d) => { d.records[0].cost.seatMethod = v; });
-    for (const v of [...SEAT_UNKNOWN_REASONS, null]) check((d) => { d.records[0].cost.seatUnknownReason = v; });
-    for (const v of INTERVAL_METHODS) {
+    for (const v of ["off", "minimal", "low", "medium", "high", "xhigh", "max", "cascade"]) {
+      check((d) => { d.records[0].effort = v; });
+    }
+    for (const v of [
+      "unpriced-mission", "reasoning-rate-missing", "incomplete-invocation-summary", "missing-usage", null,
+    ]) check((d) => { d.records[0].cost.costUnknownReason = v; });
+    for (const v of ["primary", "secondary_unverified", "unknown"]) {
+      check((d) => { d.records[0].cost.tariffStatus = v; });
+    }
+    for (const v of ["measured", "estimated", "unknown"]) check((d) => { d.records[0].cost.seatStatus = v; });
+    for (const v of ["weekly_burn_delta", "api_cost_proportional", "unknown"]) {
+      check((d) => { d.records[0].cost.seatMethod = v; });
+    }
+    for (const v of [
+      "missing-observation", "weekly-window-source-gap", "non-weekly-window", "shared-seat-concurrent",
+      "no-quota-delta", "plan-source-gap", "transport-mismatch", "missing-usage", "api-equivalent-source-gap", null,
+    ]) check((d) => { d.records[0].cost.seatUnknownReason = v; });
+    for (const v of ["wilson_95_unweighted", "design_bootstrap_95", "clopper_pearson_95_one_sided", "none"] as const) {
       check((d) => {
         d.records[0].precisionInterval = v === "none"
           ? { estimator: "weighted", method: "none", clustering: "group_resampled",
@@ -346,7 +357,7 @@ describe("BenchResultsFile cascade, single-field variations and enum coverage", 
             valid: true, low: 0.4, high: v === "clopper_pearson_95_one_sided" ? null : 0.8 };
       });
     }
-    for (const v of INTERVAL_CLUSTERINGS) {
+    for (const v of ["independent_site", "clustered_record_invalid", "group_resampled"] as const) {
       check((d) => {
         d.records[0].precisionInterval = v === "clustered_record_invalid"
           ? { estimator: "weighted", method: "none", clustering: v, valid: false, low: null, high: null }
