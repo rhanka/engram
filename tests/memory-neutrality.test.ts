@@ -380,6 +380,18 @@ const TEST_ALLOWED_HOST_EDGES = new Set([
   "tests/session-front-privacy.test.ts -> src/llm-mesh",
   "tests/session-front-privacy.test.ts -> src/llm-mesh-bridge",
   "tests/session-front-privacy.test.ts -> src/llm-execution",
+  // Annotation trust lot 7 cross-contract fixture references engram-memory receipts read-only.
+  "tests/annotation-trust-lot7.test.ts -> src/annotation-trust/corpus",
+  "tests/annotation-trust-lot7.test.ts -> src/annotation-trust/parse",
+  "tests/annotation-trust-lot7.test.ts -> src/annotation-trust/profile",
+  "tests/annotation-trust-lot7.test.ts -> src/annotation-trust/reduce",
+  "tests/annotation-trust-lot7.test.ts -> src/annotation-trust/types",
+  "tests/annotation-trust-lot7.test.ts -> src/citations",
+  "tests/annotation-trust-lot7.test.ts -> src/ontology-guardian/canonical",
+  "tests/annotation-trust-lot7.test.ts -> src/ontology-guardian/diagram-document-shape",
+  "tests/annotation-trust-lot7.test.ts -> src/ontology-guardian/diagram-migrations",
+  "tests/annotation-trust-lot7.test.ts -> src/ontology-profile",
+  "tests/annotation-trust-lot7.test.ts -> src/types",
 ]);
 
 function hostEdgeKey(path: string, resolved: string): string {
