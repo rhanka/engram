@@ -99,7 +99,7 @@ real-corpus run retains 11 verified Git controls at case level, 7
 `capability-absent` cases, case 7 `capture-absent` (re-pinned to declared
 fixture `F_WT` with `localStateRead: "not-authorized"`) and case 20
 `policy-unavailable`; zero oracle verification errors, all 20 cases carry
-deterministic numeric gains (`<= 0` for the 9 non-success cases),
+finite numeric gains (deterministically `<= 0` for the 9 non-success cases),
 `baselineCapMs = 30000`, and continuation remains `not-measurable`
 (`reader-absent`). Synthetic mutations additionally exercise `failed`,
 `denied`, `refused`, and `reader-absent` states, no-success populations,
@@ -157,3 +157,16 @@ Applied on `feat/live-git-dl9e1` (base `60a84696abc96b3e48eb7de139e809e73530be4e
   - `npx --no-install vitest run --configLoader runner tests/live-read-side-timing.test.ts tests/live-read-side-oracles.test.ts tests/live-neutrality.test.ts` — 3 files, 31 tests passed (`21` timing, `4` oracles, `6` neutrality).
   - `npx --no-install tsc --noEmit -p .`, `node --check scripts/bench-live.mjs`, `git diff --check`, and `node scripts/check-no-python.mjs` passed.
   - All installed reader/host/service qualification remains `unverified`.
+- Δ-L9-E1 review minors follow-up (`feat/live-git-dl9e1-minors`, base `656bfc008`, folding `REVIEW-dl9e1-opus.md` and
+  `REVIEW-dl9e1-minors-opus.md`):
+  - Hardened `scoreReadSideCase` in `scripts/bench-live.mjs` to throw on invalid timings or `t0FirstMs === 0` with
+    absent `t0Error` (`hasT0Error`, keeping `t1FirstMs: 0` on refusal-before-spawn), fail closed (`state: "failed"`,
+    `emittedBytes: null`) on invalid `emittedBytes`, and require `matchedExpectation === true` for active G4 refusal.
+  - Refused `--timeout-ms < baselineCapMs` before bootstrap (exit `2`), dropped the `< baselineCapMs` clamp on
+    `t0TimeoutMs`, and updated line 102 to `finite numeric gains (deterministically <= 0 for the 9 non-success cases)`.
+  - Added `t0FirstOracleRuns` and strengthened `tests/live-read-side-timing.test.ts`: non-git `--repo` invalid-cap
+    checks forbid `"harness failure:"` (kills M02), verified-case `gain`/`classificationMs` checks (kills M20),
+    `t0FirstOracleRuns < 60` (kills M21), `.toBeNull()` on invalid G4 `emittedBytes`, and `t0Error: ""` checks.
+  - Post-edit gates (Node `v22.22.1`, Git `2.53.0`, zero Python, installed qualification `unverified`):
+    `vitest run --configLoader runner tests/live-*.test.ts` passed (`25` files, `592` passed / `2` skipped);
+    `npm run lint`, `node --check scripts/bench-live.mjs`, `git diff --check`, `node scripts/check-no-python.mjs` pass.
