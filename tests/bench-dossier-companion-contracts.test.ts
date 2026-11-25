@@ -281,3 +281,121 @@ describe("dossier-meta.json and decisions.json core contracts and Focus alignmen
     refuse(() => parseDecisionsFile(halfMinOk), "BAD_SHAPE", "$.questions[0]");
   });
 });
+
+describe("arm.json optional variations, enum literals and nested refusal matrix", () => {
+  it("accepts single-field optional variations, zero perMillion prices and all ArmManifest enums", () => {
+    for (const k of [
+      "missionPath", "missionSha256", "allowLegacyMissingMissionDigest",
+      "isHighlighted", "incomplete", "tariffStatus", "tariffOverride", "fx", "seat",
+    ]) {
+      const doc = clone(makeArmManifest()) as any;
+      delete doc[k];
+      expect(parseArmManifest(doc).armId).toBe("arm-openai-astra-low");
+    }
+    const singleVars: ((d: any) => void)[] = [
+      (d) => { delete d.tariffOverride.perMillion.reasoning; },
+      (d) => { delete d.tariffOverride.perMillion; },
+      (d) => { delete d.tariffOverride.currency; },
+      (d) => { d.tariffOverride.source = null; },
+      (d) => { d.tariffOverride.asOf = null; },
+      (d) => { d.tariffOverride.perMillion.input = 0; },
+      (d) => { d.tariffOverride.perMillion.output = 0; },
+      (d) => { d.tariffOverride.perMillion.reasoning = 0; },
+    ];
+    for (const mutate of singleVars) {
+      const doc = clone(makeArmManifest()) as any;
+      mutate(doc);
+      expect(parseArmManifest(doc).armId).toBe("arm-openai-astra-low");
+    }
+    for (const effort of ["off", "minimal", "low", "medium", "high", "xhigh", "max", "cascade"]) {
+      const doc = clone(makeArmManifest()) as any;
+      doc.effort = effort;
+      expect(parseArmManifest(doc).effort).toBe(effort);
+    }
+    for (const ts of ["primary", "secondary_unverified"]) {
+      const doc = clone(makeArmManifest()) as any;
+      doc.tariffStatus = ts;
+      expect(parseArmManifest(doc).tariffStatus).toBe(ts);
+    }
+    for (const ts of ["primary", "secondary_unverified", "unknown"]) {
+      const doc = clone(makeArmManifest()) as any;
+      doc.tariffOverride.status = ts;
+      expect(parseArmManifest(doc).tariffOverride?.status).toBe(ts);
+    }
+    for (const c of ["USD", "CAD"]) {
+      const doc = clone(makeArmManifest()) as any;
+      doc.tariffOverride.currency = c;
+      expect(parseArmManifest(doc).tariffOverride?.currency).toBe(c);
+      const fxFromDoc = clone(makeArmManifest()) as any;
+      fxFromDoc.fx.from = c;
+      expect(parseArmManifest(fxFromDoc).fx?.from).toBe(c);
+      const fxToDoc = clone(makeArmManifest()) as any;
+      fxToDoc.fx.to = c;
+      expect(parseArmManifest(fxToDoc).fx?.to).toBe(c);
+    }
+  });
+
+  it("refuses cacheRead, closed keys, missing keys and every nested arm.json binding", () => {
+    for (const bad of [null, [], "x", 1, new Date()]) {
+      refuse(() => parseArmManifest(bad), "NOT_OBJECT", "$");
+    }
+    for (const k of ["armId", "provider", "model", "modelLabel", "proseName"]) {
+      const emptyDoc = clone(makeArmManifest()) as any;
+      emptyDoc[k] = " ";
+      refuse(() => parseArmManifest(emptyDoc), "EMPTY_STRING", `$.${k}`);
+      const missDoc = clone(makeArmManifest()) as any;
+      delete missDoc[k];
+      refuse(() => parseArmManifest(missDoc), "MISSING_KEY", `$.${k}`);
+    }
+    for (const k of ["allowLegacyMissingMissionDigest", "isHighlighted", "incomplete"]) {
+      const doc = clone(makeArmManifest()) as any;
+      doc[k] = "yes";
+      refuse(() => parseArmManifest(doc), "WRONG_TYPE", `$.${k}`);
+    }
+    const cases: [(d: any) => void, BenchResultsErrorCode, string][] = [
+      [(d) => { d.schemaId = "urn:engram:bench-results:1.0.0"; }, "BAD_SCHEMA", "$.schemaId"],
+      [(d) => { d.schemaId = 1; }, "WRONG_TYPE", "$.schemaId"],
+      [(d) => { d.extra = 1; }, "UNKNOWN_KEY", "$.extra"],
+      [(d) => { d.missionPath = " "; }, "EMPTY_STRING", "$.missionPath"],
+      [(d) => { d.missionSha256 = ""; }, "EMPTY_STRING", "$.missionSha256"],
+      [(d) => { d.isCascade = "no"; }, "WRONG_TYPE", "$.isCascade"],
+      [(d) => { d.effort = "turbo"; }, "BAD_ENUM", "$.effort"],
+      [(d) => { d.tariffStatus = "unknown"; }, "BAD_ENUM", "$.tariffStatus"],
+      [(d) => { d.tariffOverride.cacheRead = 0.5; }, "UNKNOWN_KEY", "$.tariffOverride.cacheRead"],
+      [(d) => { d.tariffOverride.perMillion.cacheRead = 0.5; }, "UNKNOWN_KEY", "$.tariffOverride.perMillion.cacheRead"],
+      [(d) => { d.tariffOverride.extra = 1; }, "UNKNOWN_KEY", "$.tariffOverride.extra"],
+      [(d) => { d.tariffOverride.perMillion.extra = 1; }, "UNKNOWN_KEY", "$.tariffOverride.perMillion.extra"],
+      [(d) => { delete d.tariffOverride.status; }, "MISSING_KEY", "$.tariffOverride.status"],
+      [(d) => { delete d.tariffOverride.source; }, "MISSING_KEY", "$.tariffOverride.source"],
+      [(d) => { delete d.tariffOverride.asOf; }, "MISSING_KEY", "$.tariffOverride.asOf"],
+      [(d) => { delete d.tariffOverride.perMillion.input; }, "MISSING_KEY", "$.tariffOverride.perMillion.input"],
+      [(d) => { delete d.tariffOverride.perMillion.output; }, "MISSING_KEY", "$.tariffOverride.perMillion.output"],
+      [(d) => { d.tariffOverride.status = "invalid"; }, "BAD_ENUM", "$.tariffOverride.status"],
+      [(d) => { d.tariffOverride.currency = "EUR"; }, "BAD_ENUM", "$.tariffOverride.currency"],
+      [(d) => { d.tariffOverride.source = undefined; }, "WRONG_TYPE", "$.tariffOverride.source"],
+      [(d) => { d.tariffOverride.source = " "; }, "EMPTY_STRING", "$.tariffOverride.source"],
+      [(d) => { d.tariffOverride.asOf = ""; }, "EMPTY_STRING", "$.tariffOverride.asOf"],
+      [(d) => { d.tariffOverride.perMillion.input = -0.01; }, "NEGATIVE", "$.tariffOverride.perMillion.input"],
+      [(d) => { d.tariffOverride.perMillion.output = Number.NaN; }, "NON_FINITE", "$.tariffOverride.perMillion.output"],
+      [(d) => { d.tariffOverride.perMillion.reasoning = -1; }, "NEGATIVE", "$.tariffOverride.perMillion.reasoning"],
+      [(d) => { d.fx.extra = 1; }, "UNKNOWN_KEY", "$.fx.extra"],
+      [(d) => { delete d.fx.from; }, "MISSING_KEY", "$.fx.from"],
+      [(d) => { delete d.fx.to; }, "MISSING_KEY", "$.fx.to"],
+      [(d) => { delete d.fx.rate; }, "MISSING_KEY", "$.fx.rate"],
+      [(d) => { delete d.fx.source; }, "MISSING_KEY", "$.fx.source"],
+      [(d) => { delete d.fx.asOf; }, "MISSING_KEY", "$.fx.asOf"],
+      [(d) => { d.fx.from = "GBP"; }, "BAD_ENUM", "$.fx.from"],
+      [(d) => { d.fx.to = "EUR"; }, "BAD_ENUM", "$.fx.to"],
+      [(d) => { d.fx.rate = 0; }, "NON_POSITIVE", "$.fx.rate"],
+      [(d) => { d.fx.source = ""; }, "EMPTY_STRING", "$.fx.source"],
+      [(d) => { d.fx.asOf = " "; }, "EMPTY_STRING", "$.fx.asOf"],
+      [(d) => { d.seat.status = "bogus"; }, "BAD_ENUM", "$.seat.status"],
+      [(d) => { d.seat.windowMinutes = 300; }, "BAD_SHAPE", "$.seat.windowMinutes"],
+    ];
+    for (const [mutate, code, path] of cases) {
+      const doc = clone(makeArmManifest());
+      mutate(doc);
+      refuse(() => parseArmManifest(doc), code, path);
+    }
+  });
+});
