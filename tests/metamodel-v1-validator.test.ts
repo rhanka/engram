@@ -2,7 +2,6 @@ import { readFileSync } from "node:fs";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { stringify as stringifyYaml } from "yaml";
-import { createConfidentialityDenyListV1 } from "../engram-memory/dist/privacy/deny-list.js";
 import {
   METAMODEL_DIAGNOSTIC_CODES,
   type MetamodelDiagnosticCode,
@@ -12,6 +11,7 @@ import type {
   MetamodelValidationContext,
 } from "../src/metamodel/types.js";
 import { validateTemplateAgainstMetamodel } from "../src/metamodel/validate.js";
+import { createConfidentialityDenyListV1 } from "../src/metamodel/validate-privacy.js";
 import { canonicalizeConfinedPath } from "../src/metamodel/validate-projections.js";
 import type { H2AMandateEnvelope, Sha256Digest } from "../src/metamodel-contracts.js";
 import { ARCHI_V1, ARCHI_V1_PIN } from "../src/ontology-guardian/archi-profile.js";

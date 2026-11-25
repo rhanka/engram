@@ -9,6 +9,9 @@ import { isDigest } from "../ontology-guardian/types.js";
 import type { MetamodelValidationContext } from "./types.js";
 import { addError, isSha256Digest, type ValidationSink } from "./validate-common.js";
 
+// Re-exported for metamodel unit tests so they avoid importing engram-memory directly.
+export { createConfidentialityDenyListV1 };
+
 const COMPOSED_PIN_DIGEST_PATH_RE = /^composed_lineage_pins\[\d+\]\.templateDigestSha256$/;
 
 const DEFAULT_D7_DENY_LIST: ConfidentialityDenyListV1 = (() => {
