@@ -8,6 +8,7 @@ import { pinsEqual } from "../ontology-guardian/admission.js";
 import { validation } from "./profile.js";
 import type { AI, Decide, Entry, EvaluationPair, Exposure, Human, HumanHead } from "./types.js";
 import type { ReadModel, RejectReason, Shown, StreamRef, Validation, Value, ValueAt } from "./types.js";
+import type { Assertion, Channel } from "./types.js";
 type Transition = { action: Entry["action"]["kind"]; actor: Entry["actor"]["kind"]; owner: "3" | "4a";
   requires?: string; to: Validation | null; ambiguousTo?: Validation; self?: boolean;
   selectedOnly?: readonly Validation[] };
@@ -141,16 +142,46 @@ export function reduceEntries(entries: readonly Entry[], at: { stream: StreamRef
       judged: e.action.judged, subjectVersion: j.subjectVersion, reason: e.action.reason });
   }
   // Lot 5: §4 verdict pairs (confirm → anchored; correct/reject → known-error).
+  // Blind (prior not-shown), shown (row 3) and unknown (unscored) pairs cover all
+  // subject versions; latest blind and latest other (shared with unscored) win per
+  // AI revision. Earlier pairs return by replaying a prefix.
   const aiValue = new Map<number, ValueAt & { author: AI }>();
   for (const e of entries)
-    if (e.actor.kind === "ai" && e.action.kind === "assert")
+    if (e.actor.kind === "ai" && e.action.kind === "assert" && e.action.value.kind === "class")
       aiValue.set(e.revision, values.get(e.revision) as ValueAt & { author: AI });
-  const slots = new Map<number, EvaluationPair>();
-  const keep = (n: number, p: EvaluationPair): void => { slots.set(n, p); };
+  const slots = new Map<number, { blind: EvaluationPair | null; other: EvaluationPair | null }>();
+  const keep = (n: number, p: EvaluationPair): void => {
+    const s = slots.get(n) ?? { blind: null, other: null };
+    if (p.role === "blind") s.blind = p; else s.other = p;
+    slots.set(n, s);
+  };
+  const pairShown = (rev: number, sv: string, chan: Channel, hv: Value,
+    list: readonly number[]): void => {
+    for (const n of list) {
+      const a = aiValue.get(n);
+      if (n < rev && a !== undefined && a.subjectVersion === sv)
+        keep(n, { ai: a, human: rev, channel: chan, humanValue: hv,
+          role: valuesEqual(a.value, hv) ? "anchored" : "known-error" });
+    }
+  };
+  let aiSeen = false;
   for (const e of entries) {
-    if (e.actor.kind === "human"
+    if (e.actor.kind === "human" && e.action.kind === "assert") {
+      const he = e as Entry & { subjectVersion: string; actor: Human; exposure: Exposure; action: Assertion };
+      if (he.exposure.proposal === "shown")
+        pairShown(e.revision, he.subjectVersion, he.actor.channel, he.action.value, he.exposure.shown);
+      else if (he.exposure.proposal === "unknown" || !aiSeen) {
+        const role = he.exposure.proposal === "not-shown" ? "blind" : "unscored";
+        for (const [n, a] of aiValue)
+          if (a.subjectVersion === he.subjectVersion && (n < e.revision || !aiSeen))
+            keep(n, { ai: a, human: e.revision, channel: he.actor.channel,
+              humanValue: he.action.value, role });
+      }
+    } else if (e.actor.kind === "human"
       && (e.action.kind === "confirm" || e.action.kind === "correct" || e.action.kind === "reject")) {
       const he = e as Entry & { subjectVersion: string; actor: Human; exposure: Shown; action: Decide };
+      if (he.action.kind === "correct")
+        pairShown(e.revision, he.subjectVersion, he.actor.channel, he.action.value, he.exposure.shown);
       const a = aiValue.get(he.action.judged);
       if (a !== undefined) {
         if (he.action.kind === "confirm")
@@ -163,8 +194,10 @@ export function reduceEntries(entries: readonly Entry[], at: { stream: StreamRef
           humanValue: { rejected: he.action.reason }, role: "known-error" });
       }
     }
+    if (e.actor.kind === "ai" && e.action.kind === "assert") aiSeen = true;
   }
-  const pairs: EvaluationPair[] = [...slots].sort(([a], [b]) => a - b).map(([, p]) => p);
+  const pairs: EvaluationPair[] = [...slots].sort(([a], [b]) => a - b)
+    .flatMap(([, s]) => [s.blind, s.other].filter((p): p is EvaluationPair => p !== null));
   const base = { stream: at.stream, revision: entries.length, subjectVersion: at.subjectVersion,
     ai, human, matchingRejections: rej, unverifiedSources: unverified, pairs };
   if (human !== null && selected !== null && eligible(selected)) return { ...base, trust: "trusted", effective: selected };

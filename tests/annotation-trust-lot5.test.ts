@@ -99,4 +99,107 @@ describe("lot 5 evaluation pairs and reports", () => {
       action: { kind: "needs-elicitation", judged: 1, question: "why?" } } satisfies Entry;
     expect(replay(ai(1), q).pairs).toEqual([]);
   });
+  it("a prior judgment pairs blind with later runs, agreement and disagreement", () => {
+    const r = replay(hAssert(1), ai(2, pertinent, "run-b"), ai(3, watcher, "run-c"));
+    expect(r.pairs).toHaveLength(2);
+    expect(r.pairs.every((p) => p.role === "blind" && p.human === 1)).toBe(true);
+    expect(r.pairs.map((p) => p.ai.revision)).toEqual([2, 3]);
+    expect(r.pairs.map((p) => p.channel)).toEqual(["ui-select", "ui-select"]);
+    expect(r.pairs[0]?.humanValue).toEqual(pertinent);
+    expect(r.pairs[1]?.humanValue).toEqual(pertinent);
+  });
+  it("a not-shown assert after an AI value forms no pair", () => {
+    const c2 = { ...env(2), subjectVersion: "sv1", actor: elicited,
+      exposure: shown(1), action: { kind: "confirm", judged: 1 } } satisfies Entry;
+    const h3 = { ...env(3), subjectVersion: "sv1", actor: analyst,
+      exposure: { proposal: "not-shown" },
+      action: { kind: "assert", value: pertinent }, replacesHuman: 2 } satisfies Entry;
+    const r = replay(ai(1), c2, h3, ai(4, pertinent, "run-b"));
+    expect(r.pairs).toHaveLength(1);
+    expect(r.pairs[0]).toMatchObject({ ai: { revision: 1 }, human: 2, role: "anchored", channel: "mcp-elicitation" });
+  });
+  it("a blind pair and a later verdict coexist on one run", () => {
+    const r = replay(hAssert(1), ai(2, pertinent, "run-b"), confirm(3, 2, 1));
+    expect(r.pairs).toHaveLength(2);
+    expect(r.pairs.map((p) => p.role)).toEqual(["blind", "anchored"]);
+    expect(r.pairs.map((p) => p.channel)).toEqual(["ui-select", "ui-select"]);
+    expect(r.pairs[1]?.humanValue).toEqual(pertinent);
+  });
+  it("the latest blind pair wins per AI revision", () => {
+    const h2 = { ...env(2), subjectVersion: "sv1", actor: analyst,
+      exposure: { proposal: "not-shown" },
+      action: { kind: "assert", value: watcher }, replacesHuman: 1 } satisfies Entry;
+    const r = replay(hAssert(1), h2, ai(3));
+    expect(r.pairs).toHaveLength(1);
+    expect(r.pairs[0]).toMatchObject({ human: 2, role: "blind" });
+    expect(r.pairs[0]?.humanValue).toEqual(watcher);
+  });
+  it("a prior judgment pairs blind at any read version, same-version AI only", () => {
+    const other = { ...env(3), subjectVersion: "sv2", actor: run("run-c"),
+      action: { kind: "assert", value: pertinent } } satisfies Entry;
+    expect(replay(hAssert(1), ai(2, pertinent, "run-b"), other).pairs).toHaveLength(1);
+    const r = replayAt("sv2", hAssert(1), ai(2, pertinent, "run-b"));
+    expect(r.pairs).toHaveLength(1);
+    expect(r.pairs[0]).toMatchObject({ human: 1, role: "blind" });
+    expect(r.pairs[0]?.ai.revision).toBe(2);
+    const a0 = { ...env(1), subjectVersion: "sv0", actor: run("run-a"),
+      action: { kind: "assert", value: pertinent } } satisfies Entry;
+    expect(replay(a0, hAssert(2), ai(3, pertinent, "run-b")).pairs).toEqual([]);
+  });
+  it("a shown assert pairs anchored when equal, known-error when different", () => {
+    const eq = { ...env(2), subjectVersion: "sv1", actor: analyst,
+      exposure: shown(1), action: { kind: "assert", value: pertinent } } satisfies Entry;
+    expect(replay(ai(1), eq).pairs[0]).toMatchObject({ human: 2, role: "anchored", channel: "ui-select" });
+    const diff = { ...env(2), subjectVersion: "sv1", actor: analyst,
+      exposure: shown(1), action: { kind: "assert", value: watcher } } satisfies Entry;
+    const r = replay(ai(1), diff);
+    expect(r.pairs).toHaveLength(1);
+    expect(r.pairs[0]).toMatchObject({ human: 2, role: "known-error", channel: "ui-select" });
+    expect(r.pairs[0]?.humanValue).toEqual(watcher);
+  });
+  it("shown lists that never name a same-version earlier AI form no pair", () => {
+    const h2 = { ...env(2), subjectVersion: "sv1", actor: analyst,
+      exposure: shown(1), action: { kind: "assert", value: pertinent }, replacesHuman: 1 } satisfies Entry;
+    expect(replay(hAssert(1), h2).pairs).toEqual([]);
+    const a1 = { ...env(1), subjectVersion: "sv2", actor: run("run-a"),
+      action: { kind: "assert", value: pertinent } } satisfies Entry;
+    const h2b = { ...env(2), subjectVersion: "sv1", actor: analyst,
+      exposure: shown(1), action: { kind: "assert", value: pertinent } } satisfies Entry;
+    expect(replay(a1, h2b).pairs).toEqual([]);
+    const h1 = { ...env(1), subjectVersion: "sv1", actor: analyst,
+      exposure: { proposal: "shown", shown: [2] },
+      action: { kind: "assert", value: pertinent } } satisfies Entry;
+    expect(replay(h1, ai(2)).pairs).toEqual([]);
+  });
+  it("a correction of a human value pairs its shown AI revisions", () => {
+    const h2 = { ...env(2), subjectVersion: "sv1", actor: analyst,
+      exposure: shown(1), action: { kind: "assert", value: watcher } } satisfies Entry;
+    const c3 = { ...env(3), subjectVersion: "sv1", actor: analyst,
+      exposure: { proposal: "shown", shown: [1, 2] },
+      action: { kind: "correct", judged: 2, value: pertinent }, replacesHuman: 2 } satisfies Entry;
+    const r = replay(ai(1), h2, c3);
+    expect(r.pairs).toHaveLength(1);
+    expect(r.pairs[0]).toMatchObject({ human: 3, role: "anchored" });
+    expect(r.pairs[0]?.ai.revision).toBe(1);
+    expect(r.pairs[0]?.humanValue).toEqual(pertinent);
+  });
+  it("notes form no evaluation pair", () => {
+    const n1 = { ...env(1), subjectVersion: "sv1", actor: run("run-a"),
+      action: { kind: "assert", value: note("n") } } satisfies Entry;
+    const c2 = { ...env(2), subjectVersion: "sv1", actor: analyst,
+      exposure: shown(1), action: { kind: "confirm", judged: 1 } } satisfies Entry;
+    expect(replay(n1, c2).pairs).toEqual([]);
+  });
+  it("unknown records pair unscored with same-version AI values", () => {
+    const u = { ...env(1), subjectVersion: "sv1", actor: analyst,
+      exposure: { proposal: "unknown" }, action: { kind: "assert", value: pertinent } } satisfies Entry;
+    const r = reduceEntries([u, ai(2)].map((f) => parseEntry(seal(f), { live: false })), atSv("sv1"));
+    expect(r.pairs).toHaveLength(1);
+    expect(r.pairs[0]).toMatchObject({ human: 1, role: "unscored" });
+    const u2 = { ...env(2), subjectVersion: "sv1", actor: analyst,
+      exposure: { proposal: "unknown" }, action: { kind: "assert", value: pertinent } } satisfies Entry;
+    const r2 = reduceEntries([ai(1), u2].map((f) => parseEntry(seal(f), { live: false })), atSv("sv1"));
+    expect(r2.pairs).toHaveLength(1);
+    expect(r2.pairs[0]).toMatchObject({ human: 2, role: "unscored" });
+  });
 });
