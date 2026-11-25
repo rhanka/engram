@@ -277,6 +277,8 @@ describe("lot 6 json-ld export", () => {
     ex(JSON.parse(wFmt)).toEqual(wDoc);
     const wLines = wFmt.slice(0, -1).split("\n");
     ex(wLines.length).toBeLessThanOrEqual(115); ex(wLines.every((l) => l.length <= 120)).toBe(true);
+    const gld = join(HERE, "fixtures/annotation-trust/worked-correction.jsonld");
+    ex(readFileSync(gld, "utf8")).toBe(wFmt);
     chk(wDoc, 95);
     const escDoc = go([
       { ...u(1, a1.actor, { kind: "assert", value: { kind: "note", text: 'line1\n"q"\\élicitation' } }),
