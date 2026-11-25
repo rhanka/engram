@@ -50,4 +50,13 @@ describe("lot 2b closed parser", () => {
   it("parses every Entry arm (round-trip guards N1)", () => { for (const f of [fPipe, fMcp, fUi, fElic, fAd]) expect(parseEntry(seal(R(f)))).toBeTruthy(); });
   it("parses an AI assert flagged ambiguous and an adapter row without subject version", () => { expect(parseEntry(seal(R(fPipe)))).toBeTruthy(); expect(parseEntry(seal(R(fAd))).subjectVersion).toBeNull(); });
   it("refuses a bad observedAt naming observedAt", () => { expect(() => parseEntry(seal({ ...R(fPipe), observedAt: "2026-02-30T00:00:00Z" }))).toThrow(/observedAt malformed/); });
+  it.each<[string, Record<string, unknown>, RegExp]>([
+    ["ai channel", entry({ ...pipe, channel: "bogus" }, assertNote), /ai actor malformed/],
+    ["human channel", entry({ ...uiHuman, channel: "bogus" }, assertNote, shownOne), /human actor malformed/],
+    ["exposure proposal", entry(uiHuman, assertNote, { proposal: "bogus" }), /exposure proposal malformed/],
+    ["adapter channel", entry({ ...adapter, channel: "bogus" }, preserve), /adapter act malformed/],
+    ["reject reason", entry(uiHuman, { kind: "reject", judged: 1, reason: "bogus" }, shownOne), /reason malformed/],
+  ])("refuses invalid %s (F-4)", (_k, raw, msg) => {
+    expect(() => parseEntry(seal(raw))).toThrow(msg);
+  });
 });

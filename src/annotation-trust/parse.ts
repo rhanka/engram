@@ -6,10 +6,12 @@ import { digestOfPreimage } from "../ontology-guardian/canonical.js";
 import { isDigest, type Pin } from "../ontology-guardian/types.js";
 import { isDigest as isShaDigest, isInstant } from "../time-reference/format.js";
 import { VALID_CONFIDENCES } from "../validate.js";
-import { TEMPLATE_REF_KEYS } from "./profile.js";
-import type { Entry } from "./types.js";
+import { exposure as EXP, TEMPLATE_REF_KEYS } from "./profile.js";
+import { ADAPTER_CHANNEL, AI_CHANNELS, HUMAN_CHANNELS, REJECT_REASONS, type Entry } from "./types.js";
 const fail = (msg: string): never => { throw new SchemaFailure(`annotation-trust: ${msg}`); };
 const need: (cond: unknown, msg: string) => asserts cond = (cond, msg) => { if (!cond) fail(msg); };
+const oneOf = <T extends string>(xs: readonly T[], v: unknown): v is T =>
+  typeof v === "string" && (xs as readonly string[]).includes(v);
 const rev = (v: unknown, min: number): v is number => typeof v === "number" && Number.isInteger(v) && v >= min && v <= 2147483647;
 const link = (v: unknown, what: string): void => { assertExactKeys(v, what, ["sourceRef", "sourceDigest"], ["sourceRef", "sourceDigest"]); need(isTrimmedStr(v.sourceRef) && isDigest(v.sourceDigest), `${what} source malformed`); };
 const checkValue = (v: unknown): void => {
@@ -35,7 +37,8 @@ export function parseEntry(value: unknown, opts?: { readonly live?: boolean }): 
   const actor = value.actor; need(isTrimmedStr(actor.actorRef), "actorRef malformed");
   need(isRecord(value.action) && isTrimmedStr(value.action.kind), "action kind malformed"); const action = value.action;
   if (actor.kind === "ai") {
-    need((actor.channel === "pipeline" || actor.channel === "mcp") && isTrimmedStr(actor.model) && value.exposure === undefined, "ai actor malformed");
+    need(oneOf(AI_CHANNELS, actor.channel) && isTrimmedStr(actor.model) && value.exposure === undefined,
+      "ai actor malformed");
     need(action.kind === "assert" || action.kind === "uncertain" || action.kind === "needs-elicitation", "ai cannot decide");
     if (actor.channel === "pipeline") {
       assertExactKeys(actor, "actor.pipeline", ["kind", "actorRef", "model", "channel", "modelVersion", "promptDigest", "runRef", "effort", "promptId", "inputDigest"], ["kind", "actorRef", "model", "channel", "runRef"]);
@@ -43,9 +46,10 @@ export function parseEntry(value: unknown, opts?: { readonly live?: boolean }): 
       need(isDigest(actor.promptDigest), "pipeline promptDigest malformed"); need(isTrimmedStr(actor.runRef) && (actor.effort === undefined || isTrimmedStr(actor.effort)) && (actor.promptId === undefined || isTrimmedStr(actor.promptId)) && (actor.inputDigest === undefined || isDigest(actor.inputDigest)), "pipeline refs malformed");
     } else { assertExactKeys(actor, "actor.mcp", ["kind", "actorRef", "model", "channel", "clientRef", "sessionRef"], ["kind", "actorRef", "model", "channel", "clientRef"]); need(isTrimmedStr(actor.clientRef) && (actor.sessionRef === undefined || isTrimmedStr(actor.sessionRef)), "clientRef malformed"); }
   } else if (actor.kind === "human") {
-    need((actor.channel === "ui-select" || actor.channel === "ui-thumbs" || actor.channel === "mcp-elicitation") && isTrimmedStr(actor.receiptRef), "human actor malformed");
+    need(oneOf(HUMAN_CHANNELS, actor.channel) && isTrimmedStr(actor.receiptRef), "human actor malformed");
     assertExactKeys(value.exposure, "exposure", ["proposal", "shown"], ["proposal"]);
-    need(isTrimmedStr(value.exposure.proposal) && (value.exposure.proposal === "shown" || value.exposure.proposal === "not-shown" || value.exposure.proposal === "unknown"), "exposure proposal malformed"); const exposure = value.exposure;
+    need(isTrimmedStr(value.exposure.proposal) && oneOf(EXP.values, value.exposure.proposal),
+      "exposure proposal malformed"); const exposure = value.exposure;
     if (exposure.proposal === "shown") need(Array.isArray(exposure.shown) && exposure.shown.every((n) => rev(n, 1)), "exposure.shown malformed");
     else need(!Object.hasOwn(exposure, "shown"), "exposure.shown belongs to shown only");
     if (actor.channel === "mcp-elicitation") {
@@ -62,7 +66,8 @@ export function parseEntry(value: unknown, opts?: { readonly live?: boolean }): 
     if (action.kind === "confirm" || action.kind === "correct" || action.kind === "reject") need(exposure.proposal === "shown" && Array.isArray(exposure.shown) && exposure.shown.includes(action.judged as number), "verdict exposure must list the judged revision");
   } else {
     assertExactKeys(actor, "actor.adapter", ["kind", "actorRef", "channel"], ["kind", "actorRef", "channel"]);
-    need(actor.channel === "import" && value.exposure === undefined && action.kind === "preserve-source", "adapter act malformed");
+    need(actor.channel === ADAPTER_CHANNEL && value.exposure === undefined && action.kind === "preserve-source",
+      "adapter act malformed");
   }
   need(actor.kind === "human" || value.replacesHuman === null, "replacesHuman belongs to a human write");
   need(actor.kind === "adapter" ? value.subjectVersion === null || isTrimmedStr(value.subjectVersion) : isTrimmedStr(value.subjectVersion), "subjectVersion malformed");
@@ -71,7 +76,8 @@ export function parseEntry(value: unknown, opts?: { readonly live?: boolean }): 
   else if (action.kind === "uncertain" || action.kind === "confirm") { assertExactKeys(action, `action.${action.kind}`, ["kind", "judged"], ["kind", "judged"]); jd(); }
   else if (action.kind === "needs-elicitation") { assertExactKeys(action, "action.needs-elicitation", ["kind", "judged", "question"], ["kind", "judged", "question"]); jd(); need(isNonEmptyStr(action.question), "question malformed"); }
   else if (action.kind === "correct") { assertExactKeys(action, "action.correct", ["kind", "judged", "value"], ["kind", "judged", "value"]); jd(); checkValue(action.value); }
-  else if (action.kind === "reject") { assertExactKeys(action, "action.reject", ["kind", "judged", "reason"], ["kind", "judged", "reason"]); jd(); need(typeof action.reason === "string" && ["wrong-subject", "contradicted", "insufficient-evidence", "obsolete", "duplicate", "out-of-scope"].includes(action.reason), "reason malformed"); }
+  else if (action.kind === "reject") { assertExactKeys(action, "action.reject", ["kind", "judged", "reason"],
+    ["kind", "judged", "reason"]); jd(); need(oneOf(REJECT_REASONS, action.reason), "reason malformed"); }
   else if (action.kind === "preserve-source") {
     need(actor.kind === "adapter", "only the adapter preserves a source"); assertExactKeys(action, "action.preserve-source", ["kind", "row"], ["kind", "row"]);
     const row = action.row; assertExactKeys(row, "row", ["sourceRef", "sourceDigest", "batchRef", "reportedSource", "reportedClass", "reportedNote", "reportedModel", "pendingHuman"], ["sourceRef", "sourceDigest"]);

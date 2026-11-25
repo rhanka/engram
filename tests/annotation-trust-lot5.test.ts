@@ -398,4 +398,24 @@ describe("lot 5 evaluation pairs and reports", () => {
     const r2 = replay(ai(1, pertinent), h2);
     expect(r2.pairs.map((p) => p.role)).toEqual(["known-error"]);
   });
+  it("preserve-source blocks subsequent blind pairing and unknown forward-pairing (O-2)", () => {
+    const ps = (n: number, sv: string | null = "sv1") => ({
+      ...env(n), subjectVersion: sv, actor: { kind: "adapter", actorRef: "imp", channel: "import" },
+      action: { kind: "preserve-source", row: { sourceRef: "legacy-1", sourceDigest: D } },
+    }) satisfies Entry;
+    const unk = (n: number) => ({
+      ...env(n), subjectVersion: "sv1", actor: analyst,
+      exposure: { proposal: "unknown" }, action: { kind: "assert", value: pertinent },
+    }) satisfies Entry;
+    const imp = (...fs: Entry[]) =>
+      reduceEntries(fs.map((f) => parseEntry(seal(f), { live: false })), atSv("sv1"));
+    expect(replay(ps(1), hAssert(2), ai(3)).pairs).toEqual([]);
+    expect(replay(ps(1, null), hAssert(2), ai(3)).pairs).toEqual([]);
+    expect(imp(ps(1), unk(2), ai(3)).pairs).toEqual([]);
+    expect(imp(ps(1, null), unk(2), ai(3)).pairs).toEqual([]);
+    expect(imp(ai(1), ps(2), unk(3), ai(4)).pairs.map((p) => [p.ai.revision, p.human, p.role]))
+      .toEqual([[1, 3, "unscored"]]);
+    expect(imp(unk(1), ps(2), ai(3)).pairs.map((p) => [p.ai.revision, p.human, p.role]))
+      .toEqual([[3, 1, "unscored"]]);
+  });
 });
