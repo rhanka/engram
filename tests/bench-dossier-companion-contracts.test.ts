@@ -622,3 +622,121 @@ describe("metrics.json top-level, optional, enum, count and string-map matrix", 
     }
   });
 });
+
+describe("metrics.json record, sitePresence, weighted, diagnostics and tokens refusal matrix", () => {
+  it("refuses every record-level count, string, interval, unit-range and optional sub-block defect", () => {
+    for (const k of ["armId", "field", "comparator", "armMissionSha256"]) {
+      const doc = clone(makeMetricsImport()) as any;
+      doc.records[0][k] = " ";
+      refuse(() => parseMetricsImportFile(doc), "EMPTY_STRING", `$.records[0].${k}`);
+    }
+    for (const k of [
+      "attempted", "accepted", "failed", "unverifiedQuotesNulled", "goldPositive", "goldAbsent",
+      "tp", "fp", "fpOnPresent", "fpOnAbsent", "fpElementsOnAbsent", "fn", "tn", "failedOnAbsent",
+      "unresolved", "insufficient", "unverifiedWholeRecordsDropped", "costBasisItems",
+    ]) {
+      const doc = clone(makeMetricsImport()) as any;
+      doc.records[0][k] = 1.5;
+      refuse(() => parseMetricsImportFile(doc), "BAD_COUNT", `$.records[0].${k}`);
+    }
+    for (const k of [
+      "goldPresentSites", "goldAbsentSites", "unresolvedSites", "insufficientSites", "tpSites",
+      "fnSites", "wrongValueOnPresentSites", "fpOnAbsentSites", "tnSites", "failedOnAbsentSites",
+    ]) {
+      const doc = clone(makeMetricsImport()) as any;
+      doc.records[0].sitePresence[k] = 1.5;
+      refuse(() => parseMetricsImportFile(doc), "BAD_COUNT", `$.records[0].sitePresence.${k}`);
+    }
+    for (const k of ["input", "output", "reasoning", "total", "cached"]) {
+      const doc = clone(makeMetricsImport()) as any;
+      doc.records[0].tokens[k] = 1.5;
+      refuse(() => parseMetricsImportFile(doc), "BAD_COUNT", `$.records[0].tokens.${k}`);
+    }
+    const zeroCalls = clone(makeMetricsImport()) as any;
+    zeroCalls.records[0].calls = 0;
+    expect(parseMetricsImportFile(zeroCalls).records[0]?.calls).toBe(0);
+    const zeroCached = clone(makeMetricsImport()) as any;
+    zeroCached.records[0].tokens.cached = 0;
+    expect(parseMetricsImportFile(zeroCached).records[0]?.tokens).toEqual({
+      input: 10000, output: 1500, reasoning: 200, cached: 0, total: 11700,
+    });
+    const zeroApiEq = clone(makeMetricsImport()) as any;
+    zeroApiEq.records[0].apiEquivalentTotal = 0;
+    expect(parseMetricsImportFile(zeroApiEq).records[0]?.apiEquivalentTotal).toBe(0);
+    const noF1Iv = clone(makeMetricsImport()) as any;
+    delete noF1Iv.records[0].weighted.f1Interval;
+    expect(parseMetricsImportFile(noF1Iv).records[0]?.weighted?.f1Interval).toBeUndefined();
+
+    const cases: [(d: any) => void, BenchResultsErrorCode, string][] = [
+      [(d) => { d.records[0].extra = 1; }, "UNKNOWN_KEY", "$.records[0].extra"],
+      [(d) => { d.records[0].sitePresence.extra = 1; }, "UNKNOWN_KEY", "$.records[0].sitePresence.extra"],
+      [(d) => { d.records[0].unweighted.extra = 1; }, "UNKNOWN_KEY", "$.records[0].unweighted.extra"],
+      [(d) => { d.records[0].weighted.extra = 1; }, "UNKNOWN_KEY", "$.records[0].weighted.extra"],
+      [(d) => { d.records[0].independentGroupSupport.extra = 1; },
+        "UNKNOWN_KEY", "$.records[0].independentGroupSupport.extra"],
+      [(d) => { d.records[0].diagnostics.extra = 1; }, "UNKNOWN_KEY", "$.records[0].diagnostics.extra"],
+      [(d) => { d.records[0].diagnostics.broad.extra = 1; }, "UNKNOWN_KEY", "$.records[0].diagnostics.broad.extra"],
+      [(d) => { d.records[0].tokens.extra = 1; }, "UNKNOWN_KEY", "$.records[0].tokens.extra"],
+      [(d) => { delete d.records[0].insufficient; }, "MISSING_KEY", "$.records[0].insufficient"],
+      [(d) => { delete d.records[0].fpElementsOnAbsent; }, "MISSING_KEY", "$.records[0].fpElementsOnAbsent"],
+      [(d) => { d.records[0].isPrimaryComparator = "yes"; }, "WRONG_TYPE", "$.records[0].isPrimaryComparator"],
+      [(d) => { d.records[0].failuresByCode.llm_error = 1.5; }, "BAD_COUNT", "$.records[0].failuresByCode.llm_error"],
+      [(d) => { d.records[0].sitePresence.siteRecall = 1.01; },
+        "UNIT_RANGE", "$.records[0].sitePresence.siteRecall"],
+      [(d) => { d.records[0].sitePresence.siteRecall = -0.01; },
+        "UNIT_RANGE", "$.records[0].sitePresence.siteRecall"],
+      [(d) => { d.records[0].sitePresence.siteAbstentionSpecificity = 1.01; },
+        "UNIT_RANGE", "$.records[0].sitePresence.siteAbstentionSpecificity"],
+      [(d) => { d.records[0].sitePresence.siteAbstentionSpecificity = -0.01; },
+        "UNIT_RANGE", "$.records[0].sitePresence.siteAbstentionSpecificity"],
+      [(d) => { d.records[0].sitePresence.siteRecallInterval.low = 0.9; },
+        "INTERVAL_ORDER", "$.records[0].sitePresence.siteRecallInterval"],
+      [(d) => { d.records[0].sitePresence.siteAbstentionInterval.high = 1.1; },
+        "INTERVAL_RANGE", "$.records[0].sitePresence.siteAbstentionInterval.high"],
+      [(d) => { d.records[0].unweighted.precision = 1.01; }, "UNIT_RANGE", "$.records[0].unweighted.precision"],
+      [(d) => { d.records[0].unweighted.recall = -0.01; }, "UNIT_RANGE", "$.records[0].unweighted.recall"],
+      [(d) => { d.records[0].unweighted.f1 = 1.01; }, "UNIT_RANGE", "$.records[0].unweighted.f1"],
+      [(d) => { d.records[0].unweighted.precisionInterval.low = 0.9; },
+        "INTERVAL_ORDER", "$.records[0].unweighted.precisionInterval"],
+      [(d) => { d.records[0].unweighted.recallInterval.clustering = "clustered_record_invalid"; },
+        "BAD_INTERVAL", "$.records[0].unweighted.recallInterval"],
+      [(d) => { d.records[0].weighted.scheme = " "; }, "EMPTY_STRING", "$.records[0].weighted.scheme"],
+      [(d) => { d.records[0].weighted.deff = 0; }, "NON_POSITIVE", "$.records[0].weighted.deff"],
+      [(d) => { d.records[0].weighted.nEff = -0.01; }, "NEGATIVE", "$.records[0].weighted.nEff"],
+      [(d) => { d.records[0].weighted.precision = 1.01; }, "UNIT_RANGE", "$.records[0].weighted.precision"],
+      [(d) => { d.records[0].weighted.recall = -0.01; }, "UNIT_RANGE", "$.records[0].weighted.recall"],
+      [(d) => { d.records[0].weighted.f1 = 1.01; }, "UNIT_RANGE", "$.records[0].weighted.f1"],
+      [(d) => { d.records[0].weighted.precisionInterval.low = 0.9; },
+        "INTERVAL_ORDER", "$.records[0].weighted.precisionInterval"],
+      [(d) => { d.records[0].weighted.recallInterval.low = 0.9; },
+        "INTERVAL_ORDER", "$.records[0].weighted.recallInterval"],
+      [(d) => { d.records[0].weighted.f1Interval.low = 0.9; },
+        "INTERVAL_ORDER", "$.records[0].weighted.f1Interval"],
+      [(d) => { d.records[0].independentGroupSupport.predictions = 1.5; },
+        "BAD_COUNT", "$.records[0].independentGroupSupport.predictions"],
+      [(d) => { d.records[0].independentGroupSupport.positives = 1.5; },
+        "BAD_COUNT", "$.records[0].independentGroupSupport.positives"],
+      [(d) => { d.records[0].diagnostics.broad.tp = 1.5; }, "BAD_COUNT", "$.records[0].diagnostics.broad.tp"],
+      [(d) => { d.records[0].diagnostics.broad.fp = 1.5; }, "BAD_COUNT", "$.records[0].diagnostics.broad.fp"],
+      [(d) => { d.records[0].diagnostics.broad.fn = -1; }, "BAD_COUNT", "$.records[0].diagnostics.broad.fn"],
+      [(d) => { d.records[0].diagnostics.broad.precision = 1.01; },
+        "UNIT_RANGE", "$.records[0].diagnostics.broad.precision"],
+      [(d) => { d.records[0].diagnostics.broad.recall = -0.01; },
+        "UNIT_RANGE", "$.records[0].diagnostics.broad.recall"],
+      [(d) => { d.records[0].diagnostics.broad.f1 = 1.01; },
+        "UNIT_RANGE", "$.records[0].diagnostics.broad.f1"],
+      [(d) => { d.records[0].diagnostics.conditionalRetainedRecall = 1.01; },
+        "UNIT_RANGE", "$.records[0].diagnostics.conditionalRetainedRecall"],
+      [(d) => { d.records[0].calls = 1.5; }, "BAD_COUNT", "$.records[0].calls"],
+      [(d) => { d.records[0].calls = -1; }, "BAD_COUNT", "$.records[0].calls"],
+      [(d) => { d.records[0].tokens.cached = -1; }, "BAD_COUNT", "$.records[0].tokens.cached"],
+      [(d) => { d.records[0].costBasisItems = -1; }, "BAD_COUNT", "$.records[0].costBasisItems"],
+      [(d) => { d.records[0].apiEquivalentTotal = -0.01; }, "NEGATIVE", "$.records[0].apiEquivalentTotal"],
+    ];
+    for (const [mutate, code, path] of cases) {
+      const doc = clone(makeMetricsImport());
+      mutate(doc);
+      refuse(() => parseMetricsImportFile(doc), code, path);
+    }
+  });
+});
