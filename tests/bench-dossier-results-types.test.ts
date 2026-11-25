@@ -5,6 +5,10 @@ import {
   SEAT_UNKNOWN_REASONS, TARIFF_STATUSES, type BenchCostBlock, type BenchInterval,
   type SitePresenceMatrix, type UnknownOrNumber, type WeightedEstimateBlock,
 } from "../src/bench-dossier/results-types-blocks.js";
+import {
+  BENCH_RESULTS_SCHEMA_ID, BENCH_RESULTS_SCHEMA_VERSION,
+  type BenchResultRecord, type BenchResultsFile,
+} from "../src/bench-dossier/results-types.js";
 
 describe("BenchResultsFile block types", () => {
   it("covers all leaf union literals and block interfaces", () => {
@@ -29,5 +33,40 @@ describe("BenchResultsFile block types", () => {
       seatSharePerItem: 0.003, seatCostPerItem: 0.087, seatPlan: "Pro", seatMonthlyPrice: 280,
       seatLimitScale: 1.5, seatPlanSource: "manual", seatPlanAsOf: "2026-11-20" };
     expect([site.tpSites, weighted.deff, cost.fxApplied?.rate]).toEqual([20, 1.14, 1.385]);
+  });
+
+  it("models BenchResultRecord and BenchResultsFile envelope", () => {
+    const iv = { estimator: "unweighted", method: "none", clustering: "clustered_record_invalid",
+      valid: false, low: null, high: null } satisfies BenchInterval;
+    const site = { goldPresentSites: 10, goldAbsentSites: 5, unresolvedSites: 1, insufficientSites: 1,
+      tpSites: 7, fnSites: 3, wrongValueOnPresentSites: 1, fpOnAbsentSites: 1, tnSites: 3,
+      failedOnAbsentSites: 0, siteRecall: 0.7, siteRecallInterval: iv,
+      siteAbstentionSpecificity: 0.75, siteAbstentionInterval: iv } satisfies SitePresenceMatrix;
+    const cost = { currency: "USD", costBasisItems: 10, costUnknownReason: "unpriced-mission",
+      apiEquivalentTotal: "unknown", apiEquivalentPerItem: "unknown", tariffStatus: "unknown",
+      tariffSource: null, tariffAsOf: null, fxApplied: null, seatStatus: "unknown", seatMethod: "unknown",
+      seatUnknownReason: "missing-observation", seatSharePerItem: "unknown", seatCostPerItem: "unknown",
+      seatPlan: null, seatMonthlyPrice: null, seatLimitScale: null, seatPlanSource: null,
+      seatPlanAsOf: null } satisfies BenchCostBlock;
+    const rec = { armId: "c1", armMissionSha256: "a".repeat(64), missingDigestAllowed: true,
+      provider: "Cascades", model: "c1", modelLabel: "C1", proseName: "C1", effort: "cascade",
+      isCascade: true, isHighlighted: false, incomplete: false, field: "office.city", comparator: "v1",
+      isPrimaryComparator: true, attempted: 10, accepted: 9, failed: 1, failuresByCode: { err: 1 },
+      unverifiedQuotesNulled: 0, unverifiedWholeRecordsDropped: null, goldPositive: 10, goldAbsent: 5,
+      tp: 7, fp: 2, fpOnPresent: 1, fpOnAbsent: 1, fpElementsOnAbsent: 1, fn: 3, tn: 3,
+      failedOnAbsent: 0, unresolved: 1, insufficient: 1, abstentionSpecificity: 0.75, sitePresence: site,
+      unweighted: { precision: 7 / 9, recall: 0.7, f1: 0.737, precisionInterval: iv, recallInterval: iv },
+      weighted: null, precision: null, recall: null, f1: null, precisionInterval: iv, recallInterval: iv,
+      indeterminate: { precision: false, recall: false, f1: false }, calls: "unknown",
+      callsPerItem: "unknown", tokens: "unknown", cost } satisfies BenchResultRecord;
+    const file: BenchResultsFile = { schemaId: BENCH_RESULTS_SCHEMA_ID,
+      schemaVersion: BENCH_RESULTS_SCHEMA_VERSION, generatedAt: "2026-11-25T10:00:00Z", campaignId: "lotb",
+      corpus: { partition: "eval", primaryEstimator: "unweighted", costBasisLabel: "extracted_packet",
+        currency: "USD", goldenMissionSha256: "b".repeat(64), candidateMissionSha256: "c".repeat(64),
+        fieldShapeVerified: true, goldenSha256: "d".repeat(64), goldenIds: 10, fields: ["office.city"],
+        annotatorCount: 1, krippendorffAlphaByField: { "office.city": 0.8 } },
+      supportFloors: { recallMinPositives: 10, precisionMinPredictions: 10, failureCeiling: 0.1 },
+      records: [rec] };
+    expect([file.schemaVersion, file.records[0]?.tokens]).toEqual([1, "unknown"]);
   });
 });
