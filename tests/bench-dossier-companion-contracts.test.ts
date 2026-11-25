@@ -399,3 +399,125 @@ describe("arm.json optional variations, enum literals and nested refusal matrix"
     }
   });
 });
+
+describe("SeatObservationInput and SeatObservationsFile refusal and boundary matrices", () => {
+  it("exercises all SeatUnknownReason literals and valid measured/estimated boundary values", () => {
+    const reasons = [
+      "missing-observation", "weekly-window-source-gap", "non-weekly-window", "shared-seat-concurrent",
+      "no-quota-delta", "plan-source-gap", "transport-mismatch", "missing-usage", "api-equivalent-source-gap",
+    ] as const;
+    for (const reason of reasons) {
+      expect(parseSeatObservationInput({ status: "unknown", reason })).toEqual({ status: "unknown", reason });
+    }
+    expect(parseSeatObservationInput({
+      schemaId: "urn:engram:seat-observation:1.0.0", status: "unknown", method: "unknown", reason: "no-quota-delta",
+    }).status).toBe("unknown");
+    const zeroBurn = { ...makeMeasuredSeat(), remainingBefore: 0.72 };
+    expect(parseSeatObservationInput(zeroBurn)).toMatchObject({ status: "measured", remainingBefore: 0.72 });
+    const fullBefore = { ...makeMeasuredSeat(), remainingBefore: 1 };
+    expect(parseSeatObservationInput(fullBefore)).toMatchObject({ status: "measured", remainingBefore: 1 });
+    const zeroAfter = { ...makeMeasuredSeat(), remainingAfter: 0 };
+    expect(parseSeatObservationInput(zeroAfter)).toMatchObject({ status: "measured", remainingAfter: 0 });
+    const minItems = { ...makeMeasuredSeat(), observedItems: 1 };
+    expect(parseSeatObservationInput(minItems)).toMatchObject({ status: "measured", observedItems: 1 });
+    const freePlan = { ...makeMeasuredSeat(), planMonthlyPrice: 0 };
+    expect(parseSeatObservationInput(freePlan)).toMatchObject({ status: "measured", planMonthlyPrice: 0 });
+    const fullDelta = { ...makeEstimatedSeat(), quotaDeltaFraction: 1 };
+    expect(parseSeatObservationInput(fullDelta)).toMatchObject({ status: "estimated", quotaDeltaFraction: 1 });
+    const isolatedEst = { ...makeEstimatedSeat(), isolatedSeat: true };
+    expect(parseSeatObservationInput(isolatedEst)).toMatchObject({ status: "estimated", isolatedSeat: true });
+  });
+
+  it("refuses discriminators, non-weekly windows, inverted burns, and all nested seat bindings", () => {
+    for (const bad of [null, [], "unknown", 5]) {
+      refuse(() => parseSeatObservationInput(bad), "NOT_OBJECT", "$");
+    }
+    refuse(() => parseSeatObservationInput({ reason: "missing-observation" }), "MISSING_KEY", "$.status");
+    refuse(() => parseSeatObservationInput({ status: 1 }), "WRONG_TYPE", "$.status");
+    refuse(() => parseSeatObservationInput({ status: "pending" }), "BAD_ENUM", "$.status");
+    refuse(() => parseSeatObservationInput({ status: "toString" }), "BAD_ENUM", "$.status");
+    const unknownCases: [(d: any) => void, BenchResultsErrorCode, string][] = [
+      [(d) => { d.schemaId = "bad"; }, "BAD_SCHEMA", "$.schemaId"],
+      [(d) => { d.method = "weekly_burn_delta"; }, "BAD_SHAPE", "$.method"],
+      [(d) => { d.method = "bogus"; }, "BAD_ENUM", "$.method"],
+      [(d) => { delete d.reason; }, "MISSING_KEY", "$.reason"],
+      [(d) => { d.reason = "other"; }, "BAD_ENUM", "$.reason"],
+      [(d) => { d.extra = 1; }, "UNKNOWN_KEY", "$.extra"],
+    ];
+    for (const [mutate, code, path] of unknownCases) {
+      const doc: any = { status: "unknown", reason: "missing-observation" };
+      mutate(doc);
+      refuse(() => parseSeatObservationInput(doc), code, path);
+    }
+    const measuredCases: [(d: any) => void, BenchResultsErrorCode, string][] = [
+      [(d) => { d.extra = 1; }, "UNKNOWN_KEY", "$.extra"],
+      [(d) => { d.schemaId = "bad"; }, "BAD_SCHEMA", "$.schemaId"],
+      [(d) => { delete d.isolatedSeat; }, "MISSING_KEY", "$.isolatedSeat"],
+      [(d) => { d.method = "api_cost_proportional"; }, "BAD_SHAPE", "$.method"],
+      [(d) => { d.method = "guess"; }, "BAD_ENUM", "$.method"],
+      [(d) => { d.windowMinutes = 10079; }, "BAD_SHAPE", "$.windowMinutes"],
+      [(d) => { d.windowMinutes = 10080.5; }, "BAD_COUNT", "$.windowMinutes"],
+      [(d) => { d.isolatedSeat = false; }, "BAD_SHAPE", "$.isolatedSeat"],
+      [(d) => { d.isolatedSeat = "true"; }, "WRONG_TYPE", "$.isolatedSeat"],
+      [(d) => { d.remainingBefore = 1.01; }, "UNIT_RANGE", "$.remainingBefore"],
+      [(d) => { d.remainingAfter = -0.01; }, "UNIT_RANGE", "$.remainingAfter"],
+      [(d) => { d.remainingBefore = 0.5; }, "BAD_SHAPE", "$"],
+      [(d) => { d.observedItems = 0; }, "NON_POSITIVE", "$.observedItems"],
+      [(d) => { d.observedItems = 1.5; }, "BAD_COUNT", "$.observedItems"],
+      [(d) => { d.planMonthlyPrice = -1; }, "NEGATIVE", "$.planMonthlyPrice"],
+      [(d) => { d.planCurrency = "EUR"; }, "BAD_ENUM", "$.planCurrency"],
+      [(d) => { d.plan = " "; }, "EMPTY_STRING", "$.plan"],
+      [(d) => { d.planSource = " "; }, "EMPTY_STRING", "$.planSource"],
+      [(d) => { d.planAsOf = ""; }, "EMPTY_STRING", "$.planAsOf"],
+    ];
+    for (const [mutate, code, path] of measuredCases) {
+      const doc = clone(makeMeasuredSeat());
+      mutate(doc);
+      refuse(() => parseSeatObservationInput(doc), code, path);
+    }
+    const estimatedCases: [(d: any) => void, BenchResultsErrorCode, string][] = [
+      [(d) => { d.extra = 1; }, "UNKNOWN_KEY", "$.extra"],
+      [(d) => { d.schemaId = "bad"; }, "BAD_SCHEMA", "$.schemaId"],
+      [(d) => { delete d.basePlanMultiplier; }, "MISSING_KEY", "$.basePlanMultiplier"],
+      [(d) => { delete d.targetPlanMultiplier; }, "MISSING_KEY", "$.targetPlanMultiplier"],
+      [(d) => { d.method = "weekly_burn_delta"; }, "BAD_SHAPE", "$.method"],
+      [(d) => { d.method = "guess"; }, "BAD_ENUM", "$.method"],
+      [(d) => { d.windowMinutes = 10081; }, "BAD_SHAPE", "$.windowMinutes"],
+      [(d) => { d.observedApiEquivalent = 0; }, "NON_POSITIVE", "$.observedApiEquivalent"],
+      [(d) => { d.quotaDeltaFraction = 0; }, "NON_POSITIVE", "$.quotaDeltaFraction"],
+      [(d) => { d.quotaDeltaFraction = -0.1; }, "NON_POSITIVE", "$.quotaDeltaFraction"],
+      [(d) => { d.quotaDeltaFraction = 1.001; }, "UNIT_RANGE", "$.quotaDeltaFraction"],
+      [(d) => { d.basePlanMultiplier = 0; }, "NON_POSITIVE", "$.basePlanMultiplier"],
+      [(d) => { d.targetPlanMultiplier = -1; }, "NON_POSITIVE", "$.targetPlanMultiplier"],
+      [(d) => { d.observedCurrency = "GBP"; }, "BAD_ENUM", "$.observedCurrency"],
+      [(d) => { d.isolatedSeat = "no"; }, "WRONG_TYPE", "$.isolatedSeat"],
+      [(d) => { d.plan = ""; }, "EMPTY_STRING", "$.plan"],
+      [(d) => { d.planSource = " "; }, "EMPTY_STRING", "$.planSource"],
+      [(d) => { d.planAsOf = " "; }, "EMPTY_STRING", "$.planAsOf"],
+      [(d) => { d.planMonthlyPrice = -0.5; }, "NEGATIVE", "$.planMonthlyPrice"],
+      [(d) => { d.planCurrency = "GBP"; }, "BAD_ENUM", "$.planCurrency"],
+    ];
+    for (const [mutate, code, path] of estimatedCases) {
+      const doc = clone(makeEstimatedSeat());
+      mutate(doc);
+      refuse(() => parseSeatObservationInput(doc), code, path);
+    }
+    for (const badKey of ["", "  ", "__proto__", "constructor", "prototype"]) {
+      const badMap: Record<string, unknown> = {};
+      Object.defineProperty(badMap, badKey, {
+        value: { status: "unknown", reason: "missing-observation" }, enumerable: true,
+      });
+      refuse(() => parseSeatObservationsFile({ schemaId: "urn:engram:seat-observation:1.0.0", observations: badMap }),
+        "BAD_MAP_KEY", `$.observations.${badKey}`);
+    }
+    refuse(() => parseSeatObservationsFile({ schemaId: "wrong", observations: {} }), "BAD_SCHEMA", "$.schemaId");
+    refuse(() => parseSeatObservationsFile({
+      schemaId: "urn:engram:seat-observation:1.0.0", observations: {}, extra: 1,
+    }), "UNKNOWN_KEY", "$.extra");
+    const badNest = clone(makeMeasuredSeat()) as any;
+    badNest.planSource = " ";
+    refuse(() => parseSeatObservationsFile({
+      schemaId: "urn:engram:seat-observation:1.0.0", observations: { a: badNest },
+    }), "EMPTY_STRING", "$.observations.a.planSource");
+  });
+});
