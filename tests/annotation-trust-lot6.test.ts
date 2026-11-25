@@ -150,17 +150,83 @@ describe("lot 6 json-ld export", () => {
     const q = u(2, analyst, { kind: "reject", judged: 1, reason: "obsolete" }, { exposure: sh([1]) }),
       r = { ...q, ...env(3), replacesHuman: 2 }, k = { ...c2, ...env(3), replacesHuman: 2 };
     for (const t of [[a1, c2, r], [a1, q, r], [a1, c2, k]]) ex(() => go(t.map(seal))).toThrow(/invalidated twice/); });
-  it("fails closed on C3 unimplemented arms and obeys static zero-I/O and no-read-back", () => {
+  it("exports uncertain, needs-elicitation, MCP mediators without Plan and note values", () => {
+    const un = { kind: "uncertain" as const, judged: 1 }, [gUa] = goC([a1, u(2, a1.actor, un, { rationale: "amb" })]);
+    ex(gUa("_:ann-2")).toMatchObject({ "oa:motivatedBy": R("oa:assessing"), "oa:hasTarget": A1,
+      "oa:hasBody": { decision: "uncertain", rationale: "amb" } });
+    ex(noOwn(gUa("_:act-2"), "exposure") && noOwn(gUa("_:ann-1"), "prov:wasInvalidatedBy")).toBe(true);
+    ex(goC([a1, u(2, analyst, un, { exposure: ns })])[0]("_:ann-2")?.["oa:hasBody"])
+      .toStrictEqual({ decision: "uncertain" });
+    const ne = (q: string) => ({ kind: "needs-elicitation" as const, judged: 1, question: q });
+    const [gQa] = goC([a1, u(2, a1.actor, ne("q?"), { rationale: "r" })]);
+    ex(gQa("_:ann-2")).toMatchObject({ "oa:motivatedBy": R("oa:questioning"), "oa:hasTarget": A1, rationale: "r",
+      "oa:hasBody": { "@type": "oa:TextualBody", "rdf:value": "q?" } });
+    ex(noOwn(gQa("_:ann-1"), "prov:wasInvalidatedBy") && noOwn(gQa("_:act-2"), "exposure")).toBe(true);
+    const [gQh] = goC([a1, u(2, analyst, ne("h?"), { exposure: ns })]);
+    ex(gQh("_:ann-2")?.["oa:hasBody"]).toStrictEqual({ "@type": "oa:TextualBody", "rdf:value": "h?" });
+    ex(noOwn(gQh("_:ann-2"), "rationale", "classReasonCode")).toBe(true);
+    ex(goC([a1, u(2, a1.actor, ne("q?")), u(3, analyst, a1.action, { exposure: sh([1, 2]) })])[0]("_:act-3"))
+      .toMatchObject({ "prov:used": [A1], "prov:qualifiedUsage": [qU1] });
     const el = { clientRef: "c", requestRef: "q", assurance: "server-asserted" as const, trace: "complete" as const,
       protocolRevision: "2025-11-25", sessionRef: "s", requestDigest: D, responseDigest: D, startedAt:
-      "2026-11-24T00:00:01Z", endedAt: "2026-11-24T00:00:02Z", auditRef: "au" }, nt = { kind: "note" as const,
-      text: "n" };
-    for (const fs of [[u(1, { kind: "ai", actorRef: "m", model: "m", channel: "mcp", clientRef: "c" }, a1.action)],
-      [u(1, { kind: "human", actorRef: "h", receiptRef: "r", channel: "mcp-elicitation", elicitation: el }, a1.action,
-        { exposure: ns })], [a1, u(2, a1.actor, { kind: "uncertain", judged: 1 })], [a1, u(2, a1.actor,
-      { kind: "needs-elicitation", judged: 1, question: "q?" })], [u(1, a1.actor, { kind: "assert", value: nt })],
-      [u(1, { kind: "adapter", actorRef: "imp", channel: "import" }, { kind: "preserve-source", row: { sourceRef: "r",
-        sourceDigest: D } }, { subjectVersion: null })]] as Entry[][]) ex(() => go(fs.map(seal))).toThrow(/unimp/);
+      "2026-11-24T00:00:01Z", endedAt: "2026-11-24T00:00:02Z", auditRef: "au" }, med = (c: string) => ({ "@type":
+      "prov:Association", "prov:agent": R(`_:actor-client-${c}`), "prov:hadRole": R("_:role-mediator") });
+    const m1 = u(1, { kind: "ai", actorRef: "m", model: "m", channel: "mcp", clientRef: "c", sessionRef: "s1" },
+      a1.action), [gM, dM] = goC([m1, u(2, { kind: "human", actorRef: "h", receiptRef: "r", channel:
+      "mcp-elicitation", elicitation: el }, { kind: "confirm", judged: 1 }, { exposure: sh([1]) })]);
+    ex(dM["@graph"].filter((n) => n["@type"]?.includes("prov:Plan"))).toHaveLength(0);
+    ex(JSON.stringify(dM["@graph"])).not.toContain("prov:hadPlan");
+    ex(dM["@graph"].filter((n) => n["@id"].startsWith("_:actor-client-"))).toHaveLength(1);
+    ex([gM("_:actor-client-c")?.["@type"], gM("_:actor-human-h")?.["@type"], gM("_:actor-ai-m")?.["@type"]]).toEqual([
+      ["prov:Agent", "prov:SoftwareAgent"], ["prov:Agent", "prov:Person"], ["prov:Agent", "prov:SoftwareAgent"]]);
+    ex(gM("_:role-mediator")).toEqual({ ...R("_:role-mediator"), "rdf:value": "mediator" });
+    ex(gM("_:act-1")?.["prov:wasAssociatedWith"]).toEqual([R("_:actor-ai-m"), R("_:actor-client-c"), R(recA)]);
+    ex(gM("_:act-2")?.["prov:wasAssociatedWith"]).toEqual([R("_:actor-human-h"), R("_:actor-client-c"), R(recA)]);
+    ex(gM("_:act-1")?.["prov:qualifiedAssociation"]).toContainEqual(med("c"));
+    ex(gM("_:act-2")?.["prov:qualifiedAssociation"]).toContainEqual(med("c"));
+    ex((gM("_:act-2")?.actor as { elicitation?: unknown })?.elicitation).toEqual(el);
+    const elP = { clientRef: "c2", requestRef: "q2", assurance: "server-asserted" as const, trace: "partial" as const,
+      legacyRow: { sourceRef: "leg-r", sourceDigest: D } }, [gP] = goC([m1, u(2, { kind: "human", actorRef: "h",
+      receiptRef: "r", channel: "mcp-elicitation", elicitation: elP }, { kind: "assert", value: cls("ecarte") },
+      { exposure: ns })], false);
+    ex(gP("_:actor-client-c2")?.["@type"]).toEqual(["prov:Agent", "prov:SoftwareAgent"]);
+    ex((gP("_:act-2")?.actor as { elicitation?: unknown })?.elicitation).toEqual(elP);
+    ex(gP("_:act-2")?.["prov:qualifiedAssociation"]).toContainEqual(med("c2"));
+    const nt = (t: string) => ({ kind: "note" as const, text: t }), nS = { stream: { ...a1.stream, slot: "note" } };
+    const [gN] = goC([{ ...u(1, a1.actor, { kind: "assert", value: nt("n1") }), ...nS },
+      { ...u(2, analyst, { kind: "correct", judged: 1, value: nt("n2") }, { exposure: sh([1]) }), ...nS }]);
+    ex([gN("_:ann-1"), gN("_:ann-2-verdict"), gN("_:ann-2"), gN("_:act-2")]).toMatchObject([
+      { "oa:motivatedBy": R("oa:commenting"), "oa:hasTarget": R("_:sv-sv1"), "prov:wasInvalidatedBy": R("_:act-2"),
+        "oa:hasBody": { "@type": "oa:TextualBody", "rdf:value": "n1" } },
+      { "oa:motivatedBy": R("oa:assessing"), "oa:hasTarget": A1, "oa:hasBody": { decision: "correct" } },
+      { "oa:motivatedBy": R("oa:commenting"), "oa:hasTarget": R("_:sv-sv1"), "prov:wasDerivedFrom": A1,
+        "oa:hasBody": { "@type": "oa:TextualBody", "rdf:value": "n2" } },
+      { "prov:used": [A1], "prov:qualifiedUsage": [qU1] }]);
+    ex([gN("_:ann-1")?.["oa:hasBody"], gN("_:ann-2")?.["oa:hasBody"]]).toStrictEqual([
+      { "@type": "oa:TextualBody", "rdf:value": "n1" }, { "@type": "oa:TextualBody", "rdf:value": "n2" }]); });
+  it("exports preserve-source with shared SourceRow and obeys static zero-I/O and no-read-back", () => {
+    const ad: Entry["actor"] = { kind: "adapter", actorRef: "imp", channel: "import" },
+      rw = { sourceRef: "leg/1", sourceDigest: D, reportedSource: "csv", pendingHuman: true };
+    const [gPs, dPs] = goC([u(1, ad, { kind: "preserve-source", row: rw }, { subjectVersion: null }),
+      u(2, ad, { kind: "preserve-source", row: { sourceRef: "leg/1", sourceDigest: D } }, { subjectVersion: null })]);
+    ex(dPs["@graph"].filter((n) => n["@id"].startsWith("_:src-"))).toHaveLength(1);
+    ex(dPs["@graph"].some((n) => n["@type"]?.includes("oa:SpecificResource"))).toBe(false);
+    ex(gPs("_:src-leg_2f_1")).toStrictEqual({ "@id": "_:src-leg_2f_1", "@type": ["prov:Entity"],
+      sourceRef: "leg/1", sourceDigest: D });
+    ex(gPs("_:ann-1")?.["@type"]).toStrictEqual(["prov:Entity"]);
+    ex(gPs("_:ann-1")).toMatchObject({ "prov:wasDerivedFrom": R("_:src-leg_2f_1"),
+      "dcterms:creator": R("_:actor-adapter-imp"), row: rw });
+    ex(gPs("_:ann-1")?.row).not.toBe(rw);
+    ex(noOwn(gPs("_:ann-1"), "oa:motivatedBy", "oa:hasTarget", "oa:hasBody")).toBe(true);
+    ex(gPs("_:actor-adapter-imp")?.["@type"]).toEqual(["prov:Agent", "prov:SoftwareAgent"]);
+    const [gSv] = goC([u(1, ad, { kind: "preserve-source", row: { sourceRef: "r2", sourceDigest: D } },
+      { rationale: "kept" })]);
+    ex(gSv("_:sv-sv1")).toEqual({ "@id": "_:sv-sv1", "@type": ["oa:SpecificResource", "prov:Entity"],
+      "oa:hasSource": R("_:sub-o") });
+    ex(gSv("_:ann-1")?.rationale).toBe("kept"); ex(noOwn(gSv("_:ann-1"), "oa:hasTarget")).toBe(true);
+    const [, dOrd] = goC([a1, u(2, ad, { kind: "preserve-source", row: { sourceRef: "r2", sourceDigest: D } })]);
+    ex(dOrd["@graph"].map((n) => n["@id"])).toEqual(["_:sub-o", "_:sv-sv1", recA, aiA, "_:actor-adapter-imp",
+      "_:role-decider", "_:role-recorder", `_:plan-${D}`, "_:src-r2", "_:ann-1", "_:act-1", "_:ann-2", "_:act-2"]);
     const src = readFileSync(join(HERE, "../src/annotation-trust/export.ts"), "utf8");
     ex(src).not.toMatch(/\bnode:|Date\.now|new Date|Math\.random|randomUUID|\bfetch\b|parseEntry|reduceEntries/);
     for (const f of ["profile", "types", "parse", "reduce"])
