@@ -4,7 +4,8 @@ import {
   computePointMetrics, computeUnweightedBlock, isPlainObject, wilson95,
 } from "../src/bench-dossier/metrics-intervals.js";
 import {
-  classifyCandidateRow, indexCandidateRows, normalizeItemsToSet, resolveSupportFloors,
+  classifyCandidateRow, extractCandidateField, indexCandidateRows, normalizeItemsToSet, parseGoldenUnit,
+  resolveSupportFloors, toGoldSet, type GoldenScalarRow,
 } from "../src/bench-dossier/metrics-parsers.js";
 
 function expectClose(actual: number | null, expected: number, eps = 1e-12): void {
@@ -171,5 +172,55 @@ describe("wilson95, clusteredInvalidInterval & input guards", () => {
     const items = [{ value: "H2Y-1S1" }, { value: "X", reason: "unverified_quote" }, "  h2y 1s1 ", null];
     expect([...normalizeItemsToSet(items, true)]).toEqual(["H2Y 1S1"]);
     expect([...normalizeItemsToSet(items, false)]).toEqual(["H2Y 1S1", "x"]);
+  });
+
+  it("parses golden units (incl. split & insufficient checks) and extracts candidate fields", () => {
+    expect([...toGoldSet("  h2y-1s1 ", 1, "g.f")]).toEqual(["H2Y 1S1"]);
+    expect([...toGoldSet(null, 1, "g.f")]).toEqual([]);
+    expect([...toGoldSet(undefined, 1, "g.f")]).toEqual([]);
+    expect([...toGoldSet(null, 2, "g.f")]).toEqual([]);
+    expect([...toGoldSet(undefined, 2, "g.f")]).toEqual([]);
+    refuse(() => toGoldSet(["A"], 1, "g.f"), "BAD_GOLD_VALUE", Error);
+    refuse(() => toGoldSet("A", 2, "g.f"), "NOT_ARRAY", Error);
+
+    expect(parseGoldenUnit({ id: "u1", fields: { c: { verdict: "insufficient", value: null, n_answered: 0 } } },
+      "c", 1)).toEqual({ id: "u1", unit: { kind: "insufficient" } });
+    expect(parseGoldenUnit({ id: "u1", fields: { c: { verdict: "insufficient", n_answered: 0 } } },
+      "c", 1)).toEqual({ id: "u1", unit: { kind: "insufficient" } });
+    expect(parseGoldenUnit({ id: "u1", fields: { c: { verdict: "absent", n_answered: 2 } } },
+      "c", 1)).toEqual({ id: "u1", unit: { kind: "absent" } });
+    refuse(() => parseGoldenUnit(null, "c", 1), "NOT_OBJECT", Error);
+    refuse(() => parseGoldenUnit({ id: "u1", fields: { c: { verdict: "insufficient", value: "X", n_answered: 1 } } },
+      "c", 1), "INSUFFICIENT_NON_NULL", Error);
+    refuse(() => parseGoldenUnit({
+      id: "u1", fields: { c: { verdict: "split", value: "Toronto", runs: { r1: { value: "A" } } } },
+    }, "c", 1), "SPLIT_NON_NULL", Error);
+    const sp = parseGoldenUnit({
+      id: "u2", fields: { c: { verdict: "split", n_answered: 3, runs: {
+        r1: { status: "missing", value: "Stale" }, r2: { status: "failed", error: "e", value: "Err" },
+        r3: { value: "Toronto" },
+      } } },
+    }, "c", 1);
+    expect(sp.unit.kind).toBe("split");
+    if (sp.unit.kind === "split") expect(sp.unit.variants.map((v) => [...v])).toEqual([["toronto"]]);
+
+    expect(extractCandidateField(undefined, 1)).toEqual({ set: new Set(), nulled: 0 });
+    expect(extractCandidateField(null, 1)).toEqual({ set: new Set(), nulled: 0 });
+    expect(extractCandidateField(null, 2)).toEqual({ set: new Set(), nulled: 0 });
+    expect(extractCandidateField({}, 1)).toEqual({ set: new Set(), nulled: 0 });
+    expect(extractCandidateField({ value: "X", reason: "unverified_quote" }, 1)).toEqual({ set: new Set(), nulled: 1 });
+    refuse(() => extractCandidateField({ value: ["X"] }, 1), "BAD_CANDIDATE_VALUE", Error);
+    refuse(() => extractCandidateField({ value: ["X"], reason: "unverified_quote" }, 1),
+      "BAD_CANDIDATE_VALUE", Error);
+    const mv = extractCandidateField({
+      values: [{ value: "A" }, { value: "B", reason: "unverified_quote" }], unverified_dropped: 2,
+    }, 2);
+    expect([[...mv.set], mv.nulled]).toEqual([["a"], 3]);
+    const mvNoDrop = extractCandidateField({ values: [{ value: "A" }] }, 2);
+    expect([[...mvNoDrop.set], mvNoDrop.nulled]).toEqual([["a"], 0]);
+    expect(extractCandidateField({ unverified_dropped: 1 }, 2)).toEqual({ set: new Set(), nulled: 1 });
+    refuse(() => extractCandidateField({ values: "A" }, 2), "NOT_ARRAY", Error);
+    refuse(() => extractCandidateField({ values: null }, 2), "NOT_ARRAY", Error);
+    refuse(() => extractCandidateField({ values: [], unverified_dropped: -1 }, 2), "BAD_COUNT", RangeError);
   });
 });
