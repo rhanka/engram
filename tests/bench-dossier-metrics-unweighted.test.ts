@@ -259,3 +259,129 @@ describe("wilson95, clusteredInvalidInterval & input guards", () => {
     expect([smoke.precision, smoke.recall, smoke.f1, smoke.abstentionSpecificity]).toEqual([1, 1, 1, 1]);
   });
 });
+
+describe("scoreUnweightedScalar — single-value scalar (maxValues = 1)", () => {
+  it("scores normalizeValue, retries, failuresByCode sort, #509, split (missing/failed), wilson95 & broad", () => {
+    const field = "postal_code";
+    const goldenRows: GoldenScalarRow[] = [
+      gRow("g1", field, { verdict: "unanimous", value: "H2Y 1S1", n_answered: 3 }),
+      gRow("g2", field, { verdict: "majority", value: "M5X 1A9", n_answered: 3 }),
+      gRow("g3", field, { verdict: "unanimous", value: "K1P 6L2", n_answered: 2 }),
+      gRow("g4", field, { verdict: "majority", value: "B3J 3N4", n_answered: 3 }),
+      gRow("g5", field, { verdict: "unanimous", value: "T2P 1N2", n_answered: 3 }),
+      gRow("g6", field, { verdict: "absent", value: null, n_answered: 3 }),
+      gRow("g7", field, { verdict: "majority", value: null, n_answered: 2 }),
+      gRow("g8", field, { verdict: "absent", value: null, n_answered: 3 }),
+      gRow("g9", field, { verdict: "absent", value: null, n_answered: 2 }),
+      gRow("g15", field, { verdict: "absent", value: null, n_answered: 3 }),
+      gRow("g10", field, { verdict: "insufficient", value: null, n_answered: 1 }),
+      gRow("g11", field, { verdict: "insufficient", value: null, n_answered: 0 }),
+      gRow("g12", field, {
+        verdict: "split", value: null, n_answered: 3,
+        runs: {
+          r1: { value: "V6B 1A1", quote: "V6B 1A1" }, r2: { value: null, quote: null },
+          r3: { status: "failed", error: "llm_error" }, r4: { status: "missing" },
+        },
+      }),
+      gRow("g13", field, {
+        verdict: "split", value: null, n_answered: 2,
+        runs: { r1: { value: "H3B 2Y5", quote: "H3B 2Y5" }, r2: { value: "G1R 4P5", quote: "G1R 4P5" } },
+      }),
+      gRow("g14", field, {
+        verdict: "split", value: null, n_answered: 2,
+        runs: { r1: { value: "R3C 0V8", quote: "R3C 0V8" }, r2: { value: "S7K 1J5", quote: "S7K 1J5" } },
+      }),
+    ];
+    const candidateRows: Record<string, unknown>[] = [
+      { id: "g1", fields: { [field]: val("h2y-1s1") } },
+      { id: "g2", error: "llm_error", fields: null },
+      { id: "g2", fields: { [field]: val("m5x1a9") } },
+      { id: "g3", fields: { [field]: { value: "K1P 6L2", quote: null, sha256: null, reason: "unverified_quote" } } },
+      { id: "g4", fields: { [field]: val("E1C 1G2") } },
+      { id: "g5", fields: { [field]: val("T2P 1N2") } },
+      { id: "g5", error: "parse_error", fields: null },
+      { id: "g6", fields: { [field]: val("   ") } },
+      { id: "g7", fields: { [field]: val("A1A 1A1") } },
+      { id: "g9", fields: [] },
+      { id: "g15", error: "   ", fields: null },
+      { id: "g10", fields: { [field]: val("N2L 3G1") } },
+      { id: "g11", error: "empty_response", fields: null },
+      { id: "g12", fields: { [field]: val("v6b1a1") } },
+      { id: "g13", fields: { [field]: val(null) } },
+      { id: "g14", fields: { [field]: val("L4Z 1X9") } },
+      { id: "census_extra_1", fields: { [field]: val("J8X 3N5") } },
+      { type: "summary", ok: 10, failed: 5 },
+    ];
+    const res = scoreUnweightedScalar({ field, maxValues: 1, goldenRows, candidateRows });
+    expect([res.field, res.attempted, res.accepted, res.failed]).toEqual(["postal_code", 15, 10, 5]);
+    expect(Object.keys(res.failuresByCode)).toEqual([
+      "empty_response", "invalid_row", "missing", "parse_error", "unknown_error",
+    ]);
+    expect(res.failuresByCode).toEqual({
+      empty_response: 1, invalid_row: 1, missing: 1, parse_error: 1, unknown_error: 1,
+    });
+    expect([res.unverifiedQuotesNulled, res.unverifiedWholeRecordsDropped]).toEqual([1, null]);
+    expect([res.goldPositive, res.goldAbsent, res.unresolved, res.insufficient]).toEqual([5, 5, 3, 2]);
+    expect([res.tp, res.fp, res.fpOnPresent, res.fpOnAbsent, res.fpElementsOnAbsent, res.fn, res.tn,
+      res.failedOnAbsent]).toEqual([2, 2, 1, 1, 1, 3, 1, 3]);
+    expectClose(res.abstentionSpecificity, 0.5);
+    expectClose(res.unweighted.precision, 0.5);
+    expectClose(res.unweighted.recall, 0.4);
+    expectClose(res.unweighted.f1, 4 / 9);
+    expect([res.precision, res.recall, res.f1]).toEqual([
+      res.unweighted.precision, res.unweighted.recall, res.unweighted.f1,
+    ]);
+    expect(res.precisionInterval).toEqual(res.unweighted.precisionInterval);
+    expect(res.recallInterval).toEqual(res.unweighted.recallInterval);
+    // Wilson 2/4: d=1+z^2/4=1.9603647051735313, center=0.5, half=0.34996101084785053
+    expectClose(res.unweighted.precisionInterval.low, 0.15003898915214947);
+    expectClose(res.unweighted.precisionInterval.high, 0.8499610108478506);
+    // Wilson 2/5: d=1+z^2/5=1.7682917641388252, center=0.44344824647831743, half=0.3258274722456696
+    expectClose(res.unweighted.recallInterval.low, 0.11762077423264783);
+    expectClose(res.unweighted.recallInterval.high, 0.769275718723987);
+    expect(res.sitePresence).toEqual({
+      goldPresentSites: 5, goldAbsentSites: 5, unresolvedSites: 3, insufficientSites: 2,
+      tpSites: 2, fnSites: 3, wrongValueOnPresentSites: 1, fpOnAbsentSites: 1, tnSites: 1, failedOnAbsentSites: 3,
+      siteRecall: 0.4,
+      siteRecallInterval: {
+        estimator: "unweighted", method: "wilson_95_unweighted", clustering: "independent_site", valid: true,
+        // Independent literal for Wilson 2/5: [0.11762077423264783, 0.769275718723987]
+        low: expect.closeTo(0.11762077423264783, 12), high: expect.closeTo(0.769275718723987, 12),
+      },
+      siteAbstentionSpecificity: 0.5,
+      siteAbstentionInterval: {
+        estimator: "unweighted", method: "wilson_95_unweighted", clustering: "independent_site", valid: true,
+        // Independent literal for Wilson 1/2: d=2.9207294103470627, center=0.5, half=0.40546879426576926
+        low: expect.closeTo(0.09453120573423074, 12), high: expect.closeTo(0.9054687942657693, 12),
+      },
+    });
+    expect(res.indeterminate).toEqual({ precision: true, recall: true, f1: true });
+    expect([res.diagnostics.broad.tp, res.diagnostics.broad.fp, res.diagnostics.broad.fn]).toEqual([3, 3, 5]);
+    expectClose(res.diagnostics.broad.precision, 0.5);
+    expectClose(res.diagnostics.broad.recall, 3 / 8);
+    expectClose(res.diagnostics.broad.f1, 6 / 14);
+  });
+
+  it("accepts null-prototype rows, omitted candidate field, and explicit null candidate field", () => {
+    const nullGold = Object.assign(Object.create(null), {
+      id: "n1",
+      fields: Object.assign(Object.create(null), { city: { verdict: "unanimous", value: "Toronto", n_answered: 2 } }),
+    });
+    const nullCand = Object.assign(Object.create(null), {
+      id: "n1", fields: Object.assign(Object.create(null), { city: val("Toronto") }),
+    });
+    const nullProtoRes = scoreUnweightedScalar({ field: "city", goldenRows: [nullGold], candidateRows: [nullCand] });
+    expect([nullProtoRes.accepted, nullProtoRes.tp, nullProtoRes.fn]).toEqual([1, 1, 0]);
+
+    const absentGold = [gRow("n2", "city", { verdict: "absent", value: null, n_answered: 2 })];
+    const omittedRes = scoreUnweightedScalar({
+      field: "city", goldenRows: absentGold, candidateRows: [{ id: "n2", fields: { other: val("Montreal") } }],
+    });
+    expect([omittedRes.accepted, omittedRes.tn, omittedRes.fp]).toEqual([1, 1, 0]);
+
+    const nullFieldRes = scoreUnweightedScalar({
+      field: "city", goldenRows: absentGold, candidateRows: [{ id: "n2", fields: { city: null } }],
+    });
+    expect([nullFieldRes.accepted, nullFieldRes.tn, nullFieldRes.fp]).toEqual([1, 1, 0]);
+  });
+});
