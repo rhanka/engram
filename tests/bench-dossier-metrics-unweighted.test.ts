@@ -385,3 +385,122 @@ describe("scoreUnweightedScalar — single-value scalar (maxValues = 1)", () => 
     expect([nullFieldRes.accepted, nullFieldRes.tn, nullFieldRes.fp]).toEqual([1, 1, 0]);
   });
 });
+
+describe("scoreUnweightedScalar — multi-value scalar (maxValues > 1)", () => {
+  it("scores sets, inline unverified_quote, site fpOnAbsent vs fpElementsOnAbsent & literal clustered CIs", () => {
+    const field = "aliases";
+    const mv = (
+      items: { value: unknown; quote?: string | null; reason?: string }[], unverified_dropped = 0,
+    ) => ({
+      values: items.map((x) => ({
+        value: x.value, quote: x.reason ? null : (x.quote ?? String(x.value)),
+        sha256: x.reason ? null : "b".repeat(64), ...(x.reason ? { reason: x.reason } : {}),
+      })),
+      unverified_dropped,
+    });
+    const goldenRows: GoldenScalarRow[] = [
+      gRow("g1", field, { verdict: "unanimous", value: ["  Toronto ", "toronto", "Montre\u0301al", "   ", null],
+        n_answered: 3 }),
+      gRow("g1b", field, { verdict: "unanimous", value: ["Saskatoon", "Moncton"], n_answered: 3 }),
+      gRow("g2", field, { verdict: "majority", value: ["Ottawa", "Halifax"], n_answered: 3 }),
+      gRow("g3", field, { verdict: "unanimous", value: ["Vancouver"], n_answered: 2 }),
+      gRow("g4", field, { verdict: "absent", value: null, n_answered: 3 }),
+      gRow("g5", field, { verdict: "majority", value: null, n_answered: 2 }),
+      gRow("g6", field, { verdict: "absent", value: null, n_answered: 3 }),
+      gRow("g7", field, { verdict: "insufficient", value: null, n_answered: 1 }),
+      gRow("g8", field, {
+        verdict: "split", value: null, n_answered: 3,
+        runs: { r1: { value: ["Winnipeg", "Regina"] }, r2: { value: ["Winnipeg"] }, r3: { value: null } },
+      }),
+    ];
+    const candidateRows: Record<string, unknown>[] = [
+      { id: "g1", fields: { [field]: mv(
+        [{ value: "MONTRÉAL" }, { value: "montreal-extra" }, { value: "Toronto" }], 2,
+      ) } },
+      { id: "g1b", fields: { [field]: mv(
+        [{ value: "saskatoon" }, { value: "Moncton", reason: "unverified_quote" }],
+      ) } },
+      { id: "g2", fields: { [field]: mv([{ value: "Calgary" }, { value: "calgary" }], 1) } },
+      { id: "g3", error: "llm_error", fields: null },
+      { id: "g4", fields: { [field]: mv([{ value: "A1" }, { value: "A2" }, { value: "A3" }], 0) } },
+      { id: "g5", fields: { [field]: mv([], 0) } },
+      { id: "g6", fields: { [field]: mv([], 1) } },
+      { id: "g7", fields: { [field]: mv([{ value: "Ignored" }], 3) } },
+      { id: "g8", fields: { [field]: mv([{ value: "winnipeg" }], 0) } },
+    ];
+    // maxValues=2 switches unweighted element intervals to clustered_record_invalid (elements within a site cluster).
+    const res = scoreUnweightedScalar({
+      field, maxValues: 2, goldenRows, candidateRows,
+      supportFloors: { precisionMinPredictions: 5, recallMinPositives: 5 },
+    });
+    expect([res.attempted, res.accepted, res.failed, res.unverifiedQuotesNulled,
+      res.unverifiedWholeRecordsDropped]).toEqual([9, 8, 1, 8, null]);
+    expect([res.goldPositive, res.goldAbsent, res.unresolved, res.insufficient]).toEqual([7, 3, 1, 1]);
+    expect([res.tp, res.fp, res.fpOnPresent, res.fpOnAbsent, res.fpElementsOnAbsent, res.fn, res.tn,
+      res.failedOnAbsent]).toEqual([3, 5, 2, 1, 3, 4, 2, 0]);
+    expectClose(res.abstentionSpecificity, 2 / 3);
+    expectClose(res.unweighted.precision, 3 / 8);
+    expectClose(res.unweighted.recall, 3 / 7);
+    expectClose(res.unweighted.f1, 6 / 15);
+    // Element metrics cluster multiple items per site: interval endpoints are null with method="none", valid=false.
+    expect(res.unweighted.precisionInterval).toEqual({
+      estimator: "unweighted", method: "none", clustering: "clustered_record_invalid",
+      valid: false, low: null, high: null,
+    });
+    expect(res.unweighted.recallInterval).toEqual({
+      estimator: "unweighted", method: "none", clustering: "clustered_record_invalid",
+      valid: false, low: null, high: null,
+    });
+    expect(res.precisionInterval).toEqual({
+      estimator: "unweighted", method: "none", clustering: "clustered_record_invalid",
+      valid: false, low: null, high: null,
+    });
+    expect(res.recallInterval).toEqual({
+      estimator: "unweighted", method: "none", clustering: "clustered_record_invalid",
+      valid: false, low: null, high: null,
+    });
+    expect([res.sitePresence.tpSites, res.sitePresence.fnSites, res.sitePresence.wrongValueOnPresentSites,
+      res.sitePresence.goldPresentSites, res.sitePresence.goldAbsentSites, res.sitePresence.tnSites,
+      res.sitePresence.fpOnAbsentSites]).toEqual([2, 2, 1, 4, 3, 2, 1]);
+    expectClose(res.sitePresence.siteRecall, 0.5);
+    // Site Wilson 2/4: d=1+z^2/4=1.9603647051735313, center=0.5, half=0.34996101084785053
+    expectClose(res.sitePresence.siteRecallInterval.low, 0.15003898915214947);
+    expectClose(res.sitePresence.siteRecallInterval.high, 0.8499610108478506);
+    expectClose(res.sitePresence.siteAbstentionSpecificity, 2 / 3);
+    // Site Wilson 2/3 (symmetric with 1/3): d=2.2804862735647085, center=0.5730838280408258, half=0.365424227238778
+    expectClose(res.sitePresence.siteAbstentionInterval.low, 0.2076596008020477);
+    expectClose(res.sitePresence.siteAbstentionInterval.high, 0.9385080552796037);
+    expect(res.indeterminate).toEqual({ precision: false, recall: false, f1: false });
+    expect([res.diagnostics.broad.tp, res.diagnostics.broad.fp, res.diagnostics.broad.fn]).toEqual([4, 5, 4]);
+  });
+
+  it("applies supportFloors at 30/29, independentGroupSupport, and multi-value broad split edge cases", () => {
+    const field = "city";
+    const mkGold = (n: number) => Array.from({ length: n }, (_, i) =>
+      gRow(`g${i}`, field, { verdict: "unanimous", value: "Toronto", n_answered: 2 }));
+    const mkCand = (n: number) => Array.from({ length: n }, (_, i) =>
+      ({ id: `g${i}`, fields: { [field]: val("Toronto") } }));
+    expect(scoreUnweightedScalar({ field, goldenRows: mkGold(30), candidateRows: mkCand(30) }).indeterminate)
+      .toEqual({ precision: false, recall: false, f1: false });
+    expect(scoreUnweightedScalar({ field, goldenRows: mkGold(29), candidateRows: mkCand(29) }).indeterminate)
+      .toEqual({ precision: true, recall: true, f1: true });
+    expect(scoreUnweightedScalar({
+      field, goldenRows: mkGold(35), candidateRows: mkCand(35),
+      independentGroupSupport: { predictions: 29, positives: 30 },
+    }).indeterminate).toEqual({ precision: true, recall: false, f1: true });
+
+    const splitGold: GoldenScalarRow[] = [gRow("s1", "tags", {
+      verdict: "split", value: null, n_answered: 2, runs: { r1: { value: ["A", "B"] }, r2: { value: ["C"] } },
+    })];
+    const emptyRes = scoreUnweightedScalar({
+      field: "tags", maxValues: 2, goldenRows: splitGold,
+      candidateRows: [{ id: "s1", fields: { tags: { values: [], unverified_dropped: 0 } } }],
+    });
+    expect(emptyRes.diagnostics.broad).toEqual({ tp: 0, fp: 0, fn: 1, precision: null, recall: 0, f1: 0 });
+    const wrongRes = scoreUnweightedScalar({
+      field: "tags", maxValues: 2, goldenRows: splitGold,
+      candidateRows: [{ id: "s1", fields: { tags: { values: [{ value: "Z" }], unverified_dropped: 0 } } }],
+    });
+    expect(wrongRes.diagnostics.broad).toEqual({ tp: 0, fp: 1, fn: 1, precision: 0, recall: 0, f1: 0 });
+  });
+});
