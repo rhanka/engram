@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  assertCountInt, clusteredInvalidInterval, isPlainObject, wilson95,
+  assertCountInt, bestBroadSplit, buildSitePresenceMatrix, clusteredInvalidInterval, computeIndeterminate,
+  computePointMetrics, computeUnweightedBlock, isPlainObject, wilson95,
 } from "../src/bench-dossier/metrics-intervals.js";
 
 function expectClose(actual: number | null, expected: number, eps = 1e-12): void {
@@ -66,5 +67,65 @@ describe("wilson95, clusteredInvalidInterval & input guards", () => {
       refuse(() => wilson95(k, n), "BAD_COUNT", RangeError);
     }
     refuse(() => wilson95(6, 5), "K_EXCEEDS_N", RangeError, /cannot exceed/);
+  });
+
+  it("computes point metrics, support floors at 30/29, unweighted block, sitePresence & broad split", () => {
+    expect(computePointMetrics(0, 0, 0)).toEqual({ precision: null, recall: null, f1: null });
+    expect(computePointMetrics(0, 2, 0)).toEqual({ precision: 0, recall: null, f1: 0 });
+    expect(computePointMetrics(0, 0, 3)).toEqual({ precision: null, recall: 0, f1: 0 });
+    const pm = computePointMetrics(7, 3, 2);
+    expectClose(pm.precision, 0.7);
+    expectClose(pm.recall, 7 / 9);
+    expectClose(pm.f1, 14 / 19);
+    const floors = { precisionMinPredictions: 30, recallMinPositives: 30 };
+    expect(computeIndeterminate(20, 10, 10, floors)).toEqual({ precision: false, recall: false, f1: false });
+    expect(computeIndeterminate(19, 10, 11, floors)).toEqual({ precision: true, recall: false, f1: true });
+    expect(computeIndeterminate(20, 10, 9, floors)).toEqual({ precision: false, recall: true, f1: true });
+    expect(computeIndeterminate(25, 15, 15, floors, { predictions: 29, positives: 30 }))
+      .toEqual({ precision: true, recall: false, f1: true });
+    expect(computeIndeterminate(25, 15, 15, floors, { predictions: 30, positives: 29 }))
+      .toEqual({ precision: false, recall: true, f1: true });
+    expect(computeIndeterminate(0, 0, 0, { precisionMinPredictions: 0, recallMinPositives: 0 }))
+      .toEqual({ precision: false, recall: false, f1: false });
+    const badCounts: [() => unknown, RegExp][] = [
+      [() => computePointMetrics(-1, 0, 0), /\btp\b/], [() => computePointMetrics(0, 1.5, 0), /\bfp\b/],
+      [() => computePointMetrics(0, 0, Number.NaN), /\bfn\b/],
+      [() => computeIndeterminate(1, 1, 1, { precisionMinPredictions: -1, recallMinPositives: 30 }), /precisionMin/],
+      [() => computeIndeterminate(1, 1, 1, { precisionMinPredictions: 30, recallMinPositives: 1.5 }), /recallMin/],
+      [() => computeIndeterminate(1, 1, 1, floors, { predictions: -1, positives: 30 }), /predictions/],
+      [() => computeIndeterminate(1, 1, 1, floors, { predictions: 30, positives: -1 }), /positives/],
+    ];
+    for (const [fn, pattern] of badCounts) refuse(fn, "BAD_COUNT", RangeError, pattern);
+    for (const bad of [[], new Date(), null]) refuse(() => computeIndeterminate(1, 1, 1, bad as any), "NOT_OBJECT");
+    for (const bad of [[], new Date(), null]) {
+      refuse(() => computeIndeterminate(1, 1, 1, floors, bad as any), "NOT_OBJECT");
+    }
+    const ind = computeUnweightedBlock(7, 3, 2, true);
+    expectClose(ind.precisionInterval.low, 0.39677814746114537);
+    expectClose(ind.recallInterval.high, 0.9367748928821533);
+    expect(computeUnweightedBlock(7, 3, 2, false).precisionInterval).toEqual(clusteredInvalidInterval());
+    const zeroSites = buildSitePresenceMatrix({
+      goldAbsentSites: 0, unresolvedSites: 0, insufficientSites: 0, tpSites: 0, fnSites: 0,
+      wrongValueOnPresentSites: 0, fpOnAbsentSites: 0, tnSites: 0, failedOnAbsentSites: 0,
+    });
+    expect([zeroSites.goldPresentSites, zeroSites.siteRecall, zeroSites.siteAbstentionSpecificity])
+      .toEqual([0, null, null]);
+    expect([zeroSites.siteRecallInterval.valid, zeroSites.siteAbstentionInterval.valid]).toEqual([false, false]);
+    const nonEmpty = buildSitePresenceMatrix({
+      goldAbsentSites: 4, unresolvedSites: 1, insufficientSites: 1, tpSites: 7, fnSites: 3,
+      wrongValueOnPresentSites: 2, fpOnAbsentSites: 1, tnSites: 2, failedOnAbsentSites: 1,
+    });
+    expect(nonEmpty.goldPresentSites).toBe(10);
+    expectClose(nonEmpty.siteRecall, 0.7);
+    expectClose(nonEmpty.siteAbstentionSpecificity, 2 / 3);
+    expectClose(nonEmpty.siteRecallInterval.low, 0.39677814746114537);
+    expectClose(nonEmpty.siteRecallInterval.high, 0.8922087325936989);
+    expectClose(nonEmpty.siteAbstentionInterval.low, 0.2076596008020477);
+    expectClose(nonEmpty.siteAbstentionInterval.high, 0.9385080552796037);
+    const v1 = new Set(["a", "b", "c"]), v2 = new Set(["a", "b"]), v3 = new Set(["d"]);
+    expect(bestBroadSplit(null, [v1, v2])).toEqual({ tp: 0, fp: 0, fn: 2 });
+    expect(bestBroadSplit(new Set(), [v1, v3])).toEqual({ tp: 0, fp: 0, fn: 1 });
+    expect(bestBroadSplit(new Set(["a", "d"]), [v1, v3])).toEqual({ tp: 1, fp: 1, fn: 0 });
+    expect(bestBroadSplit(new Set(["a", "x"]), [v1, v2])).toEqual({ tp: 1, fp: 1, fn: 1 });
   });
 });
