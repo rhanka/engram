@@ -7,6 +7,12 @@ import {
   classifyCandidateRow, extractCandidateField, indexCandidateRows, normalizeItemsToSet, parseGoldenUnit,
   resolveSupportFloors, toGoldSet, type GoldenScalarRow,
 } from "../src/bench-dossier/metrics-parsers.js";
+import { scoreUnweightedScalar } from "../src/bench-dossier/metrics-unweighted.js";
+
+const val = (value: unknown, quote: string | null = typeof value === "string" ? value : null) =>
+  ({ value, quote, sha256: quote ? "a".repeat(64) : null });
+const gRow = (id: string, field: string, vote: Record<string, unknown>): GoldenScalarRow =>
+  ({ id, fields: { [field]: vote } });
 
 function expectClose(actual: number | null, expected: number, eps = 1e-12): void {
   expect(actual).not.toBeNull();
@@ -222,5 +228,34 @@ describe("wilson95, clusteredInvalidInterval & input guards", () => {
     refuse(() => extractCandidateField({ values: "A" }, 2), "NOT_ARRAY", Error);
     refuse(() => extractCandidateField({ values: null }, 2), "NOT_ARRAY", Error);
     refuse(() => extractCandidateField({ values: [], unverified_dropped: -1 }, 2), "BAD_COUNT", RangeError);
+  });
+
+  it("handles empty goldenRows and scores core single-value cases end to end", () => {
+    const empty = scoreUnweightedScalar({
+      field: "city", goldenRows: [], candidateRows: [{ id: "extra", fields: { city: val("Toronto") } }],
+    });
+    expect([empty.attempted, empty.accepted, empty.failed]).toEqual([0, 0, 0]);
+    expect([empty.unweighted.precision, empty.unweighted.recall, empty.unweighted.f1]).toEqual([null, null, null]);
+    expect([empty.abstentionSpecificity, empty.sitePresence.siteRecall,
+      empty.sitePresence.siteAbstentionSpecificity]).toEqual([null, null, null]);
+    expect([empty.unweighted.precisionInterval.valid, empty.sitePresence.siteRecallInterval.valid,
+      empty.sitePresence.siteAbstentionInterval.valid]).toEqual([false, false, false]);
+    expect(empty.indeterminate).toEqual({ precision: true, recall: true, f1: true });
+    expect(empty.diagnostics.broad).toEqual({ tp: 0, fp: 0, fn: 0, precision: null, recall: null, f1: null });
+
+    const smoke = scoreUnweightedScalar({
+      field: "city",
+      goldenRows: [
+        gRow("u1", "city", { verdict: "unanimous", value: "Toronto", n_answered: 2 }),
+        gRow("u2", "city", { verdict: "absent", value: null, n_answered: 2 }),
+        gRow("u3", "city", { verdict: "insufficient", value: null, n_answered: 1 }),
+      ],
+      candidateRows: [
+        { id: "u1", fields: { city: val("toronto") } }, { id: "u2", fields: { city: val(null) } },
+        { id: "u3", fields: { city: val("Montreal") } },
+      ],
+    });
+    expect([smoke.attempted, smoke.tp, smoke.fp, smoke.fn, smoke.tn, smoke.insufficient]).toEqual([3, 1, 0, 0, 1, 1]);
+    expect([smoke.precision, smoke.recall, smoke.f1, smoke.abstentionSpecificity]).toEqual([1, 1, 1, 1]);
   });
 });
