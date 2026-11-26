@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  BENCH_RESULTS_SCHEMA_ID, BENCH_RESULTS_SCHEMA_VERSION, parseBenchResultsFile, type BenchResultsFile,
+} from "../src/bench-dossier/results-contract.js";
+import {
   assertCountInt, bestBroadSplit, buildSitePresenceMatrix, clusteredInvalidInterval, computeIndeterminate,
   computePointMetrics, computeUnweightedBlock, isPlainObject, wilson95,
 } from "../src/bench-dossier/metrics-intervals.js";
@@ -7,7 +10,7 @@ import {
   classifyCandidateRow, extractCandidateField, indexCandidateRows, normalizeItemsToSet, parseGoldenUnit,
   resolveSupportFloors, toGoldSet, type GoldenScalarRow,
 } from "../src/bench-dossier/metrics-parsers.js";
-import { scoreUnweightedScalar } from "../src/bench-dossier/metrics-unweighted.js";
+import { scoreUnweightedScalar, type UnweightedScalarScore } from "../src/bench-dossier/metrics-unweighted.js";
 
 const val = (value: unknown, quote: string | null = typeof value === "string" ? value : null) =>
   ({ value, quote, sha256: quote ? "a".repeat(64) : null });
@@ -504,3 +507,119 @@ describe("scoreUnweightedScalar — multi-value scalar (maxValues > 1)", () => {
     expect(wrongRes.diagnostics.broad).toEqual({ tp: 0, fp: 1, fn: 1, precision: 0, recall: 0, f1: 0 });
   });
 });
+
+describe("BD-1a BenchResultsFile contract & negative vectors (inputs, floors, rows)", () => {
+  const baseRow = gRow("u1", "city", { verdict: "unanimous", value: "Toronto", n_answered: 2 });
+  const baseCand = [{ id: "u1", fields: { city: val("Toronto") } }];
+
+  it("produces BD-1a parseBenchResultsFile-compatible records for single and multi-value scalars", () => {
+    const score = scoreUnweightedScalar({
+      field: "city", maxValues: 1,
+      goldenRows: [gRow("u1", "city", { verdict: "unanimous", value: "Toronto", n_answered: 2 })],
+      candidateRows: [{ id: "u1", fields: { city: val("Toronto") } }],
+    });
+    expect(parseBenchResultsFile(makeEnvelope(buildBenchRecord(score, "generic"), "city"))
+      .records[0]?.field).toBe("city");
+
+    const mvScore = scoreUnweightedScalar({
+      field: "tags", maxValues: 3,
+      goldenRows: [gRow("u1", "tags", { verdict: "unanimous", value: ["A", "B"], n_answered: 2 })],
+      candidateRows: [{ id: "u1", fields: { tags: { values: [{ value: "A", quote: "A" }], unverified_dropped: 0 } } }],
+    });
+    const parsed = parseBenchResultsFile(makeEnvelope(buildBenchRecord(mvScore, "generic"), "tags"));
+    expect(parsed.records[0]?.precisionInterval.clustering).toBe("clustered_record_invalid");
+  });
+
+  it("refuses malformed top-level input, field, maxValues, supportFloors, groupSupport & row containers", () => {
+    for (const bad of [null, undefined, [], new Date(), "str"]) {
+      refuse(() => scoreUnweightedScalar(bad as any), "NOT_OBJECT", Error);
+    }
+    const vectors: [Record<string, unknown>, string, ErrorConstructor][] = [
+      [{ field: "", goldenRows: [baseRow], candidateRows: baseCand }, "BAD_FIELD", Error],
+      [{ field: "   ", goldenRows: [baseRow], candidateRows: baseCand }, "BAD_FIELD", Error],
+      [{ field: " city", goldenRows: [baseRow], candidateRows: baseCand }, "BAD_FIELD", Error],
+      [{ field: "city ", goldenRows: [baseRow], candidateRows: baseCand }, "BAD_FIELD", Error],
+      [{ field: 123, goldenRows: [baseRow], candidateRows: baseCand }, "BAD_FIELD", Error],
+      [{
+        field: "office.city",
+        goldenRows: [gRow("u1", "office.city", { verdict: "unanimous", value: "X", n_answered: 2 })],
+        candidateRows: [{ id: "u1", fields: { "office.city": val("X") } }],
+      }, "BAD_FIELD", Error],
+      [{ field: "city", maxValues: 0, goldenRows: [baseRow], candidateRows: baseCand }, "BAD_MAX_VALUES", RangeError],
+      [{ field: "city", maxValues: -1, goldenRows: [baseRow], candidateRows: baseCand }, "BAD_MAX_VALUES", RangeError],
+      [{ field: "city", maxValues: 1.5, goldenRows: [baseRow], candidateRows: baseCand }, "BAD_MAX_VALUES", RangeError],
+      [{ field: "city", maxValues: Number.NaN, goldenRows: [baseRow], candidateRows: baseCand },
+        "BAD_MAX_VALUES", RangeError],
+      [{ field: "city", maxValues: Number.MAX_SAFE_INTEGER + 1, goldenRows: [baseRow], candidateRows: baseCand },
+        "BAD_MAX_VALUES", RangeError],
+      [{ field: "city", maxValues: "2", goldenRows: [baseRow], candidateRows: baseCand },
+        "BAD_MAX_VALUES", RangeError],
+      [{ field: "city", supportFloors: [], goldenRows: [baseRow], candidateRows: baseCand }, "NOT_OBJECT", Error],
+      [{ field: "city", supportFloors: null, goldenRows: [baseRow], candidateRows: baseCand }, "NOT_OBJECT", Error],
+      [{ field: "city", supportFloors: new Date(), goldenRows: [baseRow], candidateRows: baseCand },
+        "NOT_OBJECT", Error],
+      [{ field: "city", supportFloors: { precisionMinPredictions: -1 }, goldenRows: [baseRow],
+        candidateRows: baseCand }, "BAD_COUNT", RangeError],
+      [{ field: "city", supportFloors: { recallMinPositives: 1.5 }, goldenRows: [baseRow],
+        candidateRows: baseCand }, "BAD_COUNT", RangeError],
+      [{ field: "city", supportFloors: { recallMinPositives: Number.MAX_SAFE_INTEGER + 1 }, goldenRows: [baseRow],
+        candidateRows: baseCand }, "BAD_COUNT", RangeError],
+      [{ field: "city", independentGroupSupport: [], goldenRows: [baseRow], candidateRows: baseCand },
+        "NOT_OBJECT", Error],
+      [{ field: "city", independentGroupSupport: null, goldenRows: [baseRow], candidateRows: baseCand },
+        "NOT_OBJECT", Error],
+      [{ field: "city", independentGroupSupport: new Date(), goldenRows: [baseRow], candidateRows: baseCand },
+        "NOT_OBJECT", Error],
+      [{ field: "city", independentGroupSupport: { predictions: -1, positives: 1 }, goldenRows: [baseRow],
+        candidateRows: baseCand }, "BAD_COUNT", RangeError],
+      [{ field: "city", independentGroupSupport: { predictions: 1, positives: -1 }, goldenRows: [baseRow],
+        candidateRows: baseCand }, "BAD_COUNT", RangeError],
+      [{ field: "city", goldenRows: "not-array", candidateRows: baseCand }, "NOT_ARRAY", Error],
+      [{ field: "city", goldenRows: [baseRow], candidateRows: "not-array" }, "NOT_ARRAY", Error],
+      [{ field: "city", goldenRows: [[]], candidateRows: baseCand }, "NOT_OBJECT", Error],
+      [{ field: "city", goldenRows: [new Date()], candidateRows: baseCand }, "NOT_OBJECT", Error],
+      [{ field: "city", goldenRows: [null], candidateRows: baseCand }, "NOT_OBJECT", Error],
+      [{ field: "city", goldenRows: [baseRow], candidateRows: [[]] }, "NOT_OBJECT", Error],
+      [{ field: "city", goldenRows: [baseRow], candidateRows: [new Date()] }, "NOT_OBJECT", Error],
+      [{ field: "city", goldenRows: [baseRow], candidateRows: [null] }, "NOT_OBJECT", Error],
+      [{ field: "city", goldenRows: [baseRow], candidateRows: [{ id: "", fields: { city: val("Toronto") } }] },
+        "MISSING_ID", Error],
+      [{ field: "city", goldenRows: [baseRow], candidateRows: [{ id: 123, fields: { city: val("Toronto") } }] },
+        "MISSING_ID", Error],
+    ];
+    for (const [input, code, Err] of vectors) refuse(() => scoreUnweightedScalar(input as any), code, Err);
+  });
+});
+
+function buildBenchRecord(score: UnweightedScalarScore, comparator: string): BenchResultsFile["records"][number] {
+  return {
+    armId: "arm-test", armMissionSha256: "a".repeat(64), missingDigestAllowed: false,
+    provider: "OpenAI", model: "gpt-5.6-luna-low", modelLabel: "Luna low", proseName: "OpenAI Luna low",
+    effort: "low", isCascade: false, isHighlighted: false, incomplete: false,
+    comparator, isPrimaryComparator: true, weighted: null, calls: 1, callsPerItem: 1,
+    tokens: { input: 100, output: 20, reasoning: 0, cached: "unknown", total: 120 },
+    cost: {
+      currency: "USD", costBasisItems: 1, costUnknownReason: null, apiEquivalentTotal: 0.001,
+      apiEquivalentPerItem: 0.001, tariffStatus: "primary", tariffSource: "src", tariffAsOf: "2026-11-22",
+      fxApplied: null, seatStatus: "unknown", seatMethod: "unknown", seatUnknownReason: "missing-observation",
+      seatSharePerItem: "unknown", seatCostPerItem: "unknown", seatPlan: null, seatMonthlyPrice: null,
+      seatLimitScale: null, seatPlanSource: null, seatPlanAsOf: null,
+    },
+    ...score,
+  };
+}
+
+function makeEnvelope(record: BenchResultsFile["records"][number], field: string): BenchResultsFile {
+  return {
+    schemaId: BENCH_RESULTS_SCHEMA_ID, schemaVersion: BENCH_RESULTS_SCHEMA_VERSION,
+    generatedAt: "2026-11-25T14:00:00Z", campaignId: "test-campaign",
+    corpus: {
+      partition: "eval", primaryEstimator: "unweighted", costBasisLabel: "extracted_packet", currency: "USD",
+      goldenMissionSha256: "b".repeat(64), candidateMissionSha256: "c".repeat(64), fieldShapeVerified: true,
+      goldenSha256: "d".repeat(64), goldenIds: 1, fields: [field], annotatorCount: 2,
+      krippendorffAlphaByField: { [field]: 1 },
+    },
+    supportFloors: { recallMinPositives: 30, precisionMinPredictions: 30, failureCeiling: 0.05 },
+    records: [record],
+  };
+}
