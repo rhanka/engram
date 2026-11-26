@@ -10,6 +10,7 @@ import {
   classifyCandidateRow, extractCandidateField, indexCandidateRows, normalizeItemsToSet, parseGoldenUnit,
   resolveSupportFloors, toGoldSet, type GoldenScalarRow,
 } from "../src/bench-dossier/metrics-parsers.js";
+import * as unweightedBarrel from "../src/bench-dossier/metrics-unweighted.js";
 import { scoreUnweightedScalar, type UnweightedScalarScore } from "../src/bench-dossier/metrics-unweighted.js";
 
 const val = (value: unknown, quote: string | null = typeof value === "string" ? value : null) =>
@@ -116,7 +117,15 @@ describe("wilson95, clusteredInvalidInterval & input guards", () => {
     const ind = computeUnweightedBlock(7, 3, 2, true);
     expectClose(ind.precisionInterval.low, 0.39677814746114537);
     expectClose(ind.recallInterval.high, 0.9367748928821533);
-    expect(computeUnweightedBlock(7, 3, 2, false).precisionInterval).toEqual(clusteredInvalidInterval());
+    const clusteredBlock = computeUnweightedBlock(7, 3, 2, false);
+    expect(clusteredBlock.precisionInterval).toEqual({
+      estimator: "unweighted", method: "none", clustering: "clustered_record_invalid",
+      valid: false, low: null, high: null,
+    });
+    expect(clusteredBlock.recallInterval).toEqual({
+      estimator: "unweighted", method: "none", clustering: "clustered_record_invalid",
+      valid: false, low: null, high: null,
+    });
     const zeroSites = buildSitePresenceMatrix({
       goldAbsentSites: 0, unresolvedSites: 0, insufficientSites: 0, tpSites: 0, fnSites: 0,
       wrongValueOnPresentSites: 0, fpOnAbsentSites: 0, tnSites: 0, failedOnAbsentSites: 0,
@@ -733,5 +742,85 @@ describe("scoreUnweightedScalar — negative vectors (nested golden & candidate 
       field: "city", supportFloors: { recallMinPositives: 1 }, goldenRows: [baseRow], candidateRows: baseCand,
     });
     expect(partialRec.indeterminate).toEqual({ precision: true, recall: false, f1: true });
+  });
+});
+
+describe("scoreUnweightedScalar — round-3 minor checks & residual mutant coverage", () => {
+  const baseRow = gRow("u1", "city", { verdict: "unanimous", value: "Toronto", n_answered: 2 });
+  const baseCand = [{ id: "u1", fields: { city: val("Toronto") } }];
+
+  it("kills F19-F21, F46, F52-F55, tests nested null supportFloors and positive omitted n_answered", () => {
+    // F53: verify metrics-unweighted barrel re-exports sibling module functions.
+    expect(unweightedBarrel.wilson95).toBe(wilson95);
+    expect(unweightedBarrel.parseGoldenUnit).toBe(parseGoldenUnit);
+    expect(unweightedBarrel.wilson95(1, 3)).toEqual(wilson95(1, 3));
+
+    // MINOR 1: scoreUnweightedScalar with absent ({}), valid, and nested null supportFloors.
+    const emptyFloors = scoreUnweightedScalar({
+      field: "city", supportFloors: {}, goldenRows: [baseRow], candidateRows: baseCand,
+    });
+    expect(emptyFloors.indeterminate).toEqual({ precision: true, recall: true, f1: true });
+    const validFloors = scoreUnweightedScalar({
+      field: "city", supportFloors: { precisionMinPredictions: 1, recallMinPositives: 1 },
+      goldenRows: [baseRow], candidateRows: baseCand,
+    });
+    expect(validFloors.indeterminate).toEqual({ precision: false, recall: false, f1: false });
+    refuse(() => scoreUnweightedScalar({
+      field: "city", supportFloors: { precisionMinPredictions: null } as any,
+      goldenRows: [baseRow], candidateRows: baseCand,
+    }), "BAD_COUNT", RangeError, /precisionMinPredictions/);
+    refuse(() => scoreUnweightedScalar({
+      field: "city", supportFloors: { recallMinPositives: null } as any,
+      goldenRows: [baseRow], candidateRows: baseCand,
+    }), "BAD_COUNT", RangeError, /recallMinPositives/);
+
+    // F19-F21: empty-string error and null/omitted fields without error.
+    expect(classifyCandidateRow({ id: "g1", error: "" })).toEqual({ ok: false, code: "unknown_error" });
+    expect(classifyCandidateRow({ id: "g1", error: "", fields: {} })).toEqual({ ok: false, code: "unknown_error" });
+    expect(classifyCandidateRow({ id: "g1", fields: null })).toEqual({ ok: false, code: "invalid_row" });
+    expect(classifyCandidateRow({ id: "g1" })).toEqual({ ok: false, code: "invalid_row" });
+
+    // F46: non-object (null) element inside multi-value candidate values[].
+    const mvWithNull = extractCandidateField({ values: [null, { value: "A" }] }, 2);
+    expect([[...mvWithNull.set], mvWithNull.nulled]).toEqual([["a"], 0]);
+
+    // F52: explicit maxValues: null refused with BAD_MAX_VALUES.
+    refuse(() => scoreUnweightedScalar({
+      field: "city", maxValues: null as any, goldenRows: [baseRow], candidateRows: baseCand,
+    }), "BAD_MAX_VALUES", RangeError);
+
+    // F54-F55: repeated failure code (llm_error: 2) and failed multi-value present site with goldSize = 2.
+    const mvFailRes = scoreUnweightedScalar({
+      field: "tags",
+      maxValues: 2,
+      goldenRows: [
+        gRow("f1", "tags", { verdict: "unanimous", value: ["Alpha", "Beta"], n_answered: 2 }),
+        gRow("f2", "tags", { verdict: "absent", value: null, n_answered: 2 }),
+      ],
+      candidateRows: [
+        { id: "f1", error: "llm_error", fields: null },
+        { id: "f2", error: "llm_error", fields: null },
+      ],
+    });
+    expect([mvFailRes.attempted, mvFailRes.accepted, mvFailRes.failed]).toEqual([2, 0, 2]);
+    expect(mvFailRes.failuresByCode).toEqual({ llm_error: 2 });
+    expect([mvFailRes.goldPositive, mvFailRes.fn, mvFailRes.goldAbsent, mvFailRes.failedOnAbsent])
+      .toEqual([2, 2, 1, 1]);
+    expect([mvFailRes.sitePresence.fnSites, mvFailRes.sitePresence.failedOnAbsentSites]).toEqual([1, 1]);
+    expect(mvFailRes.diagnostics.broad).toEqual({ tp: 0, fp: 0, fn: 2, precision: null, recall: 0, f1: 0 });
+
+    // MINOR 3: positive omitted-n_answered assertions.
+    expect(parseGoldenUnit({ id: "u3", fields: { c: { verdict: "unanimous", value: "Toronto" } } }, "c", 1))
+      .toEqual({ id: "u3", unit: { kind: "present", goldSet: new Set(["toronto"]) } });
+    expect(parseGoldenUnit({ id: "u4", fields: { c: { verdict: "absent" } } }, "c", 1))
+      .toEqual({ id: "u4", unit: { kind: "absent" } });
+    expect(parseGoldenUnit({ id: "u5", fields: { c: { verdict: "insufficient" } } }, "c", 1))
+      .toEqual({ id: "u5", unit: { kind: "insufficient" } });
+    const omittedNAnsScore = scoreUnweightedScalar({
+      field: "city",
+      goldenRows: [gRow("u6", "city", { verdict: "unanimous", value: "Toronto" })],
+      candidateRows: [{ id: "u6", fields: { city: val("Toronto") } }],
+    });
+    expect([omittedNAnsScore.attempted, omittedNAnsScore.tp, omittedNAnsScore.fn]).toEqual([1, 1, 0]);
   });
 });
