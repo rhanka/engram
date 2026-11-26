@@ -3,6 +3,9 @@ import {
   assertCountInt, bestBroadSplit, buildSitePresenceMatrix, clusteredInvalidInterval, computeIndeterminate,
   computePointMetrics, computeUnweightedBlock, isPlainObject, wilson95,
 } from "../src/bench-dossier/metrics-intervals.js";
+import {
+  classifyCandidateRow, indexCandidateRows, normalizeItemsToSet, resolveSupportFloors,
+} from "../src/bench-dossier/metrics-parsers.js";
 
 function expectClose(actual: number | null, expected: number, eps = 1e-12): void {
   expect(actual).not.toBeNull();
@@ -127,5 +130,46 @@ describe("wilson95, clusteredInvalidInterval & input guards", () => {
     expect(bestBroadSplit(new Set(), [v1, v3])).toEqual({ tp: 0, fp: 0, fn: 1 });
     expect(bestBroadSplit(new Set(["a", "d"]), [v1, v3])).toEqual({ tp: 1, fp: 1, fn: 0 });
     expect(bestBroadSplit(new Set(["a", "x"]), [v1, v2])).toEqual({ tp: 1, fp: 1, fn: 1 });
+  });
+
+  it("resolves support floors, indexes/classifies candidate rows and normalizes sets", () => {
+    expect(resolveSupportFloors(undefined)).toEqual({ precisionMinPredictions: 30, recallMinPositives: 30 });
+    expect(resolveSupportFloors({ precisionMinPredictions: 0, recallMinPositives: 0 }))
+      .toEqual({ precisionMinPredictions: 0, recallMinPositives: 0 });
+    expect(resolveSupportFloors({ recallMinPositives: 1 }))
+      .toEqual({ precisionMinPredictions: 30, recallMinPositives: 1 });
+    expect(resolveSupportFloors({ precisionMinPredictions: 1 }))
+      .toEqual({ precisionMinPredictions: 1, recallMinPositives: 30 });
+    for (const bad of [null, [], new Date()]) refuse(() => resolveSupportFloors(bad as any), "NOT_OBJECT", Error);
+    expect(resolveSupportFloors({})).toEqual({ precisionMinPredictions: 30, recallMinPositives: 30 });
+    expect(resolveSupportFloors({ precisionMinPredictions: 12, recallMinPositives: 8 }))
+      .toEqual({ precisionMinPredictions: 12, recallMinPositives: 8 });
+    refuse(() => resolveSupportFloors({ precisionMinPredictions: null } as any), "BAD_COUNT", RangeError);
+    refuse(() => resolveSupportFloors({ recallMinPositives: null } as any), "BAD_COUNT", RangeError);
+    refuse(() => resolveSupportFloors({ precisionMinPredictions: -1 }), "BAD_COUNT", RangeError);
+    refuse(() => resolveSupportFloors({ recallMinPositives: 1.5 }), "BAD_COUNT", RangeError);
+
+    const nullProto = Object.assign(Object.create(null), { id: "g2", fields: Object.create(null) });
+    const byId = indexCandidateRows([
+      { type: "summary", ok: 2 },
+      { id: "g1", error: "llm_error" },
+      { id: "g1", error: null, fields: { city: "Toronto" } },
+      nullProto,
+    ]);
+    expect(byId.size).toBe(2);
+    expect(classifyCandidateRow(undefined)).toEqual({ ok: false, code: "missing" });
+    expect(classifyCandidateRow({ id: "g1", error: "   " })).toEqual({ ok: false, code: "unknown_error" });
+    expect(classifyCandidateRow({ id: "g1", fields: [] })).toEqual({ ok: false, code: "invalid_row" });
+    expect(classifyCandidateRow({ id: "g1", fields: new Date() })).toEqual({ ok: false, code: "invalid_row" });
+    expect(classifyCandidateRow(byId.get("g1"))).toEqual({ ok: true, fields: { city: "Toronto" } });
+    expect(classifyCandidateRow(byId.get("g2"))).toEqual({ ok: true, fields: Object.create(null) });
+
+    refuse(() => indexCandidateRows("bad" as any), "NOT_ARRAY", Error);
+    for (const badRow of [null, [], new Date()]) refuse(() => indexCandidateRows([badRow as any]), "NOT_OBJECT", Error);
+    for (const badId of [123, "", "   "]) refuse(() => indexCandidateRows([{ id: badId }]), "MISSING_ID", Error);
+
+    const items = [{ value: "H2Y-1S1" }, { value: "X", reason: "unverified_quote" }, "  h2y 1s1 ", null];
+    expect([...normalizeItemsToSet(items, true)]).toEqual(["H2Y 1S1"]);
+    expect([...normalizeItemsToSet(items, false)]).toEqual(["H2Y 1S1", "x"]);
   });
 });
