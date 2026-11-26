@@ -623,3 +623,115 @@ function makeEnvelope(record: BenchResultsFile["records"][number], field: string
     records: [record],
   };
 }
+
+describe("scoreUnweightedScalar — negative vectors (nested golden & candidate fields)", () => {
+  const baseRow = gRow("u1", "city", { verdict: "unanimous", value: "Toronto", n_answered: 2 });
+  const baseCand = [{ id: "u1", fields: { city: val("Toronto") } }];
+  const mvGold = (vote: Record<string, unknown>) => [gRow("u1", "tags", vote)];
+  const mvCand = (fieldVal: Record<string, unknown>) => [{ id: "u1", fields: { tags: fieldVal } }];
+
+  it("refuses malformed nested golden vote fields and candidate field values", () => {
+    const vectors: [Record<string, unknown>, string, ErrorConstructor][] = [
+      [{ field: "city", goldenRows: [gRow(" ", "city", { verdict: "unanimous", value: "T", n_answered: 2 })],
+        candidateRows: baseCand }, "MISSING_ID", Error],
+      [{ field: "city", goldenRows: [{ id: 123, fields: { city: { verdict: "absent", value: null } } }],
+        candidateRows: baseCand }, "MISSING_ID", Error],
+      [{ field: "city", goldenRows: [baseRow, baseRow], candidateRows: baseCand }, "DUPLICATE_ID", Error],
+      [{ field: "city", goldenRows: [{ id: "u1", fields: [] }], candidateRows: baseCand }, "NOT_OBJECT", Error],
+      [{ field: "city", goldenRows: [{ id: "u1", fields: new Date() }], candidateRows: baseCand }, "NOT_OBJECT", Error],
+      [{ field: "city", goldenRows: [{ id: "u1", fields: null }], candidateRows: baseCand }, "NOT_OBJECT", Error],
+      [{ field: "city", goldenRows: [{ id: "u1", fields: {} }], candidateRows: baseCand }, "MISSING_VOTE", Error],
+      [{ field: "city", goldenRows: [{ id: "u1", fields: { city: [] } }], candidateRows: baseCand },
+        "MISSING_VOTE", Error],
+      [{ field: "city", goldenRows: [{ id: "u1", fields: { city: new Date() } }], candidateRows: baseCand },
+        "MISSING_VOTE", Error],
+      [{ field: "city", goldenRows: [gRow("u1", "city", { verdict: "consensus", value: "T", n_answered: 2 })],
+        candidateRows: baseCand }, "BAD_VERDICT", Error],
+      [{ field: "city", goldenRows: [gRow("u1", "city", { verdict: "absent", value: null, n_answered: -1 })],
+        candidateRows: baseCand }, "BAD_COUNT", RangeError],
+      [{ field: "city", goldenRows: [gRow("u1", "city", { verdict: "absent", value: null, n_answered: 1.5 })],
+        candidateRows: baseCand }, "BAD_COUNT", RangeError],
+      [{ field: "city", goldenRows: [gRow("u1", "city", { verdict: "absent", value: null, n_answered: null })],
+        candidateRows: baseCand }, "BAD_COUNT", RangeError],
+      [{ field: "city", goldenRows: [gRow("u1", "city", { verdict: "insufficient", value: null, n_answered: 2 })],
+        candidateRows: baseCand }, "N_ANSWERED_MISMATCH", Error],
+      [{ field: "city", goldenRows: [gRow("u1", "city", { verdict: "unanimous", value: "T", n_answered: 1 })],
+        candidateRows: baseCand }, "N_ANSWERED_MISMATCH", Error],
+      [{ field: "city", goldenRows: [gRow("u1", "city", { verdict: "insufficient", value: "T", n_answered: 1 })],
+        candidateRows: baseCand }, "INSUFFICIENT_NON_NULL", Error],
+      [{ field: "city", goldenRows: [gRow("u1", "city", {
+        verdict: "split", value: "T", runs: { r1: { value: "A" } },
+      })], candidateRows: baseCand }, "SPLIT_NON_NULL", Error],
+      [{ field: "city", goldenRows: [gRow("u1", "city", { verdict: "split", value: null, n_answered: 2 })],
+        candidateRows: baseCand }, "SPLIT_MISSING_RUNS", Error],
+      [{ field: "city", goldenRows: [gRow("u1", "city", { verdict: "split", value: null, runs: [] })],
+        candidateRows: baseCand }, "SPLIT_MISSING_RUNS", Error],
+      [{ field: "city", goldenRows: [gRow("u1", "city", { verdict: "split", value: null, runs: new Date() })],
+        candidateRows: baseCand }, "SPLIT_MISSING_RUNS", Error],
+      [{ field: "city", goldenRows: [gRow("u1", "city", { verdict: "split", runs: { r1: "bad" } })],
+        candidateRows: baseCand }, "BAD_SPLIT_RUN", Error],
+      [{ field: "city", goldenRows: [gRow("u1", "city", {
+        verdict: "split", runs: { r1: Object.assign(new Date(), { value: "A" }) },
+      })], candidateRows: baseCand }, "BAD_SPLIT_RUN", Error],
+      [{ field: "city", goldenRows: [gRow("u1", "city", {
+        verdict: "split", runs: { r1: Object.assign([], { value: "A" }) },
+      })], candidateRows: baseCand }, "BAD_SPLIT_RUN", Error],
+      [{ field: "city", goldenRows: [gRow("u1", "city", { verdict: "split", runs: { r1: { quote: "x" } } })],
+        candidateRows: baseCand }, "BAD_SPLIT_RUN", Error],
+      [{ field: "city", goldenRows: [gRow("u1", "city", { verdict: "split", runs: { r1: { status: "ok" } } })],
+        candidateRows: baseCand }, "BAD_SPLIT_RUN", Error],
+      [{ field: "city", goldenRows: [gRow("u1", "city", { verdict: "split", runs: { r1: { value: ["A"] } } })],
+        candidateRows: baseCand }, "BAD_GOLD_VALUE", Error],
+      [{ field: "tags", maxValues: 2, goldenRows: mvGold({ verdict: "split", runs: { r1: { value: "A" } } }),
+        candidateRows: mvCand({ values: [] }) }, "NOT_ARRAY", Error],
+      [{ field: "city", goldenRows: [gRow("u1", "city", {
+        verdict: "split", runs: { r1: { value: null }, r2: { value: "  " }, r3: { status: "missing" } },
+      })], candidateRows: baseCand }, "SPLIT_NO_RUN", Error],
+      [{ field: "city", goldenRows: [gRow("u1", "city", { verdict: "absent", value: "T", n_answered: 2 })],
+        candidateRows: baseCand }, "ABSENT_NON_NULL", Error],
+      [{ field: "city", goldenRows: [gRow("u1", "city", { verdict: "unanimous", value: null, n_answered: 2 })],
+        candidateRows: baseCand }, "UNANIMOUS_NULL", Error],
+      [{ field: "city", maxValues: 1, goldenRows: [gRow("u1", "city", { verdict: "unanimous", value: ["T"] })],
+        candidateRows: baseCand }, "BAD_GOLD_VALUE", Error],
+      [{ field: "city", maxValues: 1, goldenRows: [gRow("u1", "city", { verdict: "unanimous", value: {} })],
+        candidateRows: baseCand }, "BAD_GOLD_VALUE", Error],
+      [{ field: "tags", maxValues: 2, goldenRows: mvGold({ verdict: "unanimous", value: "A", n_answered: 2 }),
+        candidateRows: mvCand({ values: [{ value: "A" }] }) }, "NOT_ARRAY", Error],
+      [{ field: "city", goldenRows: [baseRow], candidateRows: [{ id: "u1", fields: { city: "Toronto" } }] },
+        "NOT_OBJECT", Error],
+      [{ field: "city", goldenRows: [baseRow], candidateRows: [{ id: "u1", fields: { city: [] } }] },
+        "NOT_OBJECT", Error],
+      [{ field: "city", goldenRows: [baseRow], candidateRows: [{ id: "u1", fields: { city: new Date() } }] },
+        "NOT_OBJECT", Error],
+      [{ field: "city", goldenRows: [baseRow], candidateRows: [{ id: "u1", fields: { city: { value: ["T"] } } }] },
+        "BAD_CANDIDATE_VALUE", Error],
+      [{ field: "city", goldenRows: [baseRow], candidateRows: [{
+        id: "u1", fields: { city: { value: {}, reason: "unverified_quote" } },
+      }] }, "BAD_CANDIDATE_VALUE", Error],
+      [{ field: "tags", maxValues: 2, goldenRows: mvGold({ verdict: "unanimous", value: ["A"], n_answered: 2 }),
+        candidateRows: mvCand({ values: "A", unverified_dropped: 0 }) }, "NOT_ARRAY", Error],
+      [{ field: "tags", maxValues: 2, goldenRows: mvGold({ verdict: "unanimous", value: ["A"], n_answered: 2 }),
+        candidateRows: mvCand({ values: null, unverified_dropped: 0 }) }, "NOT_ARRAY", Error],
+      [{ field: "tags", maxValues: 2, goldenRows: mvGold({ verdict: "unanimous", value: ["A"], n_answered: 2 }),
+        candidateRows: mvCand({ values: [{ value: "A" }], unverified_dropped: -1 }) }, "BAD_COUNT", RangeError],
+      [{ field: "tags", maxValues: 2, goldenRows: mvGold({ verdict: "unanimous", value: ["A"], n_answered: 2 }),
+        candidateRows: mvCand({ values: [{ value: "A" }], unverified_dropped: 1.5 }) }, "BAD_COUNT", RangeError],
+      [{ field: "tags", maxValues: 2, goldenRows: mvGold({ verdict: "unanimous", value: ["A"], n_answered: 2 }),
+        candidateRows: mvCand({ values: [{ value: "A" }], unverified_dropped: null }) }, "BAD_COUNT", RangeError],
+      [{ field: "tags", maxValues: 2, goldenRows: mvGold({ verdict: "unanimous", value: ["A"], n_answered: 2 }),
+        candidateRows: mvCand({ values: [{ value: "A" }], unverified_dropped: Number.MAX_SAFE_INTEGER + 1 }) },
+        "BAD_COUNT", RangeError],
+    ];
+    for (const [input, code, Err] of vectors) refuse(() => scoreUnweightedScalar(input as any), code, Err);
+
+    // Positive single-field variations: partial supportFloors overrides one floor while the other stays 30.
+    const partialPrec = scoreUnweightedScalar({
+      field: "city", supportFloors: { precisionMinPredictions: 1 }, goldenRows: [baseRow], candidateRows: baseCand,
+    });
+    expect(partialPrec.indeterminate).toEqual({ precision: false, recall: true, f1: true });
+    const partialRec = scoreUnweightedScalar({
+      field: "city", supportFloors: { recallMinPositives: 1 }, goldenRows: [baseRow], candidateRows: baseCand,
+    });
+    expect(partialRec.indeterminate).toEqual({ precision: true, recall: false, f1: true });
+  });
+});
