@@ -37,6 +37,7 @@ import {
   renderGlyph,
   type GlyphShape,
   type GlyphState,
+  renderEffortPath,
 } from "../src/bench-dossier/svg-primitives.js";
 
 function parseLeafSvg(xml: string): { tag: string; attrs: Record<string, string>; text?: string } {
@@ -657,5 +658,54 @@ describe("BD-6 DS-token SVG primitives, normalization & 7x5 glyph registry", () 
     refuse(() => renderGlyph({ ...base, size: "unknown" as never }), "BAD_NUMBER", "glyph.size");
     refuse(() => renderGlyph({ ...base, outerRing: null as never }), "WRONG_TYPE", "glyph.outerRing");
     refuse(() => renderGlyph({ ...base, outerRing: "unknown" as never }), "WRONG_TYPE", "glyph.outerRing");
+  });
+
+  it("renders sorted effort paths including 2-point boundary, fractional coords and XML color", () => {
+    const orange = "var(--st-semantic-data-category2, #F28E2B)";
+    const points = [
+      { x: 30, y: 40, effort: "xhigh" as const },
+      { x: 10, y: 20, effort: "off" as const },
+      { x: 50, y: 60, effort: "max" as const },
+      { x: 20, y: 30, effort: "low" as const },
+    ];
+    const pathXml = renderEffortPath(points, orange);
+    expect(pathXml).toBe(
+      `<path d="M10 20 L20 30 L30 40 L50 60" fill="none" stroke="${orange}"`
+      + ` stroke-width="1.3" stroke-dasharray="4 2" opacity="0.8"/>`,
+    );
+    expect(pathXml).toBe(renderEffortPath(points, orange));
+    expect(parseLeafSvg(pathXml)).toEqual({
+      tag: "path",
+      attrs: {
+        d: "M10 20 L20 30 L30 40 L50 60",
+        fill: "none",
+        stroke: orange,
+        "stroke-width": "1.3",
+        "stroke-dasharray": "4 2",
+        opacity: "0.8",
+      },
+    });
+    expect(renderEffortPath([
+      { x: 12.345, y: -0.001, effort: "high" },
+      { x: 2.5, y: 1.5, effort: "off" },
+    ], '#12<3>&"4"')).toBe(
+      '<path d="M2.5 1.5 L12.35 0" fill="none" stroke="#12&lt;3&gt;&amp;&quot;4&quot;"'
+      + ' stroke-width="1.3" stroke-dasharray="4 2" opacity="0.8"/>',
+    );
+    expect(renderEffortPath([], orange)).toBe("");
+    expect(renderEffortPath([{ x: 1, y: 2, effort: "low" }], orange)).toBe("");
+    const sparse: { x: number; y: number; effort: "low" }[] = [];
+    sparse[1] = { x: 1, y: 2, effort: "low" };
+    refuse(() => renderEffortPath(null as never, orange), "NOT_ARRAY", "points");
+    refuse(() => renderEffortPath(sparse, orange), "NOT_OBJECT", "points[0]");
+    refuse(() => renderEffortPath([{ x: 1, y: 2, effort: "cascade" }], orange), "CASCADE_CONFLICT", "points[0].effort");
+    refuse(() => renderEffortPath([{ x: 1, y: 2, effort: "bad" as never }], orange), "BAD_ENUM", "points[0].effort");
+    refuse(() => renderEffortPath([{ x: Number.NaN, y: 2, effort: "low" }], orange), "BAD_NUMBER", "points[0].x");
+    refuse(
+      () => renderEffortPath([{ x: 1, y: Number.POSITIVE_INFINITY, effort: "low" }], orange),
+      "BAD_NUMBER",
+      "points[0].y",
+    );
+    refuse(() => renderEffortPath([{ x: 1, y: 2, effort: "low" }], ""), "EMPTY_STRING", "color");
   });
 });

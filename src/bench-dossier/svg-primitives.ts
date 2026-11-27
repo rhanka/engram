@@ -1,8 +1,9 @@
+import type { EffortLevel } from "./results-types.js";
 import {
-  DS_VARS, escapeXml, fmtSvgNum, requireBool, requireEnum, requireFiniteNum,
-  requirePlainObj, requirePositiveNum, resolveGlyphStyle, type GlyphState,
+  DS_VARS, escapeXml, failSvg, fmtSvgNum, requireBool, requireEnum, requireFiniteNum,
+  requireNonEmptyText, requirePlainObj, requirePositiveNum, resolveGlyphStyle, type GlyphState,
 } from "./svg-tokens.js";
-import { GLYPH_SHAPES, type GlyphShape } from "./svg-registry.js";
+import { effortProgressionRank, GLYPH_SHAPES, type GlyphShape } from "./svg-registry.js";
 export * from "./svg-tokens.js";
 export * from "./svg-registry.js";
 
@@ -55,4 +56,27 @@ export function renderGlyph(opts: GlyphRenderOptions): string {
     ? `<g>${element}<circle cx="${fmtSvgNum(cx)}" cy="${fmtSvgNum(cy)}"`
       + ` r="${fmtSvgNum(0.9 * size)}" fill="none" stroke="${DS_VARS.textPrimary}" stroke-width="2.4"/></g>`
     : element;
+}
+
+export interface EffortPoint {
+  readonly x: number;
+  readonly y: number;
+  readonly effort: EffortLevel;
+}
+/** Render dashed effort-progression polyline across off..max ("" when <2 points). */
+export function renderEffortPath(points: readonly EffortPoint[], color: string): string {
+  if (!Array.isArray(points)) failSvg("NOT_ARRAY", "points");
+  const safeColor = escapeXml(requireNonEmptyText(color, "color"));
+  const ordered = Array.from(points, (point, index) => {
+    requirePlainObj(point, `points[${index}]`);
+    const rank = effortProgressionRank(point.effort, `points[${index}].effort`);
+    if (rank < 0) failSvg("CASCADE_CONFLICT", `points[${index}].effort`);
+    const x = requireFiniteNum(point.x, `points[${index}].x`);
+    return { x, y: requireFiniteNum(point.y, `points[${index}].y`), rank };
+  }).sort((left, right) => left.rank - right.rank);
+  if (ordered.length < 2) return "";
+  const pathData = ordered
+    .map((point, index) => `${index === 0 ? "M" : "L"}${fmtSvgNum(point.x)} ${fmtSvgNum(point.y)}`).join(" ");
+  return `<path d="${pathData}" fill="none" stroke="${safeColor}" stroke-width="1.3"`
+    + ` stroke-dasharray="4 2" opacity="0.8"/>`;
 }
