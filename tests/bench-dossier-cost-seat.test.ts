@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   BenchCostSeatError, computeFromRates, convertCurrency, parseResultsNdjson, parseValidatedPriceTable,
-  resolveApiCost, roundCostNano, summarizeInvocationUsage,
+  resolveApiCost, resolveSeat, roundCostNano, summarizeInvocationUsage,
 } from "../src/bench-dossier/cost-seat.js";
 import type { ArmManifestFile } from "../src/bench-dossier/companion-contracts.js";
 
@@ -595,5 +595,70 @@ describe("BD-4 tree-08: resolveApiCost symmetric currency guard matrix (both sid
     expect(resolveApiCost(usageUsdWithTokens, makeArm({
       tariffOverride: { status: "primary", source: "s", asOf: "d", perMillion: { input: 5, output: 0 } },
     }), null, "CAD")).toEqual({ costUnknownReason: null, apiEquivalentTotal: 0.005, apiEquivalentPerItem: 0.005 });
+  });
+});
+
+describe("BD-4 tree-09: resolveSeat measured and unknown seat math", () => {
+  const fxUsdToCad = { from: "USD" as const, to: "CAD" as const, rate: 1.385, source: "boc", asOf: "2026-11-22" };
+  const apiValid = { costUnknownReason: null, apiEquivalentTotal: 4.5705, apiEquivalentPerItem: 0.0026806451612903224 };
+  const measuredBase = {
+    status: "measured" as const, method: "weekly_burn_delta" as const, windowMinutes: 10080 as const,
+    isolatedSeat: true as const, remainingBefore: 0.92, remainingAfter: 0.72, observedItems: 40,
+    plan: "Pro", planMonthlyPrice: 280, planSource: "inv", planAsOf: "2026-11-20",
+  };
+
+  it("computes measured weekly_burn_delta with full 10-field literals and zero/negative delta guards", () => {
+    // Omitted planCurrency defaults to targetCur ("CAD"); share = (0.92-0.72)/40 = 0.005000000000000002;
+    // seatCost = share * ((280*7)/(365.25/12)) = 0.32197125256673511... (IEEE-754: 0.3219712525667352).
+    expect(resolveSeat(measuredBase, apiValid, makeArm({ fx: fxUsdToCad }), "CAD")).toEqual({
+      seatStatus: "measured",
+      seatMethod: "weekly_burn_delta",
+      seatUnknownReason: null,
+      seatSharePerItem: 0.005000000000000002,
+      seatCostPerItem: 0.3219712525667352,
+      seatPlan: "Pro",
+      seatMonthlyPrice: 280,
+      seatLimitScale: null,
+      seatPlanSource: "inv",
+      seatPlanAsOf: "2026-11-20",
+    });
+    // Explicit USD planCurrency converts once: 200 * 1.385 = 277 CAD; seatCost = 0.3185215605749488.
+    expect(resolveSeat({
+      ...measuredBase, planMonthlyPrice: 200, planCurrency: "USD", planSource: "usd-inv", planAsOf: "2026-11-21",
+    }, apiValid, makeArm({ fx: fxUsdToCad }), "CAD")).toEqual({
+      seatStatus: "measured",
+      seatMethod: "weekly_burn_delta",
+      seatUnknownReason: null,
+      seatSharePerItem: 0.005000000000000002,
+      seatCostPerItem: 0.3185215605749488,
+      seatPlan: "Pro",
+      seatMonthlyPrice: 277,
+      seatLimitScale: null,
+      seatPlanSource: "usd-inv",
+      seatPlanAsOf: "2026-11-21",
+    });
+    expect(resolveSeat({ ...measuredBase, planMonthlyPrice: 0 }, apiValid, makeArm(), "USD")).toEqual({
+      seatStatus: "measured",
+      seatMethod: "weekly_burn_delta",
+      seatUnknownReason: null,
+      seatSharePerItem: 0.005000000000000002,
+      seatCostPerItem: 0,
+      seatPlan: "Pro",
+      seatMonthlyPrice: 0,
+      seatLimitScale: null,
+      seatPlanSource: "inv",
+      seatPlanAsOf: "2026-11-20",
+    });
+    const zeroDelta = resolveSeat({ ...measuredBase, remainingBefore: 0.72 }, apiValid, makeArm(), "USD");
+    const negativeDelta = resolveSeat({ ...measuredBase, remainingBefore: 0.6 }, apiValid, makeArm(), "USD");
+    const fullUnknownNoDelta = {
+      seatStatus: "unknown", seatMethod: "unknown", seatUnknownReason: "no-quota-delta",
+      seatSharePerItem: "unknown", seatCostPerItem: "unknown",
+      seatPlan: null, seatMonthlyPrice: null, seatLimitScale: null, seatPlanSource: null, seatPlanAsOf: null,
+    };
+    expect(zeroDelta).toEqual(fullUnknownNoDelta);
+    expect(negativeDelta).toEqual(fullUnknownNoDelta);
+    refuse(() => resolveSeat({ ...measuredBase, planCurrency: "USD" }, apiValid, makeArm(), "CAD"),
+      "CURRENCY_MISMATCH", "$.seat.planCurrency");
   });
 });
