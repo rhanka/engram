@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  BenchCostSeatError, computeFromRates, convertCurrency, parseResultsNdjson, parseValidatedPriceTable,
-  resolveApiCost, resolveSeat, roundCostNano, summarizeInvocationUsage,
+  BenchCostSeatError, computeArmCostAndSeat, computeFromRates, convertCurrency, parseResultsNdjson,
+  parseValidatedPriceTable, resolveApiCost, resolveSeat, roundCostNano, summarizeInvocationUsage,
 } from "../src/bench-dossier/cost-seat.js";
 import type { ArmManifestFile } from "../src/bench-dossier/companion-contracts.js";
 
@@ -722,6 +722,82 @@ describe("BD-4 tree-10: resolveSeat estimated math, non-identity scale, and unkn
       seatStatus: "unknown", seatMethod: "unknown", seatUnknownReason: "shared-seat-concurrent",
       seatSharePerItem: "unknown", seatCostPerItem: "unknown",
       seatPlan: null, seatMonthlyPrice: null, seatLimitScale: null, seatPlanSource: null, seatPlanAsOf: null,
+    });
+  });
+});
+
+describe("BD-4 tree-11: computeArmCostAndSeat full literals and Probe P1 end-to-end", () => {
+  it("builds full literal COST_SCHEMA outputs for 1,705-ID census and Probe P1 mixed-currency arm", () => {
+    const fxUsdToCad = { from: "USD" as const, to: "CAD" as const, rate: 1.385, source: "boc", asOf: "2026-11-22" };
+    const censusRows = [
+      ...Array.from({ length: 1705 }, (_, index) => ({ id: `c-${index}` })),
+      {
+        type: "summary", mission_digest: "d1", ok: 1705, failed: 0, calls_total: 1710,
+        tokens: { input: 1_000_000, output: 200_000, reasoning: 50_000, total: 1_250_000 },
+        cost: { currency: "USD", api_equivalent: 3.3 },
+      },
+    ];
+    const seatOverride = {
+      status: "measured" as const, method: "weekly_burn_delta" as const, windowMinutes: 10080 as const,
+      isolatedSeat: true as const, remainingBefore: 0.75, remainingAfter: 0.5, observedItems: 50,
+      plan: "Pro", planMonthlyPrice: 200, planCurrency: "USD" as const, planSource: "inv", planAsOf: "2026-11-22",
+    };
+    // 1710/1705 = 1.002932551319648; 3.3*1.385 = 4.5705; 4.5705/1705 = 0.0026806451612903224;
+    // share = (0.75-0.5)/50 = 0.005; monthly = 200*1.385 = 277; seatCost = 0.005*(277*7/30.4375) = 0.3185215605749487.
+    expect(computeArmCostAndSeat({
+      resultRows: censusRows,
+      currency: "CAD",
+      seatObservation: seatOverride,
+      priceTable: {
+        source: "pt", as_of: "2026-11-22", currency: "USD", status: "primary",
+        per_million: { input: 1.5, output: 6, reasoning: 12 },
+      },
+      arm: makeArm({ fx: fxUsdToCad, seat: { status: "unknown", reason: "missing-observation" } }),
+    })).toEqual({
+      calls: 1710,
+      callsPerItem: 1.002932551319648,
+      tokens: { input: 1_000_000, output: 200_000, reasoning: 50_000, cached: "unknown", total: 1_250_000 },
+      cost: {
+        currency: "CAD", costBasisItems: 1705, costUnknownReason: null,
+        apiEquivalentTotal: 4.5705, apiEquivalentPerItem: 0.0026806451612903224,
+        tariffStatus: "primary", tariffSource: "pt", tariffAsOf: "2026-11-22",
+        fxApplied: { from: "USD", to: "CAD", rate: 1.385, source: "boc", asOf: "2026-11-22" },
+        seatStatus: "measured", seatMethod: "weekly_burn_delta", seatUnknownReason: null,
+        seatSharePerItem: 0.005, seatCostPerItem: 0.3185215605749487,
+        seatPlan: "Pro", seatMonthlyPrice: 277, seatLimitScale: null, seatPlanSource: "inv", seatPlanAsOf: "2026-11-22",
+      },
+    });
+    // Probe P1 end-to-end: CAD tariffOverride (2 CAD API) + USD seat (277 CAD) with arm.fx USD -> CAD.
+    expect(computeArmCostAndSeat({
+      resultRows: [
+        { id: "p1" },
+        {
+          type: "summary", ok: 1, failed: 0, calls_total: 1,
+          tokens: { input: 500_000, output: 250_000, reasoning: 0, cached: 100, total: 750_000 },
+        },
+      ],
+      currency: "CAD",
+      seatObservation: seatOverride,
+      arm: makeArm({
+        fx: fxUsdToCad,
+        tariffOverride: {
+          status: "primary", currency: "CAD", source: "ov-cad", asOf: "2026-11-25",
+          perMillion: { input: 2, output: 4 },
+        },
+      }),
+    })).toEqual({
+      calls: 1,
+      callsPerItem: 1,
+      tokens: { input: 500_000, output: 250_000, reasoning: 0, cached: 100, total: 750_000 },
+      cost: {
+        currency: "CAD", costBasisItems: 1, costUnknownReason: null,
+        apiEquivalentTotal: 2, apiEquivalentPerItem: 2,
+        tariffStatus: "primary", tariffSource: "ov-cad", tariffAsOf: "2026-11-25",
+        fxApplied: { from: "USD", to: "CAD", rate: 1.385, source: "boc", asOf: "2026-11-22" },
+        seatStatus: "measured", seatMethod: "weekly_burn_delta", seatUnknownReason: null,
+        seatSharePerItem: 0.005, seatCostPerItem: 0.3185215605749487,
+        seatPlan: "Pro", seatMonthlyPrice: 277, seatLimitScale: null, seatPlanSource: "inv", seatPlanAsOf: "2026-11-22",
+      },
     });
   });
 });

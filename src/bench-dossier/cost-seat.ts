@@ -2,14 +2,28 @@ import { validPriceTable, type NormalizedPriceTable } from "../scrap/extract.js"
 import * as companion from "./companion-contracts.js";
 import * as contract from "./results-contract.js";
 import * as guards from "./results-guards.js";
-import { BenchCostSeatError } from "./cost-seat-parse.js";
-import { convertCurrency, type ApiResult } from "./cost-seat-math.js";
+import { BenchCostSeatError, summarizeInvocationUsage } from "./cost-seat-parse.js";
+import { convertCurrency, resolveApiCost, type ApiResult } from "./cost-seat-math.js";
 
 export * from "./cost-seat-parse.js";
 export { computeFromRates, convertCurrency, resolveApiCost, roundCostNano, type ApiResult } from "./cost-seat-math.js";
+export interface ComputeArmCostInput {
+  readonly resultRows: readonly unknown[];
+  readonly arm: unknown;
+  readonly priceTable?: unknown;
+  readonly currency?: contract.CurrencyCode;
+  readonly seatObservation?: unknown;
+}
+export type ArmCostAndSeatResult = Pick<contract.BenchResultRecord, "calls" | "callsPerItem" | "tokens" | "cost">;
 
 const DAYS_PER_MONTH = 365.25 / 12;
 const WEEKS_PER_MONTH = DAYS_PER_MONTH / 7;
+const CURRENCY = guards.enumValue(contract.CURRENCY_CODES);
+const INPUT_OPTIONAL = {
+  priceTable: () => {},
+  currency: (value: unknown, path: string) => { if (value !== undefined) CURRENCY(value, path); },
+  seatObservation: (value: unknown) => { if (value !== undefined) companion.parseSeatObservationInput(value); },
+};
 
 function unknownSeatResult(seatUnknownReason: contract.SeatUnknownReason) {
   return {
@@ -84,4 +98,26 @@ export function resolveSeat(
     seatCostPerItem: api.apiEquivalentPerItem
       * (monthlyPrice / ((observedApi / seat.quotaDeltaFraction) * WEEKS_PER_MONTH * scale)),
   };
+}
+
+/** Compute population-exact API cost, FX conversion, and seat metrics validated against COST_SCHEMA. */
+export function computeArmCostAndSeat(input: ComputeArmCostInput): ArmCostAndSeatResult {
+  guards.validateClosedObject(input, "$",
+    { resultRows: () => {}, arm: (value) => { companion.parseArmManifest(value); } }, INPUT_OPTIONAL);
+  const arm = input.arm as companion.ArmManifestFile;
+  const targetCurrency: contract.CurrencyCode = input.currency ?? "USD";
+  const priceTable = parseValidatedPriceTable(input.priceTable);
+  const usage = summarizeInvocationUsage(input.resultRows);
+  const override = arm.tariffOverride;
+  const api = resolveApiCost(usage, arm, priceTable, targetCurrency);
+  const seat = (input.seatObservation ?? arm.seat) as companion.SeatObservationInput | undefined;
+  const cost: contract.BenchCostBlock = {
+    currency: targetCurrency, costBasisItems: usage.costBasisItems, ...api,
+    tariffStatus: override ? override.status : (arm.tariffStatus ?? priceTable?.status ?? "unknown"),
+    tariffSource: override ? override.source : (priceTable?.source ?? null),
+    tariffAsOf: override ? override.asOf : (priceTable?.as_of ?? null),
+    fxApplied: arm.fx ? { ...arm.fx } : null, ...resolveSeat(seat, api, arm, targetCurrency),
+  };
+  contract.COST_SCHEMA(cost, "$.cost");
+  return { calls: usage.calls, callsPerItem: usage.callsPerItem, tokens: usage.tokens, cost };
 }
