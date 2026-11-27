@@ -568,4 +568,94 @@ describe("BD-6 DS-token SVG primitives, normalization & 7x5 glyph registry", () 
       `<circle cx="12" cy="34" r="5" fill="#12&lt;3&gt;&amp;&quot;4&quot;" stroke="${dark}" stroke-width="1"/>`,
     );
   });
+
+  it("renders full literal parsed attribute maps for all 7 x 5 glyph combinations and checks guards", () => {
+    const literalShapeAt100By50: Record<GlyphShape, { tag: string; attrs: Record<string, string> }> = {
+      circle: { tag: "circle", attrs: { cx: "100", cy: "50", r: "5" } },
+      square: { tag: "rect", attrs: { x: "95.5", y: "45.5", width: "9", height: "9" } },
+      triangle: { tag: "polygon", attrs: { points: "100,44.2 105.02,52.9 94.98,52.9" } },
+      diamond: { tag: "polygon", attrs: { points: "100,44.2 105.8,50 100,55.8 94.2,50" } },
+      pentagon: { tag: "polygon", attrs: { points: "100,44.5 105.23,48.3 103.23,54.45 96.77,54.45 94.77,48.3" } },
+      cross: {
+        tag: "polygon",
+        attrs: {
+          points: "98,44.5 102,44.5 102,48 105.5,48 105.5,52 102,52 102,55.5 98,55.5 98,52 94.5,52 94.5,48 98,48",
+        },
+      },
+      star: {
+        tag: "polygon",
+        attrs: {
+          points: "100,42.5 101.98,47.27 107.13,47.68 103.21,51.04 104.41,56.07"
+            + " 100,53.38 95.59,56.07 96.79,51.04 92.87,47.68 98.02,47.27",
+        },
+      },
+    };
+    const literalStyleAttrs: Record<GlyphState, Record<string, string>> = {
+      api_filled: {
+        fill: "var(--st-semantic-data-category1, #4E79A7)",
+        stroke: "var(--st-semantic-text-primary, #0f172a)",
+        "stroke-width": "1",
+      },
+      seat_measured_hollow: {
+        fill: "var(--st-semantic-surface-default, #ffffff)",
+        stroke: "var(--st-semantic-data-category1, #4E79A7)",
+        "stroke-width": "1.9",
+      },
+      seat_estimated_hollow_dotted: {
+        fill: "var(--st-semantic-surface-default, #ffffff)",
+        stroke: "var(--st-semantic-data-category1, #4E79A7)",
+        "stroke-width": "1.9",
+        "stroke-dasharray": "2 2",
+      },
+      incomplete_hollow_dashed: {
+        fill: "var(--st-semantic-surface-default, #ffffff)",
+        stroke: "var(--st-semantic-data-category1, #4E79A7)",
+        "stroke-width": "1.9",
+        "stroke-dasharray": "3.5 2",
+      },
+      highlighted: {
+        fill: "var(--st-semantic-data-category1, #4E79A7)",
+        stroke: "var(--st-semantic-text-primary, #0f172a)",
+        "stroke-width": "2.4",
+      },
+    };
+    for (const [shape, shapeSpec] of Object.entries(literalShapeAt100By50)) {
+      for (const [state, styleAttrs] of Object.entries(literalStyleAttrs)) {
+        const input = {
+          shape: shape as GlyphShape,
+          state: state as GlyphState,
+          color: "var(--st-semantic-data-category1, #4E79A7)",
+          cx: 100,
+          cy: 50,
+          size: undefined,
+          outerRing: undefined,
+        };
+        const svg = renderGlyph(input);
+        expect(svg).toBe(renderGlyph(input));
+        expect(parseLeafSvg(svg)).toEqual({
+          tag: shapeSpec.tag,
+          attrs: { ...shapeSpec.attrs, ...styleAttrs },
+        });
+      }
+    }
+    const base = {
+      shape: "circle",
+      state: "api_filled",
+      color: "var(--st-semantic-data-category1, #4E79A7)",
+      cx: 1,
+      cy: 2,
+    } as const;
+    expect(renderGlyph({ ...base, outerRing: false })).toBe(renderGlyph(base));
+    refuse(() => renderGlyph(null as never), "NOT_OBJECT", "glyph");
+    refuse(() => renderGlyph({ ...base, shape: "hex" as never }), "BAD_ENUM", "glyph.shape");
+    refuse(() => renderGlyph({ ...base, state: null as never }), "BAD_ENUM", "glyph.state");
+    refuse(() => renderGlyph({ ...base, color: "" }), "EMPTY_STRING", "glyph.color");
+    refuse(() => renderGlyph({ ...base, cx: Number.NaN }), "BAD_NUMBER", "glyph.cx");
+    refuse(() => renderGlyph({ ...base, cy: "2" as never }), "BAD_NUMBER", "glyph.cy");
+    refuse(() => renderGlyph({ ...base, size: 0 }), "NON_POSITIVE", "glyph.size");
+    refuse(() => renderGlyph({ ...base, size: null as never }), "BAD_NUMBER", "glyph.size");
+    refuse(() => renderGlyph({ ...base, size: "unknown" as never }), "BAD_NUMBER", "glyph.size");
+    refuse(() => renderGlyph({ ...base, outerRing: null as never }), "WRONG_TYPE", "glyph.outerRing");
+    refuse(() => renderGlyph({ ...base, outerRing: "unknown" as never }), "WRONG_TYPE", "glyph.outerRing");
+  });
 });
