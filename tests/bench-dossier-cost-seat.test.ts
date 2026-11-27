@@ -925,3 +925,144 @@ describe("BD-4 tree-13: no-default-shadowing and top-level input guards", () => 
   });
 });
 
+describe("BD-4 tree-14: Round-3 survivors, FX override, zero-basis, and Check 9 symmetry", () => {
+  const fxUsdToCad = { from: "USD" as const, to: "CAD" as const, rate: 1.385, source: "boc", asOf: "2026-11-22" };
+  const fxCadToUsd = { from: "CAD" as const, to: "USD" as const, rate: 0.72, source: "boc", asOf: "2026-11-22" };
+
+  it("resolves USD tariffOverride FX, reasoning: 0, and reverse currency conflict directions", () => {
+    const tokensWithReasoning = {
+      input: 1_000_000, output: 0, reasoning: 500_000, cached: "unknown" as const, total: 1_500_000,
+    };
+    const usageWithReasoning = summarizeInvocationUsage([{ id: "a1" }, {
+      type: "summary", ok: 1, failed: 0, tokens: tokensWithReasoning, cost: { currency: "USD", api_equivalent: 9.99 },
+    }]);
+    const usageNoSumCurNumeric = summarizeInvocationUsage([
+      { id: "a1" }, { type: "summary", ok: 1, failed: 0, cost: { api_equivalent: 10 } },
+    ]);
+    const usageNoSumCurTokens = summarizeInvocationUsage([{ id: "a1" }, {
+      type: "summary", ok: 1, failed: 0, tokens: { input: 1_000_000, output: 0, reasoning: 0, total: 1_000_000 },
+    }]);
+    const usageUsd = summarizeInvocationUsage([
+      { id: "a1" }, { type: "summary", ok: 1, failed: 0, cost: { currency: "USD", api_equivalent: 2 } },
+    ]);
+    const usageCad = summarizeInvocationUsage([
+      { id: "a1" }, { type: "summary", ok: 1, failed: 0, cost: { currency: "CAD", api_equivalent: 2 } },
+    ]);
+    const priceTableUsd = parseValidatedPriceTable({
+      source: "op", as_of: "2026-11-22", currency: "USD", per_million: { input: 2, output: 4 },
+    });
+    const priceTableCad = parseValidatedPriceTable({
+      source: "op", as_of: "2026-11-22", currency: "CAD", per_million: { input: 1, output: 2 },
+    });
+    const priceTableZeroReason = parseValidatedPriceTable({
+      source: "op", as_of: "2026-11-22", currency: "USD", per_million: { input: 2, output: 4, reasoning: 0 },
+    });
+    // F01: USD tariffOverride.currency converts USD -> CAD via arm.fx for perMillion and metadata-only.
+    expect(resolveApiCost(usageNoSumCurTokens, makeArm({
+      fx: fxUsdToCad,
+      tariffOverride: {
+        status: "primary", currency: "USD", source: "ov-usd", asOf: "2026-11-22", perMillion: { input: 4, output: 0 },
+      },
+    }), null, "CAD")).toEqual({ costUnknownReason: null, apiEquivalentTotal: 5.54, apiEquivalentPerItem: 5.54 });
+    expect(resolveApiCost(usageUsd, makeArm({
+      fx: fxUsdToCad, tariffOverride: { status: "primary", currency: "USD", source: "ov-usd", asOf: "2026-11-22" },
+    }), null, "CAD")).toEqual({ costUnknownReason: null, apiEquivalentTotal: 2.77, apiEquivalentPerItem: 2.77 });
+    // F03 & F04: valid reasoning: 0 rate on computeFromRates and priceTable.
+    expect(computeFromRates(tokensWithReasoning, { input: 2, output: 4, reasoning: 0 }, "USD", "USD", 1, undefined))
+      .toEqual({ costUnknownReason: null, apiEquivalentTotal: 2, apiEquivalentPerItem: 2 });
+    expect(resolveApiCost(usageWithReasoning, makeArm(), priceTableZeroReason, "USD")).toEqual({
+      costUnknownReason: null, apiEquivalentTotal: 9.99, apiEquivalentPerItem: 9.99,
+    });
+    // F07: ov.perMillion with CAD currency overrides USD priceTable when summary currency is absent.
+    expect(resolveApiCost(usageNoSumCurTokens, makeArm({
+      tariffOverride: {
+        status: "primary", currency: "CAD", source: "ov-cad", asOf: "2026-11-22", perMillion: { input: 5, output: 0 },
+      },
+    }), priceTableUsd, "CAD")).toEqual({ costUnknownReason: null, apiEquivalentTotal: 5, apiEquivalentPerItem: 5 });
+    // F05, F06a, F06b, F14: reverse directional and compound FX currency rejections + positive counterpart.
+    expect(resolveApiCost(usageNoSumCurNumeric, makeArm({
+      fx: fxUsdToCad, tariffOverride: { status: "primary", currency: "USD", source: "ov", asOf: "2026-11-22" },
+    }), priceTableUsd, "CAD")).toEqual({
+      costUnknownReason: null, apiEquivalentTotal: 13.85, apiEquivalentPerItem: 13.85,
+    });
+    const reverseMismatchCases: [ReturnType<typeof summarizeInvocationUsage>, ArmManifestFile,
+      typeof priceTableUsd, "USD" | "CAD", string][] = [
+      [usageCad, makeArm({ fx: fxUsdToCad }), priceTableUsd, "CAD", "$.priceTable.currency"],
+      [usageNoSumCurNumeric, makeArm({
+        fx: fxUsdToCad, tariffOverride: { status: "primary", currency: "USD", source: "ov", asOf: "2026-11-22" },
+      }), priceTableCad, "CAD", "$.arm.tariffOverride.currency"],
+      [usageUsd, makeArm({
+        fx: fxCadToUsd, tariffOverride: { status: "primary", currency: "CAD", source: "ov", asOf: "2026-11-22" },
+      }), null, "USD", "$.arm.tariffOverride.currency"],
+      [usageUsd, makeArm({ fx: { from: "CAD", to: "CAD", rate: 1, source: "id", asOf: "2026-11-22" } }),
+        null, "USD", "$.arm.fx.to"],
+    ];
+    for (const [usage, arm, priceTable, targetCurrency, errorPath] of reverseMismatchCases) {
+      refuse(() => resolveApiCost(usage, arm, priceTable, targetCurrency), "CURRENCY_MISMATCH", errorPath);
+    }
+  });
+
+  it("defaults omitted calls_total, handles zero-basis callsSum, Summary-2 gaps, and undefined keys", () => {
+    // F63 + Check 8 cached: "unknown": omitted calls_total on complete summary defaults to "unknown".
+    expect(summarizeInvocationUsage([
+      { id: "a1" },
+      {
+        type: "summary", mission_digest: "d1", ok: 1, failed: 0,
+        tokens: { input: 10, output: 20, reasoning: 0, cached: "unknown", total: 30 },
+        cost: { currency: "USD", api_equivalent: 0.5 },
+      },
+    ])).toEqual({
+      nonSummaryRows: 1, summaryRows: 1, summaryItemCount: 1, interrupted: false, costBasisItems: 1,
+      calls: "unknown", callsPerItem: "unknown",
+      tokens: { input: 10, output: 20, reasoning: 0, cached: "unknown", total: 30 },
+      summaryApiTotal: 0.5, summaryCurrencies: ["USD"], missionDigests: ["d1"], hasMissingDigest: false,
+    });
+    // F32: interrupted or degraded zero-basis runs with positive callsSum degrade to "unknown" instead of throwing.
+    expect(summarizeInvocationUsage([{ type: "summary", ok: 1, failed: 0, calls_total: 3 }])).toEqual({
+      nonSummaryRows: 0, summaryRows: 1, summaryItemCount: 1, interrupted: true, costBasisItems: 0,
+      calls: "unknown", callsPerItem: "unknown", tokens: "unknown", summaryApiTotal: "unknown",
+      summaryCurrencies: [], missionDigests: [], hasMissingDigest: true,
+    });
+    expect(summarizeInvocationUsage([
+      { type: "summary", ok: 0, failed: 0, calls_total: 3 },
+      { type: "summary", ok: 0, failed: 0, calls_total: "unknown" },
+    ])).toEqual({
+      nonSummaryRows: 0, summaryRows: 2, summaryItemCount: 0, interrupted: false, costBasisItems: 0,
+      calls: "unknown", callsPerItem: "unknown", tokens: "unknown", summaryApiTotal: "unknown",
+      summaryCurrencies: [], missionDigests: [], hasMissingDigest: true,
+    });
+    // F24, F25, F42: explicit undefined on mission_digest, cost, and tokens.cached.
+    expect(summarizeInvocationUsage([
+      { id: "a1" },
+      {
+        type: "summary", ok: 1, failed: 0, mission_digest: undefined, calls_total: 2,
+        tokens: { input: 1, output: 2, reasoning: 0, cached: undefined, total: 3 }, cost: undefined,
+      },
+    ])).toEqual({
+      nonSummaryRows: 1, summaryRows: 1, summaryItemCount: 1, interrupted: false, costBasisItems: 1,
+      calls: 2, callsPerItem: 2, tokens: { input: 1, output: 2, reasoning: 0, cached: "unknown", total: 3 },
+      summaryApiTotal: "unknown", summaryCurrencies: [], missionDigests: [], hasMissingDigest: true,
+    });
+    // F43, F31, F36: Summary-2 degradations (omitted calls_total, tokens: "unknown", omitted mission_digest).
+    const baseSummary = {
+      type: "summary", mission_digest: "d1", ok: 1, failed: 0, calls_total: 5,
+      tokens: { input: 10, output: 20, reasoning: 0, cached: 4, total: 30 },
+      cost: { currency: "USD", api_equivalent: 1.5 },
+    };
+    const summaryTwoMissingCalls = summarizeInvocationUsage([
+      { id: "a1" }, baseSummary, { id: "a2" },
+      { type: "summary", mission_digest: "d2", ok: 1, failed: 0, tokens: baseSummary.tokens, cost: baseSummary.cost },
+    ]);
+    expect([summaryTwoMissingCalls.calls, summaryTwoMissingCalls.callsPerItem]).toEqual(["unknown", "unknown"]);
+    const summaryTwoUnknownTokens = summarizeInvocationUsage([
+      { id: "a1" }, baseSummary, { id: "a2" }, { ...baseSummary, mission_digest: "d2", tokens: "unknown" },
+    ]);
+    expect(summaryTwoUnknownTokens.tokens).toBe("unknown");
+    const summaryTwoMissingDigest = summarizeInvocationUsage([
+      { id: "a1" }, baseSummary, { id: "a2" },
+      { type: "summary", ok: 1, failed: 0, calls_total: 1, tokens: baseSummary.tokens, cost: baseSummary.cost },
+    ]);
+    expect([summaryTwoMissingDigest.missionDigests, summaryTwoMissingDigest.hasMissingDigest])
+      .toEqual([["d1"], true]);
+  });
+});
