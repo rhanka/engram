@@ -311,4 +311,102 @@ describe("BD-3 golden record parser, real converge shapes & majority gate", () =
       majClusters: [{ pc: null, st: null, ci: "ottawa", goldVal: "ottawa", splitVariants: null }],
     });
   });
+
+  it("refuses every single-defect nested golden record violation (including Date & null arrays)", () => {
+    const cl = (n = 4) => ({
+      fields: {
+        city: { verdict: "unanimous", value: "Toronto", n_answered: n, runs: { r1: fv("Toronto") } },
+      },
+    });
+    for (const bad of [null, [], new Date()]) refuse(() => parseGoldenRecordUnit(bad, "o", "city"), "NOT_OBJECT");
+    for (const id of ["", " ", 123]) {
+      refuse(() => parseGoldenRecordUnit({ id, fields: { o: { verdict: "absent" } } }, "o", "city"), "MISSING_ID");
+    }
+    const cases: [unknown, string, ErrorConstructor?][] = [
+      [{ id: "g", fields: null }, "NOT_OBJECT"],
+      [{ id: "g", fields: [] }, "NOT_OBJECT"],
+      [{ id: "g", fields: new Date() }, "NOT_OBJECT"],
+      [{ id: "g", fields: {} }, "MISSING_VOTE"],
+      [{ id: "g", fields: { o: [] } }, "MISSING_VOTE"],
+      [{ id: "g", fields: { o: new Date() } }, "MISSING_VOTE"],
+      [{ id: "g", fields: { o: { verdict: "bad" } } }, "BAD_VERDICT"],
+      [{ id: "g", fields: { o: { verdict: "absent", n_answered: -1 } } }, "BAD_COUNT", RangeError],
+      [{ id: "g", fields: { o: { verdict: "absent", n_answered: 1.5 } } }, "BAD_COUNT", RangeError],
+      [{ id: "g", fields: { o: { verdict: "absent", n_answered: null } } }, "BAD_COUNT", RangeError],
+      [{ id: "g", fields: { o: { verdict: "insufficient", n_answered: 2 } } }, "N_ANSWERED_MISMATCH"],
+      [{ id: "g", fields: { o: { verdict: "unanimous", n_answered: 1, aligned: [cl(2)] } } }, "N_ANSWERED_MISMATCH"],
+      [{ id: "g", fields: { o: { verdict: "absent", aligned: "bad" } } }, "NOT_ARRAY"],
+      [{ id: "g", fields: { o: { verdict: "absent", aligned: null } } }, "NOT_ARRAY"],
+      [{ id: "g", fields: { o: { verdict: "absent", unmatched: "bad" } } }, "NOT_ARRAY"],
+      [{ id: "g", fields: { o: { verdict: "absent", unmatched: null } } }, "NOT_ARRAY"],
+      [{ id: "g", fields: { o: { verdict: "insufficient", aligned: [cl(2)] } } }, "INSUFFICIENT_NON_EMPTY"],
+      [{ id: "g", fields: { o: { verdict: "insufficient", unmatched: [{}] } } }, "INSUFFICIENT_NON_EMPTY"],
+      [{ id: "g", fields: { o: { verdict: "absent", aligned: [cl(2)] } } }, "ABSENT_NON_EMPTY"],
+      [{ id: "g", fields: { o: { verdict: "absent", unmatched: [{}] } } }, "ABSENT_NON_EMPTY"],
+      [{ id: "g", fields: { o: { verdict: "unanimous", aligned: [] } } }, "UNANIMOUS_NULL"],
+      [{ id: "g", fields: { o: { verdict: "split", aligned: [], unmatched: [] } } }, "SPLIT_NO_RUN"],
+      [{ id: "g", fields: { o: { verdict: "unanimous", aligned: [null] } } }, "NOT_OBJECT"],
+      [{ id: "g", fields: { o: { verdict: "unanimous", aligned: [new Date()] } } }, "NOT_OBJECT"],
+      [{ id: "g", fields: { o: { verdict: "unanimous", aligned: [{ fields: [] }] } } }, "NOT_OBJECT"],
+      [{ id: "g", fields: { o: { verdict: "unanimous", aligned: [{ fields: new Date() }] } } }, "NOT_OBJECT"],
+      [{ id: "g", fields: { o: { verdict: "unanimous", aligned: [{ fields: {} }] } } }, "MISSING_VOTE"],
+      [{ id: "g", fields: { o: { verdict: "unanimous", aligned: [{ fields: { city: [] } }] } } }, "MISSING_VOTE"],
+      [{ id: "g", fields: { o: { verdict: "unanimous", aligned: [{ fields: { city: new Date() } }] } } },
+        "MISSING_VOTE"],
+      [{ id: "g", fields: { o: { verdict: "unanimous",
+        aligned: [{ fields: { city: { verdict: "unanimous", value: "T" } } }] } } }, "MISSING_N_ANSWERED"],
+      [{ id: "g", fields: { o: { verdict: "unanimous",
+        aligned: [{ fields: { city: { verdict: "unanimous", value: "T", n_answered: 1 } } }] } } },
+        "N_ANSWERED_MISMATCH"],
+      [{ id: "g", fields: { o: { verdict: "majority", n_answered: 2,
+        aligned: [{ fields: { city: { verdict: "insufficient" } } }] } } }, "N_ANSWERED_MISMATCH"],
+      [{ id: "g", fields: { o: { verdict: "majority", n_answered: 2,
+        aligned: [{ fields: { city: { verdict: "insufficient", n_answered: 2 } } }] } } }, "N_ANSWERED_MISMATCH"],
+      [{ id: "g", fields: { o: { verdict: "majority", n_answered: 2,
+        aligned: [{ fields: { city: { verdict: "unanimous", value: "T", n_answered: 3 } } }] } } },
+        "N_ANSWERED_MISMATCH"],
+      [{ id: "g", fields: { o: { verdict: "majority", n_answered: 4,
+        aligned: [{ fields: { city: { verdict: "unanimous", value: "T", n_answered: 4 } } }] } } }, "MISSING_RUNS"],
+      [{ id: "g", fields: { o: { verdict: "majority", n_answered: 4,
+        aligned: [{ fields: { city: { verdict: "unanimous", value: "T", n_answered: 4, runs: [] } } }] } } },
+        "MISSING_RUNS"],
+      [{ id: "g", fields: { o: { verdict: "majority", n_answered: 4,
+        aligned: [{ fields: { city: { verdict: "unanimous", value: "T", n_answered: 4, runs: new Date() } } }] } } },
+        "MISSING_RUNS"],
+      [{ id: "g", fields: { o: { verdict: "unanimous", n_answered: 3,
+        aligned: [{ fields: { city: { verdict: "unanimous", value: "T", n_answered: 3, runs: [] } } }] } } },
+        "MISSING_RUNS"],
+      [{ id: "g", fields: { o: { verdict: "unanimous", n_answered: 3,
+        aligned: [{ fields: { city: { verdict: "unanimous", value: "T", n_answered: 3, runs: null } } }] } } },
+        "MISSING_RUNS"],
+      [{ id: "g", fields: { o: { verdict: "majority", n_answered: 4, aligned: [{ fields: {
+        city: { verdict: "unanimous", value: "T", n_answered: 4, runs: { r1: "bad" } } } }] } } }, "BAD_SPLIT_RUN"],
+      [{ id: "g", fields: { o: { verdict: "majority", n_answered: 4, aligned: [{ fields: {
+        city: { verdict: "unanimous", value: "T", n_answered: 4, runs: { r1: new Date() } } } }] } } },
+        "BAD_SPLIT_RUN"],
+      [{ id: "g", fields: { o: { verdict: "majority", n_answered: 4, aligned: [{ fields: {
+        city: { verdict: "unanimous", value: "T", n_answered: 4, runs: { r1: { quote: "x" } } } } }] } } },
+        "BAD_SPLIT_RUN"],
+      [{ id: "g", fields: { o: { verdict: "majority", n_answered: 4, aligned: [{ fields: {
+        city: { verdict: "unanimous", value: "T", n_answered: 4, runs: { r1: { status: "ok" } } } } }] } } },
+        "BAD_SPLIT_RUN"],
+      [{ id: "g", fields: { o: { verdict: "majority", n_answered: 4, aligned: [{ fields: {
+        city: { verdict: "unanimous", value: "T", n_answered: 4, runs: { r1: { value: ["T"] } } } } }] } } },
+        "BAD_GOLD_VALUE"],
+      [{ id: "g", fields: { o: { verdict: "split", n_answered: 2, unmatched: [null] } } }, "NOT_OBJECT"],
+      [{ id: "g", fields: { o: { verdict: "split", n_answered: 2, unmatched: [new Date()] } } }, "NOT_OBJECT"],
+      [{ id: "g", fields: { o: { verdict: "split", n_answered: 2, unmatched: [{ fields: [] }] } } }, "NOT_OBJECT"],
+      [{ id: "g", fields: { o: { verdict: "split", n_answered: 2, unmatched: [{ fields: new Date() }] } } },
+        "NOT_OBJECT"],
+      [{ id: "g", fields: { o: { verdict: "split", n_answered: 2,
+        unmatched: [{ fields: { city: [] } }] } } }, "NOT_OBJECT"],
+      [{ id: "g", fields: { o: { verdict: "split", n_answered: 2,
+        unmatched: [{ fields: { city: new Date() } }] } } }, "NOT_OBJECT"],
+      [{ id: "g", fields: { o: { verdict: "split", n_answered: 2,
+        unmatched: [{ fields: { city: { quote: "T" } } }] } } }, "MISSING_KEY"],
+      [{ id: "g", fields: { o: { verdict: "split", n_answered: 2,
+        unmatched: [{ fields: { city: { value: ["T"] } } }] } } }, "BAD_GOLD_VALUE"],
+    ];
+    for (const [row, code, Err = Error] of cases) refuse(() => parseGoldenRecordUnit(row, "o", "city"), code, Err);
+  });
 });
