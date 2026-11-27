@@ -34,6 +34,9 @@ import {
   type ModelShapeInput,
   resolveRecordGlyphState,
   resolveSeatGlyphState,
+  renderGlyph,
+  type GlyphShape,
+  type GlyphState,
 } from "../src/bench-dossier/svg-primitives.js";
 
 function parseLeafSvg(xml: string): { tag: string; attrs: Record<string, string>; text?: string } {
@@ -524,5 +527,45 @@ describe("BD-6 DS-token SVG primitives, normalization & 7x5 glyph registry", () 
       "SEAT_UNAVAILABLE", "opts.seatStatus");
     refuse(() => resolveRecordGlyphState({ incomplete: true, isHighlighted: false },
       { costMode: "seat", seatStatus: "unknown" }), "SEAT_UNAVAILABLE", "opts.seatStatus");
+  });
+
+  it("renders all 7 shapes at non-zero coordinates and non-default sizes with XML-escaped colors", () => {
+    const blue = "var(--st-semantic-data-category1, #4E79A7)";
+    const red = "var(--st-semantic-feedback-error, #dc2626)";
+    const dark = "var(--st-semantic-text-primary, #0f172a)";
+    const surface = "var(--st-semantic-surface-default, #ffffff)";
+    expect(renderGlyph({ shape: "circle", state: "api_filled", color: blue, cx: 12.345, cy: -0.001, size: 14 }))
+      .toBe(`<circle cx="12.35" cy="0" r="7" fill="${blue}" stroke="${dark}" stroke-width="1"/>`);
+    expect(renderGlyph({
+      shape: "square", state: "seat_measured_hollow", color: blue, cx: 12.345, cy: -0.001, size: 20,
+    })).toBe(`<rect x="3.35" y="-9" width="18" height="18" fill="${surface}" stroke="${blue}" stroke-width="1.9"/>`);
+    expect(renderGlyph({
+      shape: "diamond", state: "seat_estimated_hollow_dotted", color: blue, cx: 12, cy: 34, size: 20,
+    })).toBe(`<polygon points="12,22.4 23.6,34 12,45.6 0.4,34" fill="${surface}"`
+      + ` stroke="${blue}" stroke-width="1.9" stroke-dasharray="2 2"/>`);
+    expect(renderGlyph({ shape: "triangle", state: "api_filled", color: blue, cx: 10, cy: 20, size: 20 }))
+      .toBe(`<polygon points="10,8.4 20.05,25.8 -0.05,25.8" fill="${blue}" stroke="${dark}" stroke-width="1"/>`);
+    expect(renderGlyph({ shape: "pentagon", state: "api_filled", color: blue, cx: 20, cy: 40, size: 20 })).toBe(
+      `<polygon points="20,29 30.46,36.6 26.47,48.9 13.53,48.9 9.54,36.6" fill="${blue}"`
+      + ` stroke="${dark}" stroke-width="1"/>`,
+    );
+    expect(renderGlyph({ shape: "cross", state: "incomplete_hollow_dashed", color: blue, cx: 15, cy: 25, size: 20 }))
+      .toBe(`<polygon points="11,14 19,14 19,21 26,21 26,29 19,29 19,36 11,36 11,29 4,29 4,21 11,21"`
+        + ` fill="${surface}" stroke="${blue}" stroke-width="1.9" stroke-dasharray="3.5 2"/>`);
+    expect(renderGlyph({ shape: "star", state: "highlighted", color: red, cx: 30, cy: 40, size: 20 })).toBe(
+      `<polygon points="30,25 33.97,34.54 44.27,35.36 36.42,42.09 38.82,52.14 30,46.75`
+      + ` 21.18,52.14 23.58,42.09 15.73,35.36 26.03,34.54" fill="${red}" stroke="${dark}" stroke-width="2.4"/>`,
+    );
+    expect(renderGlyph({
+      shape: "circle", state: "seat_measured_hollow", color: blue, cx: 12, cy: 34, size: 20, outerRing: true,
+    })).toBe(`<g><circle cx="12" cy="34" r="10" fill="${surface}" stroke="${blue}" stroke-width="1.9"/>`
+      + `<circle cx="12" cy="34" r="18" fill="none" stroke="${dark}" stroke-width="2.4"/></g>`);
+    expect(renderGlyph({
+      shape: "circle", state: "seat_measured_hollow", color: '#12<3>&"4"', cx: 12, cy: 34, outerRing: true,
+    })).toBe(`<g><circle cx="12" cy="34" r="5" fill="${surface}" stroke="#12&lt;3&gt;&amp;&quot;4&quot;"`
+      + ` stroke-width="1.9"/><circle cx="12" cy="34" r="9" fill="none" stroke="${dark}" stroke-width="2.4"/></g>`);
+    expect(renderGlyph({ shape: "circle", state: "api_filled", color: '#12<3>&"4"', cx: 12, cy: 34 })).toBe(
+      `<circle cx="12" cy="34" r="5" fill="#12&lt;3&gt;&amp;&quot;4&quot;" stroke="${dark}" stroke-width="1"/>`,
+    );
   });
 });
