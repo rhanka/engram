@@ -638,4 +638,67 @@ describe("zero-denominator, count and sitePresence failure matrix", () => {
       refuse(() => validateBenchResultsInvariants(doc, opts), invariant, path);
     }
   });
+
+  it("refuses remaining single-defect sitePresence matrix violations", () => {
+    const cases: [(doc: any) => void, BenchInvariantCode, string][] = [
+      [
+        (doc) => { doc.records[0].sitePresence.fnSites = 3; },
+        "SITE_MATRIX_IDENTITY",
+        "$.records[0].sitePresence.tpSites",
+      ],
+      [
+        (doc) => { doc.records[0].sitePresence.goldPresentSites = 9; },
+        "SITE_MATRIX_IDENTITY",
+        "$.records[0].sitePresence.tpSites",
+      ],
+      [
+        (doc) => { doc.records[0].sitePresence.wrongValueOnPresentSites = 3; },
+        "SITE_MATRIX_IDENTITY",
+        "$.records[0].sitePresence.wrongValueOnPresentSites",
+      ],
+      [
+        (doc) => { doc.records[0].sitePresence.fpOnAbsentSites = 3; },
+        "SITE_MATRIX_IDENTITY",
+        "$.records[0].sitePresence.tnSites",
+      ],
+      [
+        (doc) => { doc.records[0].sitePresence.failedOnAbsentSites = 1; },
+        "SITE_MATRIX_IDENTITY",
+        "$.records[0].sitePresence.tnSites",
+      ],
+      [
+        (doc) => { doc.records[0].sitePresence.goldAbsentSites = 11; },
+        "SITE_MATRIX_IDENTITY",
+        "$.records[0].sitePresence.tnSites",
+      ],
+      [
+        (doc) => { doc.records[0].sitePresence.unresolvedSites = 2; },
+        "SITE_MATRIX_IDENTITY",
+        "$.records[0].sitePresence.goldPresentSites",
+      ],
+      [
+        (doc) => { doc.records[0].sitePresence.insufficientSites = 2; },
+        "SITE_MATRIX_IDENTITY",
+        "$.records[0].sitePresence.goldPresentSites",
+      ],
+      [
+        (doc) => {
+          doc.records[0].sitePresence.goldPresentSites = 9;
+          doc.records[0].sitePresence.tpSites = 7;
+        },
+        "SITE_MATRIX_IDENTITY",
+        "$.records[0].sitePresence.goldPresentSites",
+      ],
+      [
+        (doc) => { doc.records[0].sitePresence.siteAbstentionSpecificity = 0.5; },
+        "SITE_MATRIX_IDENTITY",
+        "$.records[0].sitePresence.siteAbstentionSpecificity",
+      ],
+    ];
+    for (const [mutate, invariant, path] of cases) {
+      const doc = clone(makeResultsFile());
+      mutate(doc);
+      refuse(() => validateBenchResultsInvariants(doc), invariant, path);
+    }
+  });
 });
