@@ -1,12 +1,12 @@
 import type { EffortLevel } from "./results-types.js";
 import {
-  DS_VARS, escapeXml, failSvg, fmtSvgNum, requireBool, requireEnum, requireFiniteNum,
-  requireNonEmptyText, requirePlainObj, requirePositiveNum, resolveGlyphStyle, type GlyphState,
+  buildChartA11yIds, DS_VARS, escapeXml, failSvg, fmtSvgNum, requireBool, requireEnum, requireFiniteNum,
+  requireNonEmptyText, requirePlainObj, requirePositiveNum, resolveGlyphStyle, SVG_FONT_FAMILY, SVG_THEME_CSS,
+  type ChartKind, type GlyphState,
 } from "./svg-tokens.js";
 import { effortProgressionRank, GLYPH_SHAPES, type GlyphShape } from "./svg-registry.js";
 export * from "./svg-tokens.js";
 export * from "./svg-registry.js";
-
 
 const SHAPE_SET = new Set<string>(GLYPH_SHAPES);
 const POLY: Readonly<Partial<Record<GlyphShape, readonly [number, number, number?]>>> =
@@ -79,4 +79,32 @@ export function renderEffortPath(points: readonly EffortPoint[], color: string):
     .map((point, index) => `${index === 0 ? "M" : "L"}${fmtSvgNum(point.x)} ${fmtSvgNum(point.y)}`).join(" ");
   return `<path d="${pathData}" fill="none" stroke="${safeColor}" stroke-width="1.3"`
     + ` stroke-dasharray="4 2" opacity="0.8"/>`;
+}
+
+export interface ChartSvgOptions {
+  readonly slug: string;
+  readonly chartKind: ChartKind;
+  readonly width: number;
+  readonly height: number;
+  readonly title: string;
+  readonly description: string;
+  readonly body: string;
+  readonly background?: boolean;
+}
+/** Wrap chart body in a DS-token <svg> shell with unique a11y IDs and light/dark CSS. */
+export function renderChartSvg(opts: ChartSvgOptions): string {
+  requirePlainObj(opts, "svg");
+  const { titleId, descId } = buildChartA11yIds(opts.slug, opts.chartKind, "svg.slug", "svg.chartKind");
+  const width = fmtSvgNum(requirePositiveNum(opts.width, "svg.width"));
+  const height = fmtSvgNum(requirePositiveNum(opts.height, "svg.height"));
+  const title = escapeXml(requireNonEmptyText(opts.title, "svg.title"));
+  const desc = escapeXml(requireNonEmptyText(opts.description, "svg.description"));
+  if (typeof opts.body !== "string") failSvg("WRONG_TYPE", "svg.body");
+  const background = requireBool(opts.background === undefined ? true : opts.background, "svg.background");
+  const backgroundRect = background
+    ? `<rect width="${width}" height="${height}" fill="${DS_VARS.surfaceDefault}"/>` : "";
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}"`
+    + ` height="${height}" role="img" aria-labelledby="${titleId}" aria-describedby="${descId}"`
+    + ` font-family="${SVG_FONT_FAMILY}"><title id="${titleId}">${title}</title>`
+    + `<desc id="${descId}">${desc}</desc><style>${SVG_THEME_CSS}</style>${backgroundRect}${opts.body}</svg>`;
 }

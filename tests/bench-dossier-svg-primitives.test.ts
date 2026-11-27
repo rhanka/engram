@@ -38,6 +38,7 @@ import {
   type GlyphShape,
   type GlyphState,
   renderEffortPath,
+  renderChartSvg,
 } from "../src/bench-dossier/svg-primitives.js";
 
 function parseLeafSvg(xml: string): { tag: string; attrs: Record<string, string>; text?: string } {
@@ -707,5 +708,45 @@ describe("BD-6 DS-token SVG primitives, normalization & 7x5 glyph registry", () 
       "points[0].y",
     );
     refuse(() => renderEffortPath([{ x: 1, y: 2, effort: "low" }], ""), "EMPTY_STRING", "color");
+  });
+
+  it("renders literal DS-token chart SVG shells with unique a11y IDs and validates all fields", () => {
+    const literalBody = '<g><circle cx="10" cy="20" r="5" fill="#dc2626"/></g>';
+    const baseSvg = {
+      slug: "office-city",
+      chartKind: "pr" as const,
+      width: 1440.345,
+      height: 900.124,
+      title: "P & R",
+      description: "Desc <1>",
+      body: literalBody,
+    };
+    const expectedHead =
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440.35 900.12" width="1440.35" height="900.12"'
+      + ' role="img" aria-labelledby="fig-office-city-pr-title" aria-describedby="fig-office-city-pr-desc"'
+      + ' font-family="var(--st-font-sans, Inter, system-ui, -apple-system, BlinkMacSystemFont,'
+      + " 'Segoe UI', 'DejaVu Sans', sans-serif)\">"
+      + '<title id="fig-office-city-pr-title">P &amp; R</title>'
+      + '<desc id="fig-office-city-pr-desc">Desc &lt;1&gt;</desc>'
+      + `<style>${SVG_THEME_CSS}</style>`;
+    const expectedBg = '<rect width="1440.35" height="900.12" fill="var(--st-semantic-surface-default, #ffffff)"/>';
+    const expectedFull = `${expectedHead}${expectedBg}${literalBody}</svg>`;
+    const expectedNoBg = `${expectedHead}${literalBody}</svg>`;
+    expect(renderChartSvg(baseSvg)).toBe(expectedFull);
+    expect(renderChartSvg({ ...baseSvg, background: undefined })).toBe(expectedFull);
+    expect(renderChartSvg({ ...baseSvg, background: true })).toBe(expectedFull);
+    expect(renderChartSvg({ ...baseSvg, background: false })).toBe(expectedNoBg);
+    refuse(() => renderChartSvg(null as never), "NOT_OBJECT", "svg");
+    refuse(() => renderChartSvg({ ...baseSvg, slug: "bad_slug" }), "BAD_SLUG", "svg.slug");
+    refuse(() => renderChartSvg({ ...baseSvg, chartKind: "bar" as never }), "BAD_ENUM", "svg.chartKind");
+    refuse(() => renderChartSvg({ ...baseSvg, width: 0 }), "NON_POSITIVE", "svg.width");
+    refuse(() => renderChartSvg({ ...baseSvg, height: 0 }), "NON_POSITIVE", "svg.height");
+    refuse(() => renderChartSvg({ ...baseSvg, height: -5 }), "NON_POSITIVE", "svg.height");
+    refuse(() => renderChartSvg({ ...baseSvg, width: null as never }), "BAD_NUMBER", "svg.width");
+    refuse(() => renderChartSvg({ ...baseSvg, title: " " }), "EMPTY_STRING", "svg.title");
+    refuse(() => renderChartSvg({ ...baseSvg, description: "" }), "EMPTY_STRING", "svg.description");
+    refuse(() => renderChartSvg({ ...baseSvg, body: 1 as never }), "WRONG_TYPE", "svg.body");
+    refuse(() => renderChartSvg({ ...baseSvg, background: null as never }), "WRONG_TYPE", "svg.background");
+    refuse(() => renderChartSvg({ ...baseSvg, background: "unknown" as never }), "WRONG_TYPE", "svg.background");
   });
 });
