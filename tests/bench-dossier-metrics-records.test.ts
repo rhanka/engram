@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   alignRecordsOneToOne, extractCandidateRecords, readRecFields,
 } from "../src/bench-dossier/metrics-records-align.js";
+import {
+  buildFallbackUsage, parseGoldenRecordUnit, projectImportedRecord,
+} from "../src/bench-dossier/metrics-records-score.js";
 
 const fv = (value: string | null) => ({ value, quote: value });
 const mkKey = (pc: string | null, st: string | null, ci: string | null) => ({ pc, st, ci });
@@ -116,5 +119,16 @@ describe("BD-3 readRecFields & 1-to-1 postal_code / street+city alignment", () =
       refuse(() => extractCandidateRecords({ unverified_dropped: bad }, "city"), "BAD_COUNT", RangeError);
       refuse(() => extractCandidateRecords({ unverified_subfields: bad }, "city"), "BAD_COUNT", RangeError);
     }
+  });
+});
+
+describe("BD-3 golden record parser, real converge shapes & majority gate", () => {
+  it("parses smoke golden unit and absent/insufficient record units", () => {
+    expect(parseGoldenRecordUnit({ id: "a", fields: { o: { verdict: "absent" } } }, "o", "city"))
+      .toEqual({ id: "a", unit: { kind: "absent" } });
+    expect(parseGoldenRecordUnit({ id: "i0", fields: { o: { verdict: "insufficient", n_answered: 0 } } }, "o", "city")
+      .unit).toEqual({ kind: "insufficient" });
+    expect(parseGoldenRecordUnit({ id: "i1", fields: { o: { verdict: "insufficient", n_answered: 1 } } }, "o", "city")
+      .unit).toEqual({ kind: "insufficient" });
   });
 });
