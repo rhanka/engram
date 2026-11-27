@@ -99,6 +99,7 @@ function expectSemVerRefusal(
 
 const ARCHI_V1_SHA256: Sha256Digest = `sha256:${ARCHI_V1_PIN.contentDigest}`;
 const ARCHI_V1_ENTITY_IDS = ARCHI_V1.declaration.entityTypes.map((entity) => entity.id);
+const ARCHI_V2_SHA256: Sha256Digest = `sha256:${"2".repeat(64)}`;
 
 function makeTrackTemplate(): MetamodelTemplateDocument {
   return {
@@ -542,6 +543,94 @@ describe("metamodel versioning and composition (Lot 0.3)", () => {
     expect(authCompat.compatible).toBe(false);
     expect(authCompat.breaking.some((d) => d.code === "tightened_transition_authority")).toBe(true);
 
+    const addedRequiredAttr = structuredClone(base);
+    addedRequiredAttr.version = "1.1.0";
+    addedRequiredAttr.parent_pin = parentPin;
+    (addedRequiredAttr.node_types.RiskEntry!.attributes as Record<string, unknown>).mitigation_owner = {
+      kind: "string",
+      required: true,
+    };
+    expectSemVerRefusal(addedRequiredAttr, { registry }, "MM_VERSION_MAJOR_REQUIRED_FOR_BREAKING", "version");
+    const reqAttrCompat = checkProfileCompatibility(
+      base as unknown as OntologyProfile,
+      addedRequiredAttr as unknown as OntologyProfile,
+    );
+    expect(reqAttrCompat.compatible).toBe(false);
+    expect(reqAttrCompat.breaking.some((d) => d.code === "added_required_attr" && d.path === "node_types.RiskEntry.attributes.mitigation_owner")).toBe(true);
+
+    const addedRequiredRelAttr = structuredClone(base);
+    addedRequiredRelAttr.version = "1.1.0";
+    addedRequiredRelAttr.parent_pin = parentPin;
+    (addedRequiredRelAttr.relation_types!.governs_risk as unknown as Record<string, unknown>).attributes = {
+      severity_weight: { kind: "integer", required: true },
+    };
+    expectSemVerRefusal(addedRequiredRelAttr, { registry }, "MM_VERSION_MAJOR_REQUIRED_FOR_BREAKING", "version");
+    const relAttrCompat = checkProfileCompatibility(
+      base as unknown as OntologyProfile,
+      addedRequiredRelAttr as unknown as OntologyProfile,
+    );
+    expect(relAttrCompat.compatible).toBe(false);
+    expect(relAttrCompat.breaking.some((d) => d.code === "added_required_attr" && d.path === "relation_types.governs_risk.attributes.severity_weight")).toBe(true);
+    expect(relAttrCompat.breaking.some((d) => d.code === "changed_unmodeled_block")).toBe(false);
+
+    const narrowedEnum = structuredClone(base);
+    narrowedEnum.version = "1.1.0";
+    narrowedEnum.parent_pin = parentPin;
+    (narrowedEnum.node_types.WorkItem!.attributes as Record<string, { values?: string[] }>).subkind = {
+      kind: "enum",
+      values: ["standard", "quick-task"],
+    } as unknown as { values: string[] };
+    expectSemVerRefusal(narrowedEnum, { registry }, "MM_VERSION_MAJOR_REQUIRED_FOR_BREAKING", "version");
+
+    // Removing or major-repinning a composed_lineage_pin is breaking
+    const pinnedBase = structuredClone(base);
+    pinnedBase.composed_lineage_pins = [
+      {
+        importAlias: "archi_v1",
+        lineage: "archi",
+        templateId: "archi",
+        templateVersion: "1.0.0",
+        templateDigestSha256: ARCHI_V1_SHA256,
+      },
+    ];
+    const pinnedBaseDigest = independentTemplateSha256(pinnedBase);
+    const pinnedRegistry: RegisteredTemplateRecord[] = [
+      {
+        lineage: "track",
+        templateId: pinnedBase.id,
+        templateVersion: "1.0.0",
+        templateDigestSha256: pinnedBaseDigest,
+        presentationDigest: independentPresentationSha256(pinnedBase),
+        document: pinnedBase,
+      },
+    ];
+    const pinnedParentPin = { id: pinnedBase.id, version: "1.0.0", contentDigest: stripSha256Prefix(pinnedBaseDigest) };
+    const droppedPin = structuredClone(pinnedBase);
+    droppedPin.version = "1.1.0";
+    droppedPin.parent_pin = pinnedParentPin;
+    droppedPin.composed_lineage_pins = [];
+    expectSemVerRefusal(droppedPin, { registry: pinnedRegistry }, "MM_VERSION_MAJOR_REQUIRED_FOR_BREAKING", "version");
+    const droppedPinCompat = checkProfileCompatibility(
+      pinnedBase as unknown as OntologyProfile,
+      droppedPin as unknown as OntologyProfile,
+    );
+    expect(droppedPinCompat.compatible).toBe(false);
+    expect(droppedPinCompat.breaking.some((d) => d.code === "removed_composed_lineage_pin")).toBe(true);
+
+    const majorRepinned = structuredClone(pinnedBase);
+    majorRepinned.version = "1.1.0";
+    majorRepinned.parent_pin = pinnedParentPin;
+    majorRepinned.composed_lineage_pins = [
+      {
+        importAlias: "archi_v1",
+        lineage: "archi",
+        templateId: "archi",
+        templateVersion: "2.0.0",
+        templateDigestSha256: ARCHI_V2_SHA256,
+      },
+    ];
+    expectSemVerRefusal(majorRepinned, { registry: pinnedRegistry }, "MM_VERSION_MAJOR_REQUIRED_FOR_BREAKING", "version");
+
     // 4b. Breaking change under MAJOR bump -> accepted
     const breakingMajor = { ...structuredClone(tightenedTimebox), version: "2.0.0" };
     expect(evaluateSemVerGate(freezeInput(breakingMajor), { registry })).toMatchObject({
@@ -668,6 +757,251 @@ describe("metamodel versioning and composition (Lot 0.3)", () => {
       templateDigestSha256: baseDigest,
       presentationDigest: basePresentationDigest,
     });
+
+    // 8. Non-exact SemVer, missing parent_pin, version regression
+    const badSemVer = { ...structuredClone(base), version: "^1.1.0", parent_pin: parentPin };
+    expectSemVerRefusal(badSemVer, { registry }, "MM_VERSION_NOT_EXACT_SEMVER", "version");
+
+    const missingParentPin = { ...structuredClone(base), version: "1.1.0" };
+    expectSemVerRefusal(missingParentPin, { registry }, "MM_VERSION_PARENT_PIN_MISSING_OR_MISMATCH", "parent_pin");
+
+    const regression = { ...structuredClone(base), version: "0.9.0", parent_pin: parentPin };
+    expectSemVerRefusal(regression, { registry }, "MM_VERSION_REGRESSION", "version");
+
+    // 9. Comprehensive guard vectors: initial unmapped rename, doc-less presentationDigest conflict, attribute/record/relation/policy/projection rules
+    expectSemVerRefusal(42, { registry }, "MM_SYNTAX_NON_PLAIN_OBJECT", "template");
+    expectSemVerRefusal(
+      {
+        ...structuredClone(base),
+        lineage: "engram",
+        id: "sentropic.renamed-initial",
+        mapping_pin: { id: "initial-rename-map", version: "1.0.0", contentDigest: "d".repeat(64) },
+      },
+      { registry, declaredRenames: [{ from: "node_types.Old", to: "node_types.WorkItem" }] },
+      "MM_VERSION_UNMAPPED_BREAKING_RENAME",
+      "mapping_pin",
+    );
+
+    const noPresDigestReg: RegisteredTemplateRecord[] = [
+      {
+        lineage: "track",
+        templateId: base.id,
+        templateVersion: "1.0.0",
+        templateDigestSha256: baseDigest,
+        nodeTypeIds: Object.keys(base.node_types),
+        document: base,
+      },
+    ];
+    expectSemVerRefusal(dupPres, { registry: noPresDigestReg }, "MM_VERSION_IMMUTABLE_CONFLICT", "version");
+
+    const attrDocOnly = structuredClone(base);
+    attrDocOnly.version = "1.0.1";
+    attrDocOnly.parent_pin = parentPin;
+    (attrDocOnly.node_types.WorkItem!.attributes as Record<string, { description?: string }>).archi_asset_ref!.description = "Updated description.";
+    attrDocOnly.relation_types!.governs_risk!.description = "Updated risk link wording.";
+    expect(evaluateSemVerGate(freezeInput(attrDocOnly), { registry })).toMatchObject({
+      status: "accepted",
+      changeClass: "patch",
+      diff: { breaking: [], additive: [] },
+    });
+
+    const richParent: MetamodelTemplateDocument = {
+      ...structuredClone(base),
+      id: "sentropic.rich-sem-checks",
+      composed_lineage_pins: [
+        {
+          importAlias: "archi_v1",
+          lineage: "archi",
+          templateId: "archi",
+          templateVersion: "1.0.0",
+          templateDigestSha256: ARCHI_V1_SHA256,
+        },
+      ],
+      registries: {
+        work_items: { source: "work_items", id_column: "id", label_column: "title", node_type: "WorkItem" },
+      },
+      hardening: {
+        statuses: ["draft", "reviewed", "enforced"],
+        default_status: "draft",
+        promotion_requires: ["peer-review"],
+        status_transitions: [{ from_statuses: ["draft"], to_statuses: ["reviewed"], authority: "author" }],
+      },
+      node_types: {
+        ...structuredClone(base.node_types),
+        WorkItem: {
+          ...structuredClone(base.node_types.WorkItem!),
+          registry: "work_items",
+          linking: { preset: "gazetteer-exact", resolve: { mode: "exact" } },
+          admission_policy: {
+            mode: "promotion-third-party-review",
+            third_party_distinct_from_author: false,
+            by_rank: { "2": "promotion-third-party-review" },
+          },
+          attributes: {
+            ...structuredClone(base.node_types.WorkItem!.attributes!),
+            code: { kind: "string", required: true, minLength: 2, maxLength: 20, pattern: "^[A-Z]+$" },
+            tags: { kind: "collection", minItems: 1, maxItems: 5, item: { kind: "ref", targetTypes: ["RiskEntry"] } },
+          },
+        },
+      },
+      relation_types: {
+        ...structuredClone(base.relation_types!),
+        governs_risk: {
+          ...structuredClone(base.relation_types!.governs_risk!),
+          requires_evidence: false,
+          assertion_basis: ["manual"],
+          derivation_methods: ["explicit"],
+          hierarchy: { id: "work-risk-dag", shape: "dag", parent_role: "source", child_role: "target" },
+          attributes: {
+            confidence: { kind: "number", min: 0, max: 1 },
+          },
+        },
+      },
+      domain_policies: {
+        ...structuredClone(base.domain_policies!),
+        cross_cutting_axes: {
+          compliance: { attribute: "compliance_tag", pattern: "^SOX-[0-9]+$", inherited_downward: true },
+        },
+        legacy_role_remap: {
+          legacy_story: { target_level: "feature", subkind: "standard", read_only: true },
+        },
+        stage_refinements: [{ parent_stage: "in-implementation", sub_stages: ["coding"], witness_link_kinds: ["pr"] }],
+        autonomy_policy: {
+          ...structuredClone(base.domain_policies!.autonomy_policy!),
+          autonomous_stage_ceiling_by_level: { feature: "in-review", task: "closed" },
+          mandated_act_proof_sources: ["ci-log"],
+          overlay_precedence: "tighten-only",
+        },
+        eta_policy: {
+          source_kinds: ["measured", "estimate"],
+          eligible_ranks: [2, 3],
+          max_active_slots_per_item: 2,
+          measured_provenance_required_fields: ["sample_count"],
+          append_only_slip_journal: true,
+          rebaseline_requires_decision: false,
+        },
+      },
+      file_projections: {
+        ...structuredClone(base.file_projections!),
+      },
+    };
+    const richDigest = independentTemplateSha256(richParent);
+    const richPin = { id: richParent.id, version: "1.0.0", contentDigest: stripSha256Prefix(richDigest) };
+    const richReg: RegisteredTemplateRecord[] = [
+      {
+        lineage: "archi",
+        templateId: "archi",
+        templateVersion: "1.0.0",
+        templateDigestSha256: ARCHI_V1_SHA256,
+        nodeTypeIds: ARCHI_V1_ENTITY_IDS,
+      },
+      {
+        lineage: "track",
+        templateId: richParent.id,
+        templateVersion: "1.0.0",
+        templateDigestSha256: richDigest,
+        presentationDigest: independentPresentationSha256(richParent),
+        nodeTypeIds: Object.keys(richParent.node_types),
+        document: richParent,
+      },
+    ];
+    expect(validateTemplateAgainstMetamodel(richParent, { registry: richReg }).status).toBe("accepted");
+    const mkRich = (patch: boolean) => ({ ...structuredClone(richParent), version: patch ? "1.0.1" : "1.1.0", parent_pin: richPin });
+
+    // Additive rules verified: patch refused -> minor accepted
+    const additiveChecks: Array<(d: MetamodelTemplateDocument) => void> = [
+      (d) => { d.node_types.WorkItem!.attributes!.rank!.required = false; },
+      (d) => { (d.node_types.WorkItem!.attributes!.code as { maxLength?: number }).maxLength = 40; },
+      (d) => { delete (d.node_types.WorkItem!.attributes!.code as { pattern?: string }).pattern; },
+      (d) => { (d.node_types.WorkItem!.attributes!.rank as { max?: number }).max = 5; },
+      (d) => { (d.node_types.WorkItem!.attributes!.tags as { maxItems?: number }).maxItems = 10; },
+      (d) => { ((d.node_types.WorkItem!.attributes!.tags as { item: { targetTypes: string[] } }).item).targetTypes = ["RiskEntry", "WorkItem"]; },
+      (d) => { d.node_types.WorkItem!.state_machines!.specification!.transitions![1]!.authority = "author"; },
+      (d) => { d.node_types.WorkItem!.admission_policy!.mode = "bounded-auto"; },
+      (d) => { delete d.node_types.WorkItem!.admission_policy; },
+      (d) => { d.composed_lineage_pins![0]!.templateVersion = "1.2.0"; d.composed_lineage_pins![0]!.templateDigestSha256 = `sha256:${"a".repeat(64)}`; },
+      (d) => { d.domain_policies!.levels![1]!.requires_parent = false; },
+      (d) => { delete d.domain_policies!.levels![2]!.closure_gate_ref; },
+      (d) => { d.domain_policies!.autonomy_policy!.max_autonomous_create_rank = 3; },
+      (d) => { d.domain_policies!.autonomy_policy!.max_autonomous_create_level = "task"; },
+      (d) => { d.domain_policies!.autonomy_policy!.autonomous_stage_ceiling_by_level!.feature = "verified"; },
+      (d) => { d.domain_policies!.autonomy_policy!.autonomous_stage_ceiling_by_level!.epic = "in-review"; },
+      (d) => { d.domain_policies!.autonomy_policy!.mandated_act_operations = ["item.create"]; },
+      (d) => { d.domain_policies!.autonomy_policy!.mandated_act_proof_sources = ["ci-log", "signed-attestation"]; },
+      (d) => { d.domain_policies!.acceptance_gates!.feature_uat!.require_all_children_terminal = false; },
+      (d) => { d.domain_policies!.timeboxes![0]!.target_days = 14; },
+      (d) => { d.domain_policies!.risk_policy!.external_register_max_age_days = 60; },
+      (d) => { d.domain_policies!.risk_policy!.sensitivity_impact_floors!.regulated = 3; },
+      (d) => { delete d.domain_policies!.risk_policy!.sensitivity_impact_floors!.public; },
+      (d) => { d.domain_policies!.invariants![0]!.severity = "warning"; },
+      (d) => { d.domain_policies!.invariants!.push({ id: "inv-2", summary: "Added note.", scope: "risk_policy", severity: "warning" }); },
+      (d) => { d.node_types.WorkItem!.aliases = ["work-item", "wi"]; },
+      (d) => { d.node_types.WorkItem!.source_backed = false; },
+      (d) => { d.hardening!.promotion_requires = []; },
+    ];
+    for (const mutate of additiveChecks) {
+      const p = mkRich(true);
+      mutate(p);
+      expectSemVerRefusal(p, { registry: richReg }, "MM_VERSION_MINOR_REQUIRED_FOR_ADDITIVE", "version");
+      const m = mkRich(false);
+      mutate(m);
+      expect(evaluateSemVerGate(freezeInput(m), { registry: richReg })).toMatchObject({ status: "accepted", changeClass: "minor" });
+    }
+
+    // Breaking rules verified: minor refused -> major accepted
+    const breakingChecks: Array<(d: MetamodelTemplateDocument) => void> = [
+      (d) => { (d.node_types.WorkItem!.attributes!.archi_asset_ref as { attributes: Record<string, unknown> }).attributes.external_url = { kind: "string", required: true }; },
+      (d) => { delete (d.node_types.WorkItem!.attributes!.archi_asset_ref as { attributes: Record<string, unknown> }).attributes.entity_id; },
+      (d) => { (d.node_types.WorkItem!.attributes!.code as { pattern?: string }).pattern = "^WI-[0-9]+$"; },
+      (d) => { (d.node_types.WorkItem!.attributes!.code as { minLength?: number }).minLength = 4; },
+      (d) => { (d.node_types.WorkItem!.attributes!.rank as { min?: number }).min = 1; },
+      (d) => { (d.node_types.WorkItem!.attributes!.tags as { minItems?: number }).minItems = 2; },
+      (d) => { d.node_types.WorkItem!.state_machines!.specification!.transitions![0]!.requires = ["owner-signoff"]; },
+      (d) => { d.node_types.WorkItem!.admission_policy!.mode = "mandate-gated"; },
+      (d) => { d.node_types.WorkItem!.admission_policy!.third_party_distinct_from_author = true; },
+      (d) => { d.node_types.WorkItem!.admission_policy!.by_rank!["2"] = "mandate-gated"; },
+      (d) => { d.composed_lineage_pins![0]!.lineage = "h2a"; },
+      (d) => { d.composed_lineage_pins![0]!.templateDigestSha256 = `sha256:${"f".repeat(64)}`; },
+      (d) => { d.domain_policies!.levels![0]!.requires_parent = true; },
+      (d) => { d.domain_policies!.levels![0]!.rollup = false; },
+      (d) => { d.domain_policies!.levels![0]!.closure_gate_ref = "feature_uat"; },
+      (d) => { d.domain_policies!.nesting_matrix![0]!.allowed_child_levels = []; },
+      (d) => { d.domain_policies!.stage_refinements![0]!.sub_stages = []; },
+      (d) => { d.domain_policies!.stage_refinements![0]!.witness_link_kinds = ["pr", "ci"]; },
+      (d) => { d.domain_policies!.autonomy_policy!.max_autonomous_create_level = "epic"; },
+      (d) => { delete d.domain_policies!.autonomy_policy!.autonomous_stage_ceiling_by_level!.feature; },
+      (d) => { d.domain_policies!.autonomy_policy!.mandated_act_operations = ["item.create", "item.reparent", "item.delete"]; },
+      (d) => { d.domain_policies!.autonomy_policy!.mandated_act_proof_sources = []; },
+      (d) => { d.domain_policies!.autonomy_policy!.overlay_precedence = "allow-widen"; },
+      (d) => { d.domain_policies!.acceptance_gates!.feature_uat!.authority = "mandated-act"; },
+      (d) => { d.domain_policies!.cross_cutting_axes!.compliance = { attribute: "compliance_tag", pattern: "^SOX-[0-9]+$", inherited_downward: false }; },
+      (d) => { d.domain_policies!.timeboxes![0]!.target_days = 5; },
+      (d) => { d.domain_policies!.timeboxes![0]!.overdue_escalation = "page-owner"; },
+      (d) => { d.domain_policies!.timeboxes![0]!.clock_stop_triggers = ["closed"]; },
+      (d) => { (d.domain_policies!.eta_policy as { max_active_slots_per_item: number }).max_active_slots_per_item = 1; },
+      (d) => { d.domain_policies!.risk_policy!.severity_bands![0]!.max_score = 3; },
+      (d) => { d.domain_policies!.risk_policy!.likelihood_scale = [1, 2, 3]; },
+      (d) => { delete d.domain_policies!.risk_policy!.max_review_validity_days_by_band!.low; },
+      (d) => { d.domain_policies!.risk_policy!.forbid_actor_classes_by_response = { accept: ["agent"] }; },
+      (d) => { d.domain_policies!.invariants![0]!.scope = "risk_policy"; },
+      (d) => { d.domain_policies!.invariants = []; },
+      (d) => { (d.file_projections!.default_pr_slice as { state_snapshot: { relative_path_template: string } }).state_snapshot.relative_path_template = ".track/v2/state.snapshot.json"; },
+      (d) => { d.node_types.WorkItem!.aliases = []; },
+      (d) => { d.node_types.WorkItem!.registry = "work_items_v2"; },
+      (d) => { d.node_types.WorkItem!.linking = { preset: "hybrid-recall", resolve: { mode: "none" } }; },
+      (d) => { d.relation_types!.governs_risk!.requires_evidence = true; },
+      (d) => { d.relation_types!.governs_risk!.assertion_basis = []; },
+      (d) => { d.relation_types!.governs_risk!.hierarchy = { id: "work-risk-dag", shape: "tree", parent_role: "source", child_role: "target" }; },
+      (d) => { (d.relation_types!.governs_risk!.attributes!.confidence as { min: number }).min = 0.5; },
+      (d) => { d.hardening!.promotion_requires = ["peer-review", "security-signoff"]; },
+      (d) => { (d.hardening!.status_transitions![0] as { authority?: string }).authority = "mandated-act"; },
+      (d) => { d.default_language = "fr"; },
+    ];
+    for (const mutate of breakingChecks) {
+      const m = mkRich(false);
+      mutate(m);
+      expectSemVerRefusal(m, { registry: richReg }, "MM_VERSION_MAJOR_REQUIRED_FOR_BREAKING", "version");
+    }
   });
 
   describe("round-2 regressions per review finding (M-1..M-7, m-1..m-4)", () => {
