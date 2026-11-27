@@ -379,6 +379,56 @@ function makeH2aTemplate(trackDigest: Sha256Digest): MetamodelTemplateDocument {
   };
 }
 
+function makeBridgeTemplate(trackDigest: Sha256Digest): MetamodelTemplateDocument {
+  return {
+    metamodel_version: "engram.metamodel/v1",
+    lineage: "engram",
+    id: "track-archi2-bridge",
+    version: "1.0.0",
+    composed_lineage_pins: [
+      {
+        importAlias: "archi_v1",
+        lineage: "archi",
+        templateId: "archi",
+        templateVersion: "1.0.0",
+        templateDigestSha256: ARCHI_V1_SHA256,
+      },
+      {
+        importAlias: "archi_v2",
+        lineage: "archi",
+        templateId: "archi",
+        templateVersion: "2.0.0",
+        templateDigestSha256: ARCHI_V2_SHA256,
+      },
+      {
+        importAlias: "track_agile",
+        lineage: "track",
+        templateId: "sentropic.agile-product",
+        templateVersion: "1.0.0",
+        templateDigestSha256: trackDigest,
+      },
+    ],
+    node_types: {
+      BridgeMappingAnchor: {
+        definition: "Bridge anchor connecting Track work units to archi@1/archi@2 architecture assets.",
+        id_prefix: "BRG",
+      },
+    },
+    relation_types: {
+      realizesCapability: {
+        description: "Links a Track work item to an archi@2 capability.",
+        source_types: ["track_agile:WorkItem"],
+        target_types: ["archi_v2:capability"],
+      },
+      operatesAsset: {
+        description: "Links a Track work item to an archi@1 service.",
+        source_types: ["track_agile:WorkItem"],
+        target_types: ["archi_v1:service"],
+      },
+    },
+  };
+}
+
 describe("metamodel versioning and composition (Lot 0.3)", () => {
   it("the SemVer gate refuses an additive change under a patch bump, a breaking change under a minor bump, an unmapped breaking rename and a duplicate version with another digest, and accepts the matching bumps", () => {
     // 0. Public Lot 0.3 entry point exists
@@ -1117,6 +1167,19 @@ describe("metamodel versioning and composition (Lot 0.3)", () => {
     expect(trackComp).toMatchObject({ status: "accepted", pins: [], externalEndpoints: [] });
     expect(validateTemplateAgainstMetamodel(track, { registry }).status).toBe("accepted");
 
+    // 2. track-archi2-bridge@1 (lineage: "engram") pinning archi@1, archi@2, and track succeeds
+    const bridge = makeBridgeTemplate(trackDigest);
+    const bridgeComp = validateCrossLineageComposition(freezeInput(bridge), { registry });
+    expect(bridgeComp.status).toBe("accepted");
+    if (bridgeComp.status === "accepted") {
+      expect(bridgeComp.externalEndpoints).toEqual([
+        "archi_v1:service",
+        "archi_v2:capability",
+        "track_agile:WorkItem",
+      ]);
+    }
+    expect(validateTemplateAgainstMetamodel(bridge, { registry }).status).toBe("accepted");
+
     // 3. h2a skills template pinning archi@1 and track succeeds
     const h2a = makeH2aTemplate(trackDigest);
     const h2aComp = validateCrossLineageComposition(freezeInput(h2a), { registry });
@@ -1191,6 +1254,79 @@ describe("metamodel versioning and composition (Lot 0.3)", () => {
       "MM_COMPOSE_DIGEST_MISMATCH",
       "composed_lineage_pins[0].templateDigestSha256",
     );
+
+    // 6. Unknown external type in relation endpoint and ref attribute targetTypes -> MM_COMPOSE_UNKNOWN_EXTERNAL_TYPE
+    const unknownEndpointType = structuredClone(h2a);
+    unknownEndpointType.relation_types!.runs_in_runtime!.target_types = ["archi_v1:nonexistent_kind"];
+    expectCompositionRefusal(
+      unknownEndpointType,
+      { registry },
+      "MM_COMPOSE_UNKNOWN_EXTERNAL_TYPE",
+      "relation_types.runs_in_runtime.target_types[0]",
+    );
+
+    const unknownRefTargetType = structuredClone(h2a);
+    (unknownRefTargetType.node_types.HarnessSkill!.attributes!.target_work_item as { targetTypes: string[] }).targetTypes = [
+      "track_agile:MissingType",
+    ];
+    expectCompositionRefusal(
+      unknownRefTargetType,
+      { registry },
+      "MM_COMPOSE_UNKNOWN_EXTERNAL_TYPE",
+      "node_types.HarnessSkill.attributes.target_work_item.targetTypes[0]",
+    );
+
+    const nestedCollectionRef = structuredClone(h2a);
+    nestedCollectionRef.node_types.HarnessSkill!.attributes!.linked_assets = {
+      kind: "collection",
+      item: { kind: "ref", targetTypes: ["archi_v1:missing_item_type"] },
+    };
+    expectCompositionRefusal(
+      nestedCollectionRef,
+      { registry },
+      "MM_COMPOSE_UNKNOWN_EXTERNAL_TYPE",
+      "node_types.HarnessSkill.attributes.linked_assets.item.targetTypes[0]",
+    );
+
+    const nestedRecordRef = structuredClone(h2a);
+    nestedRecordRef.node_types.HarnessSkill!.attributes!.nested_rec = {
+      kind: "record",
+      attributes: { target: { kind: "ref", targetTypes: ["archi_v1:missing_rec_type"] } },
+    };
+    expectCompositionRefusal(
+      nestedRecordRef,
+      { registry },
+      "MM_COMPOSE_UNKNOWN_EXTERNAL_TYPE",
+      "node_types.HarnessSkill.attributes.nested_rec.attributes.target.targetTypes[0]",
+    );
+
+    const relAttrRef = structuredClone(h2a);
+    relAttrRef.relation_types!.runs_in_runtime!.attributes = {
+      witness: { kind: "ref", targetTypes: ["track_agile:NoSuchNode"] },
+    };
+    expectCompositionRefusal(
+      relAttrRef,
+      { registry },
+      "MM_COMPOSE_UNKNOWN_EXTERNAL_TYPE",
+      "relation_types.runs_in_runtime.attributes.witness.targetTypes[0]",
+    );
+
+    const acceptedNestedRefs = structuredClone(h2a);
+    acceptedNestedRefs.node_types.HarnessSkill!.attributes!.linked_assets = {
+      kind: "collection",
+      item: { kind: "ref", targetTypes: ["archi_v1:service"] },
+    };
+    acceptedNestedRefs.node_types.HarnessSkill!.attributes!.nested_rec = {
+      kind: "record",
+      attributes: { target: { kind: "ref", targetTypes: ["archi_v1:component"] } },
+    };
+    acceptedNestedRefs.relation_types!.runs_in_runtime!.attributes = {
+      witness: { kind: "ref", targetTypes: ["track_agile:RiskEntry"] },
+    };
+    expect(validateCrossLineageComposition(freezeInput(acceptedNestedRefs), { registry })).toMatchObject({
+      status: "accepted",
+      externalEndpoints: ["archi_v1:component", "archi_v1:runtime", "archi_v1:service", "track_agile:RiskEntry", "track_agile:WorkItem"],
+    });
 
     // 7. Redefining, inheriting, or projecting an external type -> MM_COMPOSE_EXTERNAL_TYPE_REDEFINITION
     const redef = structuredClone(h2a);
