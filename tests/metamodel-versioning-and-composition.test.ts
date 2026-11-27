@@ -3712,6 +3712,309 @@ describe("metamodel versioning and composition (Lot 0.3)", () => {
           expect(diffSemVerDocuments(asRaw(cand), asRaw(track.doc)).refusals?.map(codePath), kind).toEqual([pinRefusal]);
         }
       });
+
+      /** One unprojectable value per kind the Lot 0.2 projector refuses; each is reported at the key that holds it. */
+      const POISONS: ReadonlyArray<readonly [string, (root: object) => unknown]> = [
+        ["bigint", () => BigInt(1)],
+        ["NaN", () => Number.NaN],
+        ["Infinity", () => Number.POSITIVE_INFINITY],
+        ["Date", () => new Date(0)],
+        ["function", () => () => 1],
+        ["symbol", () => Symbol("value")],
+        ["lone surrogate", () => "\uDC00"],
+        ["Map", () => new Map([["a", 1]])],
+        ["cycle", (root) => root],
+      ];
+
+      it("never throws on a document that is not plain JSON: every object and array of the parent, the registered twin and the candidate", () => {
+        const base = sweepTrackBase();
+        const clean = { ...structuredClone(base.doc), version: "1.0.1", parent_pin: base.pin };
+        const asParent = (parent: unknown) => base.reg.map((record) => (record.templateId === base.doc.id ? { ...record, document: parent as MetamodelTemplateDocument } : record));
+        const asTwin = (twin: unknown) => base.reg.map((record) => (record.templateId === base.doc.id ? { ...record, presentationDigest: undefined, document: twin as MetamodelTemplateDocument } : record));
+        const outcome = (result: { readonly status: string; readonly diagnostics: readonly { readonly code: string; readonly path: string }[] }) =>
+          ({ status: result.status, diagnostics: result.diagnostics.map(codePath) });
+        const containers = ["", ...[...everyPath(base.doc)].filter(({ value }) => isContainer(value)).map(({ path }) => path)];
+        let probes = 0;
+        for (const [index, path] of containers.entries()) {
+          const [kind, poison] = POISONS[index % POISONS.length]!;
+          /** Plants the poison in `doc` (a cycle points back to `doc` itself) and returns where it sits. */
+          const plant = (doc: object): string => {
+            const holder = (path === "" ? doc : getAt(doc, path)) as Loose;
+            const key = Array.isArray(holder) ? holder.length : "zz_probe";
+            holder[key] = poison(doc);
+            return pathOf(path, key);
+          };
+          const poisoned = structuredClone(base.doc);
+          const at = plant(poisoned);
+          const poisonedCandidate = { ...structuredClone(base.doc), version: "1.0.1", parent_pin: base.pin };
+          plant(poisonedCandidate);
+          const refused = { status: "refused-metamodel-invalid", diagnostics: [{ code: UNPROJECTABLE, path: at }] };
+          const label = `${kind} at ${at}`;
+          expect(outcome(evaluateSemVerGate(clean, { registry: asParent(poisoned) })), `parent ${label}`).toEqual(refused);
+          expect(outcome(evaluateSemVerGate(structuredClone(base.doc), { registry: asTwin(poisoned) })), `twin ${label}`).toEqual(refused);
+          expect(outcome(evaluateSemVerGate(poisonedCandidate, { registry: base.reg })), `candidate ${label}`).toEqual(refused);
+          expect(diffSemVerDocuments(asRaw(poisoned), asRaw(clean)).refusals?.map(codePath), `diff ${label}`).toEqual(refused.diagnostics);
+          expect(classifyV1Compatibility(asRaw(clean), asRaw(poisoned)).refusals.map(codePath), `pair ${label}`).toEqual(refused.diagnostics);
+
+          if (at.endsWith("]")) continue;
+          const withUndefined = structuredClone(base.doc);
+          ((path === "" ? withUndefined : getAt(withUndefined, path)) as Loose).zz_probe = undefined;
+          expect(evaluateSemVerGate(clean, { registry: asParent(withUndefined) }), `undefined at ${label}`).toMatchObject({ status: "accepted", changeClass: "patch", diff: EMPTY_DIFF });
+          expect(diffSemVerDocuments(asRaw(withUndefined), asRaw(clean)), `undefined at ${label}`).toEqual(EMPTY_DIFF);
+          probes += 1;
+        }
+        expect({ containers: containers.length, objects: probes }).toEqual({ containers: 214, objects: 111 });
+      }, 120_000);
+
+      it("classifies members named after Object.prototype like any other member instead of throwing", () => {
+        const base = baseOf("track");
+        for (const name of ["constructor", "toString", "valueOf", "hasOwnProperty"]) {
+          const cand = { ...structuredClone(base.doc), version: "1.1.0", parent_pin: base.pin };
+          asRaw(cand.node_types)[name] = { definition: "A node type named after an Object.prototype member." };
+          asRaw(cand.node_types.WorkItem!.attributes)[name] = { kind: "string" };
+          asRaw(cand.relation_types)[name] = { source_types: ["WorkItem"], target_types: ["RiskEntry"] };
+          asRaw(cand.domain_policies!.acceptance_gates)[name] = { applies_to_levels: ["task"], authority: "own-act-human" };
+          expect(validateTemplateAgainstMetamodel(cand, { registry: base.reg }).status, name).toBe("accepted");
+          const added = [`added_domain_acceptance_gates:${name}`, `added_node_type:${name}`, `added_optional_attr:WorkItem.${name}`, `added_relation:${name}`];
+          const gate = evaluateSemVerGate(freezeInput(structuredClone(cand)), { registry: base.reg });
+          expect({ status: gate.status, breaking: gate.diff?.breaking, additive: [...(gate.diff?.additive ?? [])].sort() }, name).toEqual({ status: "accepted", breaking: [], additive: added });
+          const removed = [`removed_attr:WorkItem.${name}`, `removed_domain_acceptance_gates:${name}`, `removed_node_type:${name}`, `removed_relation:${name}`];
+          const reverse = diffSemVerDocuments(asRaw(cand), asRaw(base.doc));
+          expect({ breaking: [...reverse.breaking].sort(), additive: reverse.additive, refusals: reverse.refusals }, name).toEqual({ breaking: removed, additive: [], refusals: undefined });
+          expect(checkProfileCompatibility(asProfile(base.doc), asProfile(cand)), name).toMatchObject({ ok: true, compatible: true });
+          // A map entry so named is still "added" (absent before), not "raised" (present before with another value).
+          const floored = { ...structuredClone(base.doc), version: "2.0.0", parent_pin: base.pin };
+          asRaw(floored.domain_policies!.risk_policy!.sensitivity_impact_floors)[name] = 2;
+          expect(evaluateSemVerGate(freezeInput(floored), { registry: base.reg }), name).toMatchObject({
+            status: "accepted",
+            changeClass: "major",
+            diff: { breaking: [`added_risk_sensitivity_floor:${name}`], additive: [] },
+          });
+        }
+        const protoKeyed = JSON.parse(JSON.stringify(base.doc).replace('"node_types":{', '"node_types":{"__proto__":{"definition":"x"},')) as MetamodelTemplateDocument;
+        expect(Object.hasOwn(protoKeyed.node_types, "__proto__")).toBe(true);
+        expectUnprojectableParentRefusedWith(base, protoKeyed, { code: "MM_SYNTAX_FORBIDDEN_PROTO_KEY", path: "node_types.__proto__" });
+      });
+
+      it("hands the rules documents made of null-prototype records only, members the schema does not know included", () => {
+        const base = baseOf("track");
+        const cand = structuredClone(base.doc);
+        asRaw(cand.hardening).custom_h = { nested: { deep: [{ leaf: 1 }] } };
+        const deltas = classifyV1Compatibility(asRaw(base.doc), asRaw(cand)).deltas;
+        expect(deltas.map((delta) => [delta.kind, delta.code, delta.path])).toEqual([["breaking", "changed_hardening_unmodeled", "hardening.custom_h"]]);
+        const records = [...everyPath({ after: deltas[0]!.after })].filter(({ value }) => isContainer(value) && !Array.isArray(value));
+        expect(records.map(({ path, value }) => [path, Object.getPrototypeOf(value)])).toEqual([["after", null], ["after.nested", null], ["after.nested.deep[0]", null]]);
+      });
+
+      function expectUnprojectableParentRefusedWith(base: Base, parent: MetamodelTemplateDocument, refusal: Refusal): void {
+        const registry = base.reg.map((record) => (record.templateId === base.doc.id ? { ...record, document: parent } : record));
+        const cand = { ...structuredClone(base.doc), version: "1.0.1", parent_pin: base.pin };
+        const gate = evaluateSemVerGate(freezeInput(cand), { registry });
+        expect({ status: gate.status, diagnostics: gate.diagnostics.map(codePath) }).toEqual({ status: "refused-metamodel-invalid", diagnostics: [refusal] });
+        expect(diffSemVerDocuments(asRaw(parent), asRaw(cand)).refusals?.map(codePath)).toEqual([refusal]);
+      }
+
+      const throwing = (): never => { throw new Error("the gate ran caller code"); };
+      const BROKEN_CONTEXTS: ReadonlyArray<readonly [string, (base: Base) => unknown, string]> = [
+        ["a context that is null", () => null, "context"],
+        ["a context that is not an object", () => 42, "context"],
+        ["a context whose reads throw", () => new Proxy({}, { getOwnPropertyDescriptor: throwing }), "context"],
+        ["a registry behind an accessor", () => Object.defineProperty({}, "registry", { get: throwing, enumerable: true }), "context.registry"],
+        ["a registry entry behind an accessor", (b) => ({ registry: Object.defineProperty([...b.reg], 0, { get: throwing, enumerable: true }) }), "context.registry[0]"],
+        ["a registry with a hole", (b) => ({ registry: Object.assign(new Array(2), { 1: b.reg[3] }) }), "context.registry[0]"],
+        ["a registry of holes, refused at the first one", () => ({ registry: new Array(3) }), "context.registry[0]"],
+        ["a record whose document is an accessor", (b) => ({ registry: [Object.defineProperty({ ...b.reg[3] }, "document", { get: throwing, enumerable: true })] }), "context.registry[0].document"],
+        ["a registry that is not an array", () => ({ registry: 42 }), "context.registry"],
+        ["a registry record that is null", (b) => ({ registry: [...b.reg, null] }), "context.registry[4]"],
+        ["a record whose lineage is a number", (b) => ({ registry: [{ ...b.reg[3], lineage: 5 }] }), "context.registry[0].lineage"],
+        ["a record whose templateId is an accessor", (b) => ({ registry: [Object.defineProperty({ ...b.reg[3] }, "templateId", { get: () => "x", enumerable: true })] }), "context.registry[0].templateId"],
+        ["a record whose nodeTypeIds hold a bigint", (b) => ({ registry: [{ ...b.reg[3], nodeTypeIds: [BigInt(1)] }] }), "context.registry[0].nodeTypeIds[0]"],
+        ["a record whose own pins hold null", (b) => ({ registry: [{ ...b.reg[3], composedLineagePins: [null] }] }), "context.registry[0].composedLineagePins[0]"],
+        ["declared renames that are not an array", (b) => ({ registry: b.reg, declaredRenames: "node_types.A" }), "context.declaredRenames"],
+        ["a declared rename that is null", (b) => ({ registry: b.reg, declaredRenames: [null] }), "context.declaredRenames[0]"],
+        ["a mapping file without entries", (b) => ({ registry: b.reg, mappingFile: { mappingId: "m", version: "1.0.0", contentDigest: "0".repeat(64) } }), "context.mappingFile.entries"],
+        ["a mapping file whose entry is null", (b) => ({ registry: b.reg, mappingFile: { mappingId: "m", version: "1.0.0", contentDigest: "0".repeat(64), entries: [null] } }), "context.mappingFile.entries[0]"],
+        ["a mapping file holding a cycle", (b) => { const mappingFile: Record<string, unknown> = { entries: [] }; mappingFile.self = mappingFile; return { registry: b.reg, mappingFile }; }, "context.mappingFile.self"],
+      ];
+
+      it.each(BROKEN_CONTEXTS)("refuses %s with a stable code instead of throwing, in the gate and in the composition check", (_label, makeContext, path) => {
+        const base = baseOf("track");
+        const context = makeContext(base) as MetamodelValidationContext;
+        const cand = { ...structuredClone(base.doc), version: "1.0.1", parent_pin: base.pin };
+        const refused = { status: "refused-metamodel-invalid", diagnostics: [{ code: UNPROJECTABLE, path }] };
+        const gate = evaluateSemVerGate(structuredClone(cand), context);
+        expect({ status: gate.status, diagnostics: gate.diagnostics.map(codePath) }).toEqual(refused);
+        const composition = validateCrossLineageComposition(structuredClone(cand), context);
+        expect({ status: composition.status, diagnostics: composition.diagnostics.map(codePath) }).toEqual(refused);
+      });
+
+      it("refuses a value of another JSON type at every member the gate reads from its context", () => {
+        const base = baseOf("track");
+        const cand = { ...structuredClone(base.doc), version: "1.0.1", parent_pin: base.pin };
+        const parent = base.reg.findIndex((entry) => entry.templateId === base.doc.id);
+        const ownPin = { lineage: "archi", templateId: "archi", templateVersion: "1.0.0" };
+        const context = {
+          registry: base.reg.map((entry, index) => (index === parent ? { ...entry, composedLineagePins: [ownPin] } : entry)),
+          declaredRenames: [{ from: "node_types.Old", to: "node_types.New" }],
+          mappingFile: { mappingId: "m", version: "1.0.0", contentDigest: "0".repeat(64), entries: [{ kind: "rename", from: "node_types.Old", to: "node_types.New" }] },
+        };
+        const record = `registry[${parent}]`;
+        const typed = [
+          "registry", record,
+          ...["lineage", "templateId", "templateVersion", "templateDigestSha256", "presentationDigest", "nodeTypeIds", "composedLineagePins", "composedLineagePins[0]"].map((member) => `${record}.${member}`),
+          ...["lineage", "templateId", "templateVersion"].map((member) => `${record}.composedLineagePins[0].${member}`),
+          "declaredRenames", "declaredRenames[0]", "declaredRenames[0].from", "declaredRenames[0].to",
+          "mappingFile", "mappingFile.mappingId", "mappingFile.version", "mappingFile.contentDigest", "mappingFile.entries", "mappingFile.entries[0]",
+          ...["kind", "from", "to"].map((member) => `mappingFile.entries[0].${member}`),
+        ];
+        let probes = 0;
+        for (const path of typed) {
+          for (const kind of JSON_KINDS.filter((other) => other !== kindOf(getAt(context, path)))) {
+            const mistyped = structuredClone(context);
+            setAt(mistyped, path, OF_KIND[kind]);
+            const refused = { status: "refused-metamodel-invalid", diagnostics: [{ code: UNPROJECTABLE, path: `context.${path}` }] };
+            const gate = evaluateSemVerGate(structuredClone(cand), mistyped as unknown as MetamodelValidationContext);
+            expect({ status: gate.status, diagnostics: gate.diagnostics.map(codePath) }, `${path} <- ${kind}`).toEqual(refused);
+            const composition = validateCrossLineageComposition(structuredClone(cand), mistyped as unknown as MetamodelValidationContext);
+            expect({ status: composition.status, diagnostics: composition.diagnostics.map(codePath) }, `${path} <- ${kind}`).toEqual(refused);
+            probes += 1;
+          }
+        }
+        expect(probes).toBe(130);
+      });
+
+      function compositionFixture() {
+        const agile = makeTrackTemplate();
+        const target = { lineage: "track" as const, templateId: agile.id, templateVersion: "1.0.0", templateDigestSha256: independentTemplateSha256(agile) };
+        const candidate = {
+          metamodel_version: "engram.metamodel/v1",
+          lineage: "h2a",
+          id: "sentropic.r5-composer",
+          version: "1.0.0",
+          composed_lineage_pins: [{ importAlias: "track_agile", ...target }],
+          node_types: { Skill: { definition: "A skill.", attributes: { work: { kind: "ref", targetTypes: ["track_agile:WorkItem"] } } } },
+        };
+        return { agile, target, candidate };
+      }
+      const composed = (candidate: unknown, registry: readonly unknown[]) => {
+        const result = validateCrossLineageComposition(candidate, { registry: registry as RegisteredTemplateRecord[] });
+        return { status: result.status, diagnostics: result.diagnostics.map(codePath), externalEndpoints: result.status === "accepted" ? result.externalEndpoints : null };
+      };
+      const composedOk = { status: "accepted", diagnostics: [], externalEndpoints: ["track_agile:WorkItem"] };
+      const composedRefused = (code: MetamodelDiagnosticCode, path: string) => ({ status: "refused-metamodel-invalid", diagnostics: [{ code, path }], externalEndpoints: null });
+
+      it("composition reads a registered target's document through the entry: projected once, type-checked, never thrown on", () => {
+        const { agile, target, candidate } = compositionFixture();
+        const targetDoc = "context.registry[0].document";
+        // The record states neither nodeTypeIds nor composedLineagePins: both are read off the projected document.
+        expect(composed(candidate, [{ ...target, document: agile }])).toEqual(composedOk);
+        expect(composed(candidate, [{ ...target, document: { ...agile, hardening: undefined, node_types: { ...agile.node_types, Ghost: undefined } } }])).toEqual(composedOk);
+        expect(composed(candidate, [{ ...target, document: { ...agile, node_types: { ...agile.node_types, Poison: BigInt(1) } } }]))
+          .toEqual(composedRefused(UNPROJECTABLE, `${targetDoc}.node_types.Poison`));
+        expect(composed(candidate, [{ ...target, document: { ...agile, node_types: "WorkItem" } }])).toEqual(composedRefused("MM_NODE_EMPTY_SET", `${targetDoc}.node_types`));
+        expect(composed(candidate, [{ ...target, document: { ...agile, composed_lineage_pins: "archi" } }]))
+          .toEqual(composedRefused("MM_COMPOSE_UNKNOWN_EXTERNAL_TYPE", `${targetDoc}.composed_lineage_pins`));
+        expect(composed(candidate, [{ ...target, document: 42 }])).toEqual(composedRefused(UNPROJECTABLE, targetDoc));
+        // A target document that declares no node type cannot resolve an external reference: refused, not thrown.
+        const { node_types: _nodeTypes, ...withoutNodeTypes } = agile;
+        expect(composed(candidate, [{ ...target, document: withoutNodeTypes }])).toEqual(composedRefused("MM_COMPOSE_UNKNOWN_EXTERNAL_TYPE", "node_types.Skill.attributes.work.targetTypes[0]"));
+        // A cycle that only the target's document reveals is still detected.
+        const backPin = { importAlias: "back", lineage: "h2a", templateId: candidate.id, templateVersion: "1.0.0", templateDigestSha256: `sha256:${"c".repeat(64)}` };
+        expect(composed(candidate, [{ ...target, nodeTypeIds: ["WorkItem"], document: { ...agile, composed_lineage_pins: [backPin] } }]))
+          .toEqual(composedRefused("MM_COMPOSE_CYCLE_DETECTED", "composed_lineage_pins[0]"));
+        // ... and so is a cycle two hops away, each hop known from a document only.
+        const hop = { lineage: "engram" as const, templateId: "sentropic.r5-hop", templateVersion: "1.0.0", templateDigestSha256: `sha256:${"e".repeat(64)}` };
+        const hopDocument = { metamodel_version: "engram.metamodel/v1", lineage: "engram", id: hop.templateId, version: "1.0.0", node_types: { Hop: { definition: "x" } }, composed_lineage_pins: [backPin] };
+        const viaHop = { ...agile, composed_lineage_pins: [{ importAlias: "hop", ...hop }] };
+        expect(composed(candidate, [{ ...target, nodeTypeIds: ["WorkItem"], document: viaHop }, { ...hop, document: hopDocument }]))
+          .toEqual(composedRefused("MM_COMPOSE_CYCLE_DETECTED", "composed_lineage_pins[0]"));
+        // Only the members the check reads are type-checked: another malformed member of a target is not its concern.
+        expect(composed(candidate, [{ ...target, document: { ...agile, domain_policies: "not read by the composition check" } }])).toEqual(composedOk);
+        // What a record states wins over its document, as in Lot 0.2.
+        const declared = structuredClone(candidate);
+        setAt(declared, "node_types.Skill.attributes.work.targetTypes", ["track_agile:Declared"]);
+        expect(composed(declared, [{ ...target, nodeTypeIds: ["Declared"], document: agile }])).toEqual({ ...composedOk, externalEndpoints: ["track_agile:Declared"] });
+        // The caller gets its own record back, not the envelope the check worked on.
+        const callerRecord = { ...target, document: agile } as RegisteredTemplateRecord;
+        const accepted = validateCrossLineageComposition(candidate, { registry: [callerRecord] });
+        expect(accepted.status === "accepted" && accepted.resolvedTargets.track_agile === callerRecord).toBe(true);
+        // A document is not read when its record states both facts itself.
+        expect(composed(candidate, [{ ...target, nodeTypeIds: ["WorkItem"], composedLineagePins: [], document: { node_types: BigInt(1) } }])).toEqual(composedOk);
+        // A document no pin reaches is not read at all.
+        const unreached = { lineage: "engram", templateId: "sentropic.unreached", templateVersion: "1.0.0", templateDigestSha256: `sha256:${"d".repeat(64)}`, document: { node_types: BigInt(1) } };
+        expect(composed(candidate, [{ ...target, document: agile }, unreached])).toEqual(composedOk);
+      });
+
+      it("composition refuses a malformed endpoint list of the candidate instead of skipping its external references", () => {
+        const { agile, target, candidate } = compositionFixture();
+        const registry = [{ ...target, document: agile }];
+        const stringEndpoint = { ...structuredClone(candidate), relation_types: { uses: { source_types: ["Skill"], target_types: "track_agile:Ghost" } } };
+        expect(composed(stringEndpoint, registry)).toEqual(composedRefused("MM_REL_MISSING_ENDPOINTS", "relation_types.uses.target_types"));
+        const stringTargets = structuredClone(candidate);
+        setAt(stringTargets, "node_types.Skill.attributes.work.targetTypes", "track_agile:Ghost");
+        expect(composed(stringTargets, registry)).toEqual(composedRefused(ATTR, "node_types.Skill.attributes.work.targetTypes"));
+        const stringProjection = { ...structuredClone(candidate), file_projections: { view: { kind: "h2a-harness-overlay", include_node_types: "track_agile:WorkItem", projected_fields: ["x"] } } };
+        expect(composed(stringProjection, registry)).toEqual(composedRefused(OVERLAY, "file_projections.view.include_node_types"));
+        // The check reads that list whatever the kind of the projection: so does the type check, kind or no kind.
+        for (const [kind, code] of [[{}, OVERLAY], [{ kind: "future-kind" }, OVERLAY], [{ kind: "track-pr-slice" }, D29]] as const) {
+          const anyKind = { ...structuredClone(candidate), file_projections: { view: { ...kind, include_node_types: "track_agile:WorkItem" } } };
+          const refused = composed(anyKind, registry);
+          expect([refused.status, refused.diagnostics.filter((d) => d.path.endsWith(".include_node_types"))], JSON.stringify(kind))
+            .toEqual(["refused-metamodel-invalid", [{ code, path: "file_projections.view.include_node_types" }]]);
+        }
+        // The template handed back is type-checked on every member, read by the check or not; its identity is refused once.
+        expect(composed({ ...structuredClone(candidate), hardening: 42 }, registry)).toEqual(composedRefused(STATE, "hardening"));
+        expect(composed({ ...structuredClone(candidate), domain_policies: "policies" }, registry)).toEqual(composedRefused(DOMAIN, "domain_policies"));
+        expect(composed({ ...structuredClone(candidate), lineage: 5 }, registry)).toEqual(composedRefused("MM_IDENTITY_MISSING_REQUIRED", "lineage"));
+        // A reference nested in twenty collections is read like one nested in none.
+        const nestedRef = (levels: number): Record<string, unknown> => (levels === 0 ? { kind: "ref", targetTypes: ["ghost:Type"] } : { kind: "collection", item: nestedRef(levels - 1) });
+        const hidden = structuredClone(candidate);
+        setAt(hidden, "node_types.Skill.attributes.nested", nestedRef(20));
+        expect(composed(hidden, registry)).toEqual(composedRefused("MM_COMPOSE_UNKNOWN_EXTERNAL_TYPE", `node_types.Skill.attributes.nested${".item".repeat(20)}.targetTypes[0]`));
+      });
+
+      it("reads each raw document through the projector only, exactly once per call", async () => {
+        const { toJsonValue } = await import("../src/json-value.js");
+        /** Counts every enumeration of, and every direct read on, a raw document. */
+        const watched = <T extends object>(target: T) => {
+          const reads = { enumerations: 0, gets: 0 };
+          const doc = new Proxy(target, {
+            ownKeys: (inner) => { reads.enumerations += 1; return Reflect.ownKeys(inner); },
+            get: (inner, key, receiver) => { reads.gets += 1; return Reflect.get(inner, key, receiver) as unknown; },
+          });
+          return { doc, reads };
+        };
+        const base = baseOf("track");
+        const calibration = watched(structuredClone(base.doc));
+        expect(toJsonValue(calibration.doc).ok).toBe(true);
+        const oneProjection = { ...calibration.reads };
+        expect(oneProjection.enumerations).toBeGreaterThan(0);
+        expect(oneProjection.gets).toBe(0);
+
+        const parent = watched(structuredClone(base.doc));
+        const cand = watched({ ...structuredClone(base.doc), version: "1.0.1", parent_pin: base.pin });
+        const registry = base.reg.map((record) => (record.templateId === base.doc.id ? { ...record, document: parent.doc } : record));
+        expect(evaluateSemVerGate(cand.doc, { registry })).toMatchObject({ status: "accepted", changeClass: "patch", diff: EMPTY_DIFF });
+        expect([parent.reads, cand.reads]).toEqual([oneProjection, oneProjection]);
+
+        const twin = watched(structuredClone(base.doc));
+        const twinRegistry = base.reg.map((record) => (record.templateId === base.doc.id ? { ...record, presentationDigest: undefined, document: twin.doc } : record));
+        expect(evaluateSemVerGate(structuredClone(base.doc), { registry: twinRegistry })).toMatchObject({ status: "accepted", changeClass: "idempotent" });
+        expect(twin.reads).toEqual(oneProjection);
+
+        for (const pairApi of [diffSemVerDocuments, classifyV1Compatibility]) {
+          const left = watched(structuredClone(base.doc)), right = watched(structuredClone(base.doc));
+          pairApi(left.doc, right.doc);
+          expect([left.reads, right.reads]).toEqual([oneProjection, oneProjection]);
+        }
+
+        const { agile, target, candidate } = compositionFixture();
+        const targetDoc = watched(structuredClone(agile)), composer = watched(structuredClone(candidate));
+        expect(validateCrossLineageComposition(composer.doc, { registry: [{ ...target, document: targetDoc.doc as MetamodelTemplateDocument }] }).status).toBe("accepted");
+        expect(composer.reads).toEqual({ ...oneProjection, enumerations: composer.reads.enumerations });
+        expect(composer.reads.gets).toBe(0);
+        expect(targetDoc.reads.gets).toBe(0);
+      });
     });
   });
 });
