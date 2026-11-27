@@ -107,3 +107,94 @@ describe("BD-4 tree-02: summarizeInvocationUsage 1,705-ID census and trimmed dig
     });
   });
 });
+
+describe("BD-4 tree-03: interrupted summaries, multi-summary degradation, and zero-basis calls", () => {
+  it("handles empty runs, 0-item runs, zero-basis positive calls, and interrupted populated summaries", () => {
+    expect(summarizeInvocationUsage([])).toEqual({
+      nonSummaryRows: 0, summaryRows: 0, summaryItemCount: 0, interrupted: false, costBasisItems: 0,
+      calls: "unknown", callsPerItem: "unknown", tokens: "unknown", summaryApiTotal: "unknown",
+      summaryCurrencies: [], missionDigests: [], hasMissingDigest: false,
+    });
+    expect(summarizeInvocationUsage([{ type: "summary", ok: 0, failed: 0, calls_total: 0 }])).toEqual({
+      nonSummaryRows: 0, summaryRows: 1, summaryItemCount: 0, interrupted: false, costBasisItems: 0,
+      calls: 0, callsPerItem: 0, tokens: "unknown", summaryApiTotal: "unknown",
+      summaryCurrencies: [], missionDigests: [], hasMissingDigest: true,
+    });
+    refuse(() => summarizeInvocationUsage([{ type: "summary", ok: 0, failed: 0, calls_total: 3 }]),
+      "BAD_SHAPE", "$.calls");
+    expect(summarizeInvocationUsage([{ type: "summary", ok: 0, failed: 0, calls_total: "unknown" }])).toEqual({
+      nonSummaryRows: 0, summaryRows: 1, summaryItemCount: 0, interrupted: false, costBasisItems: 0,
+      calls: "unknown", callsPerItem: "unknown", tokens: "unknown", summaryApiTotal: "unknown",
+      summaryCurrencies: [], missionDigests: [], hasMissingDigest: true,
+    });
+    const noSummary = summarizeInvocationUsage([{ id: "a1" }, { id: "a2" }]);
+    expect(noSummary).toEqual({
+      nonSummaryRows: 2, summaryRows: 0, summaryItemCount: 0, interrupted: true, costBasisItems: 2,
+      calls: "unknown", callsPerItem: "unknown", tokens: "unknown", summaryApiTotal: "unknown",
+      summaryCurrencies: [], missionDigests: [], hasMissingDigest: false,
+    });
+    const fullPopulatedSummary = {
+      type: "summary", mission_digest: "d1", ok: 1, failed: 0, calls_total: 2,
+      tokens: { input: 10, output: 5, reasoning: 1, cached: 2, total: 16 },
+      cost: { currency: "USD", api_equivalent: 1.5 },
+    };
+    const shortInterrupted = summarizeInvocationUsage([{ id: "a1" }, { id: "a2" }, fullPopulatedSummary]);
+    expect(shortInterrupted).toEqual({
+      nonSummaryRows: 2, summaryRows: 1, summaryItemCount: 1, interrupted: true, costBasisItems: 2,
+      calls: "unknown", callsPerItem: "unknown", tokens: "unknown", summaryApiTotal: "unknown",
+      summaryCurrencies: ["USD"], missionDigests: ["d1"], hasMissingDigest: false,
+    });
+    const retryInterrupted = summarizeInvocationUsage([{ id: "a1" }, { id: "a1" }, fullPopulatedSummary]);
+    expect(retryInterrupted).toEqual({
+      nonSummaryRows: 2, summaryRows: 1, summaryItemCount: 1, interrupted: true, costBasisItems: 1,
+      calls: "unknown", callsPerItem: "unknown", tokens: "unknown", summaryApiTotal: "unknown",
+      summaryCurrencies: ["USD"], missionDigests: ["d1"], hasMissingDigest: false,
+    });
+    const overInterrupted = summarizeInvocationUsage([{ id: "a1" }, { ...fullPopulatedSummary, ok: 2 }]);
+    expect(overInterrupted).toEqual({
+      nonSummaryRows: 1, summaryRows: 1, summaryItemCount: 2, interrupted: true, costBasisItems: 1,
+      calls: "unknown", callsPerItem: "unknown", tokens: "unknown", summaryApiTotal: "unknown",
+      summaryCurrencies: ["USD"], missionDigests: ["d1"], hasMissingDigest: false,
+    });
+  });
+
+  it("degrades partial single and multi-summary usage across calls, tokens, cached, and cost", () => {
+    const partialSingle = summarizeInvocationUsage([
+      { id: "a1" },
+      {
+        type: "summary", ok: 1, failed: 0, calls_total: "unknown",
+        tokens: "unknown", cost: { api_equivalent: "unknown" },
+      },
+    ]);
+    expect([partialSingle.interrupted, partialSingle.calls, partialSingle.tokens, partialSingle.summaryApiTotal])
+      .toEqual([false, "unknown", "unknown", "unknown"]);
+    const baseSummary = {
+      type: "summary", ok: 1, failed: 0, calls_total: 5,
+      tokens: { input: 10, output: 20, reasoning: 0, cached: 4, total: 30 },
+      cost: { currency: "USD", api_equivalent: 1.5 },
+    };
+    const multiMissingCalls = summarizeInvocationUsage([
+      { id: "a1" }, baseSummary, { id: "a2" }, { ...baseSummary, calls_total: "unknown" },
+    ]);
+    expect([multiMissingCalls.calls, multiMissingCalls.callsPerItem]).toEqual(["unknown", "unknown"]);
+    const multiMissingCached = summarizeInvocationUsage([
+      { id: "a1" }, baseSummary,
+      { id: "a2" }, { ...baseSummary, tokens: { input: 1, output: 2, reasoning: 0, total: 3 } },
+    ]);
+    expect(multiMissingCached.tokens).toEqual({ input: 11, output: 22, reasoning: 0, cached: "unknown", total: 33 });
+    const multiMissingApi = summarizeInvocationUsage([
+      { id: "a1" }, baseSummary, { id: "a2" }, { ...baseSummary, cost: { currency: "USD" } },
+    ]);
+    expect(multiMissingApi.summaryApiTotal).toBe("unknown");
+    const multiMissingCostBlock = summarizeInvocationUsage([
+      { id: "a1" }, baseSummary, { id: "a2" },
+      { type: "summary", ok: 1, failed: 0, calls_total: 1, tokens: baseSummary.tokens },
+    ]);
+    expect(multiMissingCostBlock.summaryApiTotal).toBe("unknown");
+    const multiMissingTokens = summarizeInvocationUsage([
+      { id: "a1" }, baseSummary, { id: "a2" },
+      { type: "summary", ok: 1, failed: 0, calls_total: 1, cost: baseSummary.cost },
+    ]);
+    expect(multiMissingTokens.tokens).toBe("unknown");
+  });
+});
