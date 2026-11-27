@@ -796,4 +796,66 @@ describe("BD-6 DS-token SVG primitives, normalization & 7x5 glyph registry", () 
     refuse(() => renderSvgText({ ...baseText, highlighted: null as never }), "WRONG_TYPE", "text.highlighted");
     refuse(() => renderSvgText({ ...baseText, highlighted: "unknown" as never }), "WRONG_TYPE", "text.highlighted");
   });
+
+  it("folds R2 token and registry minors: resolveModelShape variety, api/empty opts and regex/index edges", () => {
+    expect(escapeXml(`&&<<>>""''`)).toBe("&amp;&amp;&lt;&lt;&gt;&gt;&quot;&quot;&#39;&#39;");
+    expect(buildChartA11yIds("a-b-c", "pr")).toEqual({
+      titleId: "fig-a-b-c-pr-title",
+      descId: "fig-a-b-c-pr-desc",
+    });
+    refuse(() => buildChartA11yIds("a-", "pr"), "BAD_SLUG", "slug");
+    refuse(() => buildChartA11yIds("city", "unknown" as never), "BAD_ENUM", "chartKind");
+    refuse(() => buildChartA11yIds("", "pr", "svg.slug", "svg.chartKind"), "EMPTY_STRING", "svg.slug");
+    const normEdgeCases: readonly [string, string][] = [
+      ["my_org:gpt-4.1", "gpt-4.1"],
+      ["z-ai:zai-glm-5-3-low", "zai-glm-5.3"],
+      ["openai:foo-mesh:bar", "foo-mesh:bar"],
+    ];
+    for (const [raw, expected] of normEdgeCases) {
+      expect(normalizeModelFamilyKey(raw)).toBe(expected);
+    }
+    expect([
+      resolveModelShape({ provider: "OpenAI", model: "gpt-4.1", isCascade: false }),
+      resolveModelShape({ provider: "Google", model: "gemini-4-argon", isCascade: false }),
+      resolveModelShape({ provider: "Anthropic", model: "claude-sonnet-4.6", isCascade: false }),
+      resolveModelShape({ provider: "OpenAI", model: "gpt-6-astra", isCascade: true }),
+    ]).toEqual(["cross", "square", "triangle", "star"]);
+    refuse(
+      () => resolveModelShape({ provider: "OpenAI", model: "gpt-4.1", isCascade: false, effort: "cascade" }),
+      "CASCADE_CONFLICT",
+      "arm.effort",
+    );
+    refuse(
+      () => buildShapeRegistry([
+        { provider: "OpenAI", model: "gpt-4.1", isCascade: false },
+        { provider: "", model: "m", isCascade: false },
+      ]),
+      "EMPTY_STRING",
+      "arms[1].provider",
+    );
+    const plain = { incomplete: false, isHighlighted: false };
+    expect(resolveRecordGlyphState(plain, {})).toBe("api_filled");
+    expect(resolveRecordGlyphState(plain, { seatStatus: "unknown" })).toBe("api_filled");
+    expect(resolveRecordGlyphState(plain, { costMode: "api", seatStatus: "unknown" })).toBe("api_filled");
+    expect(resolveRecordGlyphState({ incomplete: false, isHighlighted: true }, { costMode: "api" }))
+      .toBe("highlighted");
+    expect(resolveRecordGlyphState(
+      { incomplete: true, isHighlighted: false },
+      { costMode: "api", seatStatus: "unknown" },
+    )).toBe("incomplete_hollow_dashed");
+    expect(resolveRecordGlyphState(
+      { incomplete: true, isHighlighted: false },
+      { costMode: "seat", seatStatus: "estimated" },
+    )).toBe("incomplete_hollow_dashed");
+    refuse(
+      () => resolveRecordGlyphState(plain, { costMode: "seat", seatStatus: null as never }),
+      "BAD_ENUM",
+      "opts.seatStatus",
+    );
+    refuse(
+      () => resolveRecordGlyphState(plain, { costMode: "seat", seatStatus: undefined }),
+      "BAD_ENUM",
+      "opts.seatStatus",
+    );
+  });
 });
