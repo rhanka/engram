@@ -39,6 +39,7 @@ import {
   type GlyphState,
   renderEffortPath,
   renderChartSvg,
+  renderSvgText,
 } from "../src/bench-dossier/svg-primitives.js";
 
 function parseLeafSvg(xml: string): { tag: string; attrs: Record<string, string>; text?: string } {
@@ -748,5 +749,51 @@ describe("BD-6 DS-token SVG primitives, normalization & 7x5 glyph registry", () 
     refuse(() => renderChartSvg({ ...baseSvg, body: 1 as never }), "WRONG_TYPE", "svg.body");
     refuse(() => renderChartSvg({ ...baseSvg, background: null as never }), "WRONG_TYPE", "svg.background");
     refuse(() => renderChartSvg({ ...baseSvg, background: "unknown" as never }), "WRONG_TYPE", "svg.background");
+  });
+
+  it("renders DS-token SVG text labels across all 4-form defaulted fields and guards", () => {
+    const baseText = { x: 12.345, y: -0.001, text: "Astra <v12>" };
+    const plainText = '<text x="12.35" y="0" font-size="11" font-weight="400"'
+      + ' text-anchor="start" fill="var(--st-semantic-text-primary, #0f172a)">Astra &lt;v12&gt;</text>';
+    expect(renderSvgText(baseText)).toBe(plainText);
+    expect(renderSvgText({
+      ...baseText, fontSize: undefined, fill: undefined, anchor: undefined, highlighted: undefined,
+    })).toBe(plainText);
+    expect(renderSvgText({ ...baseText, highlighted: false })).toBe(plainText);
+    expect(renderSvgText({
+      ...baseText,
+      fontSize: 14.345,
+      fill: '#12<3>&"4"',
+      anchor: "end",
+      highlighted: true,
+    })).toBe(
+      '<text x="12.35" y="0" font-size="14.35" font-weight="700"'
+      + ' text-anchor="end" fill="#12&lt;3&gt;&amp;&quot;4&quot;">Astra &lt;v12&gt;</text>',
+    );
+    expect(parseLeafSvg(renderSvgText({ ...baseText, anchor: "middle" }))).toEqual({
+      tag: "text",
+      attrs: {
+        x: "12.35",
+        y: "0",
+        "font-size": "11",
+        "font-weight": "400",
+        "text-anchor": "middle",
+        fill: "var(--st-semantic-text-primary, #0f172a)",
+      },
+      text: "Astra &lt;v12&gt;",
+    });
+    refuse(() => renderSvgText(null as never), "NOT_OBJECT", "text");
+    refuse(() => renderSvgText({ ...baseText, x: Number.NaN }), "BAD_NUMBER", "text.x");
+    refuse(() => renderSvgText({ ...baseText, y: "1" as never }), "BAD_NUMBER", "text.y");
+    refuse(() => renderSvgText({ ...baseText, text: "" }), "EMPTY_STRING", "text.text");
+    refuse(() => renderSvgText({ ...baseText, fontSize: 0 }), "NON_POSITIVE", "text.fontSize");
+    refuse(() => renderSvgText({ ...baseText, fontSize: null as never }), "BAD_NUMBER", "text.fontSize");
+    refuse(() => renderSvgText({ ...baseText, fontSize: "unknown" as never }), "BAD_NUMBER", "text.fontSize");
+    refuse(() => renderSvgText({ ...baseText, fill: "" }), "EMPTY_STRING", "text.fill");
+    refuse(() => renderSvgText({ ...baseText, fill: null as never }), "EMPTY_STRING", "text.fill");
+    refuse(() => renderSvgText({ ...baseText, anchor: null as never }), "BAD_ENUM", "text.anchor");
+    refuse(() => renderSvgText({ ...baseText, anchor: "unknown" as never }), "BAD_ENUM", "text.anchor");
+    refuse(() => renderSvgText({ ...baseText, highlighted: null as never }), "WRONG_TYPE", "text.highlighted");
+    refuse(() => renderSvgText({ ...baseText, highlighted: "unknown" as never }), "WRONG_TYPE", "text.highlighted");
   });
 });

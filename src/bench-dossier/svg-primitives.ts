@@ -9,6 +9,7 @@ export * from "./svg-tokens.js";
 export * from "./svg-registry.js";
 
 const SHAPE_SET = new Set<string>(GLYPH_SHAPES);
+const ANCHOR_SET = new Set<string>(["start", "middle", "end"]);
 const POLY: Readonly<Partial<Record<GlyphShape, readonly [number, number, number?]>>> =
   { triangle: [3, 0.58], diamond: [4, 0.58], pentagon: [5, 0.55], star: [10, 0.75, 0.45 * 0.75] };
 export interface GlyphRenderOptions {
@@ -107,4 +108,27 @@ export function renderChartSvg(opts: ChartSvgOptions): string {
     + ` height="${height}" role="img" aria-labelledby="${titleId}" aria-describedby="${descId}"`
     + ` font-family="${SVG_FONT_FAMILY}"><title id="${titleId}">${title}</title>`
     + `<desc id="${descId}">${desc}</desc><style>${SVG_THEME_CSS}</style>${backgroundRect}${opts.body}</svg>`;
+}
+
+export interface SvgTextOptions {
+  readonly x: number;
+  readonly y: number;
+  readonly text: string;
+  readonly fontSize?: number;
+  readonly fill?: string;
+  readonly anchor?: "start" | "middle" | "end";
+  readonly highlighted?: boolean;
+}
+/** Render a DS-token <text> label with font-weight 700 when highlighted. */
+export function renderSvgText(opts: SvgTextOptions): string {
+  requirePlainObj(opts, "text");
+  const posX = fmtSvgNum(requireFiniteNum(opts.x, "text.x"));
+  const posY = fmtSvgNum(requireFiniteNum(opts.y, "text.y"));
+  const content = escapeXml(requireNonEmptyText(opts.text, "text.text"));
+  const fontSize = fmtSvgNum(requirePositiveNum(opts.fontSize === undefined ? 11 : opts.fontSize, "text.fontSize"));
+  const fill = escapeXml(opts.fill === undefined ? DS_VARS.textPrimary : requireNonEmptyText(opts.fill, "text.fill"));
+  const anchor = requireEnum(opts.anchor === undefined ? "start" : opts.anchor, ANCHOR_SET, "text.anchor");
+  const highlighted = requireBool(opts.highlighted === undefined ? false : opts.highlighted, "text.highlighted");
+  return `<text x="${posX}" y="${posY}" font-size="${fontSize}" font-weight="${highlighted ? "700" : "400"}"`
+    + ` text-anchor="${anchor}" fill="${fill}">${content}</text>`;
 }
