@@ -1095,4 +1095,66 @@ describe("BD-3 metrics.json to BenchResultsFile lossless importer", () => {
         "BAD_INTERVAL", BenchInvariantError) as BenchInvariantError;
       expect(mv1NoSpecErr.invariant).toBe("POOLED_WILSON_FORBIDDEN");
     });
+
+  it("refuses single-defect top-level, schema, map-key, fieldLabels, supportFloors & missionSpecs violations",
+    () => {
+      const armCostOf = (d: any) => ({
+        calls: d.metrics.records[0].calls, callsPerItem: 45 / 1705, tokens: cloneJson(d.metrics.records[0].tokens),
+        cost: { currency: "CAD", costBasisItems: 1705, costUnknownReason: null, apiEquivalentTotal: 1.45,
+          apiEquivalentPerItem: 1.45 / 1705, tariffStatus: "primary", tariffSource: "s", tariffAsOf: "2026-11-22",
+          fxApplied: null, seatStatus: "unknown", seatMethod: "unknown", seatUnknownReason: "missing-observation",
+          seatSharePerItem: "unknown", seatCostPerItem: "unknown", seatPlan: null, seatMonthlyPrice: null,
+          seatLimitScale: null, seatPlanSource: null, seatPlanAsOf: null },
+      });
+      for (const bad of [null, [], new Date()]) refuse(() => mapMetricsImportToBenchResults(bad as any), "NOT_OBJECT");
+      const badProto = Object.defineProperty({}, "__proto__", { value: makeImportFixture().arms["arm-a"],
+        enumerable: true });
+      const cases: [(d: any) => void, string][] = [
+        [(d) => { d.extra = 1; }, "UNKNOWN_KEY"],
+        [(d) => { delete d.metrics; }, "MISSING_KEY"],
+        [(d) => { delete d.arms; }, "MISSING_KEY"],
+        [(d) => { d.metrics.schemaId = "bad"; }, "BAD_SCHEMA"],
+        [(d) => { d.arms["arm-a"].schemaId = "bad"; }, "BAD_SCHEMA"],
+        [(d) => { d.arms[""] = cloneJson(d.arms["arm-a"]); }, "BAD_MAP_KEY"],
+        [(d) => { d.arms = badProto; }, "BAD_MAP_KEY"],
+        [(d) => { d.arms["arm-a"].armId = "arm-b"; }, "ARM_ID_MISMATCH"],
+        [(d) => { delete d.arms["arm-a"]; }, "MISSING_ARM"],
+        [(d) => { d.armCosts = { ghost: armCostOf(d) }; }, "MISSING_ARM"],
+        [(d) => { d.generatedAt = ""; }, "EMPTY_STRING"],
+        [(d) => { d.generatedAt = 123; }, "WRONG_TYPE"],
+        [(d) => { d.generatedAt = null; }, "WRONG_TYPE"],
+        [(d) => { d.currency = "EUR"; }, "BAD_ENUM"],
+        [(d) => { d.currency = "USD"; }, "CURRENCY_MISMATCH"],
+        [(d) => { d.currency = null; }, "WRONG_TYPE"],
+        [(d) => { d.costBasisLabel = "bad"; }, "BAD_ENUM"],
+        [(d) => { d.costBasisLabel = null; }, "WRONG_TYPE"],
+        [(d) => { d.costBasisLabel = "supplied_id"; }, "COST_BASIS_CONFLICT"],
+        [(d) => { d.maxValuesChanged = "no"; }, "WRONG_TYPE"],
+        [(d) => { d.maxValuesChanged = null; }, "WRONG_TYPE"],
+        [(d) => { d.captureSuppliedIds = -1; }, "BAD_COUNT"],
+        [(d) => { d.captureSuppliedIds = null; }, "WRONG_TYPE"],
+        [(d) => { d.captureAttemptedIds = 1.5; }, "BAD_COUNT"],
+        [(d) => { d.captureAttemptedIds = null; }, "WRONG_TYPE"],
+        [(d) => { d.captureOkIds = -1; }, "BAD_COUNT"],
+        [(d) => { d.captureOkIds = null; }, "WRONG_TYPE"],
+        [(d) => { d.fieldLabels = []; }, "NOT_OBJECT"],
+        [(d) => { d.fieldLabels = null; }, "NOT_OBJECT"],
+        [(d) => { d.fieldLabels["office.city"] = { en: "x" }; }, "MISSING_KEY"],
+        [(d) => { d.fieldLabels["office.city"].en = " "; }, "EMPTY_STRING"],
+        [(d) => { d.fieldLabels["office.city"].fr = " "; }, "EMPTY_STRING"],
+        [(d) => { d.supportFloors = { extra: 1 }; }, "UNKNOWN_KEY"],
+        [(d) => { d.supportFloors = null; }, "NOT_OBJECT"],
+        [(d) => { d.supportFloors = { recallMinPositives: -1 }; }, "BAD_COUNT"],
+        [(d) => { d.supportFloors = { precisionMinPredictions: 1.5 }; }, "BAD_COUNT"],
+        [(d) => { d.supportFloors = { failureCeiling: 1.1 }; }, "UNIT_RANGE"],
+        [(d) => { d.missionSpecs = "bad"; }, "NOT_ARRAY"],
+        [(d) => { d.missionSpecs = null; }, "NOT_ARRAY"],
+        [(d) => { d.missionSpecs = [null]; }, "NOT_OBJECT"],
+      ];
+      for (const [mutate, code] of cases) {
+        const fx = cloneJson(makeImportFixture());
+        mutate(fx);
+        refuse(() => mapMetricsImportToBenchResults(fx as any), code);
+      }
+    });
 });
