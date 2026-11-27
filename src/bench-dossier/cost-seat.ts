@@ -1,8 +1,8 @@
 import { validPriceTable, type NormalizedPriceTable } from "../scrap/extract.js";
 import * as guards from "./results-guards.js";
-import { BenchCostSeatError, type CostSeatErrorCode } from "./cost-seat-parse.js";
+import { BenchCostSeatError } from "./cost-seat-parse.js";
 
-export { BenchCostSeatError, type CostSeatErrorCode };
+export * from "./cost-seat-parse.js";
 
 /** Parse raw results.ndjson text into validated plain row objects. */
 export function parseResultsNdjson(raw: string): Record<string, unknown>[] {

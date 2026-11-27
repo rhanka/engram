@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  BenchCostSeatError, parseResultsNdjson, parseValidatedPriceTable,
+  BenchCostSeatError, parseResultsNdjson, parseValidatedPriceTable, summarizeInvocationUsage,
 } from "../src/bench-dossier/cost-seat.js";
 
 type CodedError = Error & { code?: string; path?: string };
@@ -70,5 +70,40 @@ describe("BD-4 tree-01: NDJSON parser, BenchCostSeatError, and price_table norma
     expect([directError.name, directError.message, directError.cause]).toEqual([
       "BenchCostSeatError", "BAD_SHAPE at $.direct", undefined,
     ]);
+  });
+});
+
+describe("BD-4 tree-02: summarizeInvocationUsage 1,705-ID census and trimmed digests", () => {
+  it("computes 1,705-ID census costBasisItems, sums multi-invocation summaries, and trims digests", () => {
+    const itemRows: Record<string, unknown>[] = Array.from({ length: 1705 }, (_, index) => ({ id: `s-${index + 1}` }));
+    const allRows: Record<string, unknown>[] = [
+      ...itemRows,
+      {
+        type: "summary", mission_digest: "  d1  ", ok: 1700, failed: 5, calls_total: 1705,
+        tokens: { input: 500_000, output: 100_000, reasoning: 50_000, cached: 1200, total: 650_000 },
+        cost: { currency: "USD", api_equivalent: 1.5 },
+      },
+      ...itemRows.slice(0, 5),
+      {
+        type: "summary", mission_digest: "d2", ok: 5, failed: 0, calls_total: 7,
+        tokens: { input: 10_000, output: 2_000, reasoning: 1_000, cached: 300, total: 13_000 },
+        cost: { currency: "USD", api_equivalent: 0.05 },
+      },
+    ];
+    // 1712 / 1705 = 1.004105571847507331... (IEEE-754: 1.0041055718475074).
+    expect(summarizeInvocationUsage(allRows)).toEqual({
+      nonSummaryRows: 1710,
+      summaryRows: 2,
+      summaryItemCount: 1710,
+      interrupted: false,
+      costBasisItems: 1705,
+      calls: 1712,
+      callsPerItem: 1.0041055718475074,
+      tokens: { input: 510_000, output: 102_000, reasoning: 51_000, cached: 1500, total: 663_000 },
+      summaryApiTotal: 1.55,
+      summaryCurrencies: ["USD"],
+      missionDigests: ["d1", "d2"],
+      hasMissingDigest: false,
+    });
   });
 });
