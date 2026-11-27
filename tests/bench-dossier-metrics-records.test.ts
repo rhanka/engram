@@ -1274,4 +1274,44 @@ describe("BD-3 metrics.json to BenchResultsFile lossless importer", () => {
       "BAD_SHAPE", BenchInvariantError) as BenchInvariantError;
     expect(estErr.invariant).toBe("ESTIMATOR_PAIRING");
   });
+
+  it("refuses single-record armCost conflicts across calls, basis, apiTotal & all 5 eqTok clauses", () => {
+    const base1 = cloneJson(makeImportFixture()) as any;
+    base1.metrics.records = [base1.metrics.records[0]];
+    const acBase = {
+      calls: base1.metrics.records[0].calls, callsPerItem: 45 / 1705,
+      tokens: cloneJson(base1.metrics.records[0].tokens),
+      cost: { currency: "CAD", costBasisItems: 1705, costUnknownReason: null, apiEquivalentTotal: 1.45,
+        apiEquivalentPerItem: 1.45 / 1705, tariffStatus: "primary", tariffSource: "s", tariffAsOf: "2026-11-22",
+        fxApplied: null, seatStatus: "unknown", seatMethod: "unknown", seatUnknownReason: "missing-observation",
+        seatSharePerItem: "unknown", seatCostPerItem: "unknown", seatPlan: null, seatMonthlyPrice: null,
+        seatLimitScale: null, seatPlanSource: null, seatPlanAsOf: null },
+    };
+    for (const mutate of [
+      (c: any) => { c.calls = 44; },
+      (c: any) => { c.cost.costBasisItems = 100; },
+      (c: any) => { c.cost.apiEquivalentTotal = 9; },
+      (c: any) => { c.tokens.input = 999; },
+      (c: any) => { c.tokens.output = 999; },
+      (c: any) => { c.tokens.reasoning = 999; },
+      (c: any) => { c.tokens.cached = 999; },
+      (c: any) => { c.tokens.total = 999; },
+      (c: any) => { c.tokens = "unknown"; },
+    ]) {
+      const fx = cloneJson(base1);
+      const ac = cloneJson(acBase);
+      mutate(ac);
+      fx.armCosts = { "arm-a": ac };
+      refuse(() => mapMetricsImportToBenchResults(fx), "COST_CONFLICT");
+    }
+    const tokRecUnknown = cloneJson(base1);
+    tokRecUnknown.metrics.records[0].tokens = "unknown";
+    tokRecUnknown.armCosts = { "arm-a": cloneJson(acBase) };
+    refuse(() => mapMetricsImportToBenchResults(tokRecUnknown), "COST_CONFLICT");
+
+    const callsRecUnknown = cloneJson(base1);
+    callsRecUnknown.metrics.records[0].calls = "unknown";
+    callsRecUnknown.armCosts = { "arm-a": cloneJson(acBase) };
+    refuse(() => mapMetricsImportToBenchResults(callsRecUnknown), "COST_CONFLICT");
+  });
 });
