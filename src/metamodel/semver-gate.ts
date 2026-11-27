@@ -1,23 +1,32 @@
 import { toJsonValue, type JsonValue } from "../json-value.js";
+import type { LineageId, Sha256Digest } from "../metamodel-contracts.js";
 import { canonicalBytes } from "../ontology-guardian/canonical.js";
+import { semanticProfileDigest } from "../ontology-guardian/digests.js";
 import type { MappingFile } from "../ontology-guardian/types.js";
+import { deepFreeze } from "../ontology-profile.js";
 import { isRecord } from "../profile-validate.js";
 import type { MetamodelDiagnostic, MetamodelDiagnosticCode } from "./diagnostics.js";
 import type {
   DeclaredBreakingRename,
   MetamodelTemplateDocument,
+  MetamodelValidationContext,
   RegisteredTemplateRecord,
 } from "./types.js";
 import {
   addError,
   compareSemVer,
+  computePresentationDigest,
   isNonEmptyString,
   isStringArray,
+  isValidPinShape,
   parseSemVer,
+  type ParsedSemVer,
   type ValidationSink,
 } from "./validate-common.js";
 import { parseAndProjectInput, validateIdentity } from "./validate-syntax.js";
 import { diffMetamodelDocuments, isMappingFileCoveringRenames, validateVersionProgression, type SemanticDiffSummary } from "./validate-versioning.js";
+
+export type SemVerChangeClass = "initial" | "idempotent" | "patch" | "minor" | "major";
 
 export interface SemVerDiffReport extends SemanticDiffSummary {
   readonly docOnly: readonly string[];
@@ -32,6 +41,24 @@ export interface V1CompatibilityDelta {
   readonly before: unknown;
   readonly after: unknown;
 }
+
+export type SemVerGateResult =
+  | {
+      readonly status: "accepted";
+      readonly template: MetamodelTemplateDocument;
+      readonly templateDigestSha256: Sha256Digest;
+      readonly presentationDigest: Sha256Digest;
+      readonly changeClass: SemVerChangeClass;
+      readonly diff: SemVerDiffReport | null;
+      readonly diagnostics: readonly MetamodelDiagnostic[];
+      readonly warnings: readonly MetamodelDiagnostic[];
+    }
+  | {
+      readonly status: "refused-metamodel-invalid";
+      readonly diff: SemVerDiffReport | null;
+      readonly diagnostics: readonly MetamodelDiagnostic[];
+      readonly warnings: readonly MetamodelDiagnostic[];
+    };
 
 /** Explicit total order of transition authorities from least restrictive (0) to most restrictive (5) (m-4 / Ruling d). */
 export const AUTHORITY_ORDER = [
@@ -97,6 +124,7 @@ const TRACK_HEAD_KEYS = new Set(["relative_path_template", "format"]);
 const TRACK_OTI_KEYS = new Set(["required_folded_collections", "required_event_stream_lookbacks", "options_fields", "confidentiality_policy_contract"]);
 const TRACK_SIDECAR_KEYS = new Set(["relative_path_template", "schema", "hash_algorithm"]);
 const H2A_PROJ_KEYS = new Set(["kind", "include_node_types", "projected_fields", "root_dir", "relative_path_template", "relative_path_templates", "precedence", "format", "order_by"]);
+const NON_DIFF_VERSION_ERRORS = new Set(["MM_VERSION_NOT_EXACT_SEMVER", "MM_VERSION_IMMUTABLE_CONFLICT", "MM_VERSION_PARENT_PIN_MISSING_OR_MISMATCH", "MM_VERSION_REGRESSION"]);
 const PB_ROOT_KEYS = new Set(["id", "version", "metamodel_version", "default_language", "citation_policy", "evidence_policy", "inference_policy", "hierarchies", "class_hierarchies", "outputs", "registries", "presentation", "presentation_hash", "profile_hash", "sourcePath", "parent_pin", "mapping_pin"]);
 const PB_NODE_KEYS = new Set(["aliases", "registry", "source_backed", "status_policy", "linking", "visual_encoding", "properties", "id_prefix", "definition"]);
 const PB_REL_KEYS = new Set(["source", "target", "source_types", "target_types", "requires_evidence", "assertion_basis", "derivation_method", "derivation_methods", "description", "cardinality"]);
@@ -1604,4 +1632,171 @@ export interface V1CompatibilityOutcome {
 export function classifyV1Compatibility(oldDoc: unknown, newDoc: unknown): V1CompatibilityOutcome {
   const { refusals, classified } = classifyPair(oldDoc, newDoc);
   return { refusals, deltas: classified?.deltas ?? [] };
+}
+
+type GateProgression =
+  | { readonly kind: "idempotent"; readonly registered: ProjectedDocument | null }
+  | { readonly kind: "initial" }
+  | { readonly kind: "upgrade"; readonly comparison: GateComparison | null };
+
+/** The pinned parent of an upgrade, once the version checks allow comparing it; `document` is `null` for a digest-only record. */
+interface GateComparison {
+  readonly parentVersion: string;
+  readonly parentSemVer: ParsedSemVer;
+  readonly candidateSemVer: ParsedSemVer;
+  readonly document: ProjectedDocument | null;
+}
+
+/** Everything `evaluateSemVerGate` works on past its entry: no raw document, no raw context. */
+interface GateInputs {
+  readonly candidate: ProjectedDocument;
+  readonly lineage: LineageId | null;
+  readonly id: string | null;
+  readonly version: string | null;
+  readonly templateDigestSha256: Sha256Digest;
+  readonly presentationDigest: Sha256Digest;
+  /** Identity and Lot 0.2 version-progression diagnostics, in emission order. */
+  readonly diagnostics: readonly MetamodelDiagnostic[];
+  readonly progression: GateProgression;
+  readonly declaredRenames: readonly DeclaredBreakingRename[];
+  readonly mappingFile: MappingFile | undefined;
+}
+
+type GateEntry =
+  | { readonly ok: false; readonly diagnostics: readonly MetamodelDiagnostic[] }
+  | { readonly ok: true; readonly inputs: GateInputs };
+
+/**
+ * Entry of `evaluateSemVerGate`. Projects the candidate, admits the context, lets Lot 0.2 judge the version
+ * progression on record envelopes only (no document reaches it), then projects the one registered document the
+ * candidate designates: its pinned parent, or its already-registered twin.
+ */
+function enterSemVerGate(rawInput: unknown, context: MetamodelValidationContext | undefined): GateEntry {
+  const sink: ValidationSink = { diagnostics: [], lineage: null, subject: "template" };
+  const projected = projectDocument(rawInput, sink);
+  if (projected === null) return { ok: false, diagnostics: sink.diagnostics };
+  const { lineage, id, version } = validateIdentity(projected, sink);
+  const refusals: ValidationSink = { diagnostics: [], lineage, subject: id ?? "template" };
+  const admitted = admitContext(context, refusals);
+  if (admitted === null) return { ok: false, diagnostics: [...sink.diagnostics, ...refusals.diagnostics] };
+
+  const templateDigestSha256 = semanticProfileDigest(projected);
+  const presentationDigest = computePresentationDigest(projected);
+  const base: ValidationSink = { diagnostics: [], lineage, subject: id ?? "template" };
+  const envelopes = { registry: admitted.registry, declaredRenames: admitted.declaredRenames, mappingFile: admitted.mappingFile };
+  validateVersionProgression(projected, lineage, id, version, templateDigestSha256, presentationDigest, envelopes, base);
+
+  const registered = (index: number): ProjectedDocument | null => admitDocument(admitted.documents[index], refusals, "parent");
+  const stream = lineage === null || id === null ? [] : [...(admitted.registry ?? []).entries()].filter(([, record]) => record.lineage === lineage && record.templateId === id);
+  const twin = version === null ? undefined : stream.find(([, record]) => record.templateVersion === version);
+  let progression: GateProgression;
+  if (twin !== undefined) {
+    sink.diagnostics.push(...base.diagnostics);
+    const readsDocument = twin[1].presentationDigest === undefined && admitted.documents[twin[0]] !== undefined;
+    progression = { kind: "idempotent", registered: readsDocument ? registered(twin[0]) : null };
+  } else if (stream.length === 0) {
+    sink.diagnostics.push(...base.diagnostics);
+    progression = { kind: "initial" };
+  } else {
+    // Lot 0.2 states a malformed parent_pin twice (the pin, then the parent it fails to name): one refusal per site.
+    const sameSite = (a: MetamodelDiagnostic, b: MetamodelDiagnostic): boolean => a.code === b.code && a.path === b.path;
+    const blocking = base.diagnostics.filter((d, index, all) => NON_DIFF_VERSION_ERRORS.has(d.code) && all.findIndex((other) => sameSite(other, d)) === index);
+    sink.diagnostics.push(...blocking);
+    if (projected.mapping_pin !== undefined && !isValidPinShape(projected.mapping_pin, "mapping_pin")) {
+      addError(sink, "MM_VERSION_UNMAPPED_BREAKING_RENAME", "mapping_pin", "mapping_pin must be a valid Pin { id, version, contentDigest }");
+    }
+    const pin = isRecord(projected.parent_pin) ? projected.parent_pin : null;
+    const parent = pin === null ? undefined : stream.find(([, record]) => record.templateId === pin.id && record.templateVersion === pin.version);
+    const candidateSemVer = version === null ? null : parseSemVer(version);
+    const parentSemVer = parent === undefined ? null : parseSemVer(parent[1].templateVersion);
+    if (blocking.length === 0 && parent !== undefined && parentSemVer === null) {
+      // Lot 0.2 is silent on a pinned parent it cannot order: without a refusal the upgrade would pass uncompared.
+      addError(sink, "MM_VERSION_PARENT_PIN_MISSING_OR_MISMATCH", "parent_pin", `parent_pin names registered version ${parent[1].templateVersion}, which is not exact SemVer`);
+    }
+    const comparison = blocking.length > 0 || parent === undefined || candidateSemVer === null || parentSemVer === null ? null : {
+      parentVersion: parent[1].templateVersion,
+      parentSemVer,
+      candidateSemVer,
+      document: admitted.documents[parent[0]] === undefined ? null : registered(parent[0]),
+    };
+    progression = { kind: "upgrade", comparison };
+  }
+  const candidate = checkDocument(projected, refusals);
+  if (candidate === null || refusals.diagnostics.length > 0) {
+    const reported = new Set(sink.diagnostics.map((d) => `${d.code}\0${d.path}`));
+    return { ok: false, diagnostics: [...sink.diagnostics, ...refusals.diagnostics.filter((d) => !reported.has(`${d.code}\0${d.path}`))] };
+  }
+  const inputs: GateInputs = {
+    candidate, lineage, id, version, templateDigestSha256, presentationDigest, progression,
+    diagnostics: sink.diagnostics,
+    declaredRenames: admitted.declaredRenames ?? [],
+    mappingFile: admitted.mappingFile,
+  };
+  return { ok: true, inputs };
+}
+
+function refusedGate(diagnostics: readonly MetamodelDiagnostic[], diff: SemVerDiffReport | null): SemVerGateResult {
+  const warnings = diagnostics.filter((d) => d.severity === "warning");
+  return Object.freeze({ status: "refused-metamodel-invalid" as const, diff, diagnostics: Object.freeze([...diagnostics]), warnings: Object.freeze(warnings) });
+}
+
+/** The SemVer verdict over admitted inputs: classification of the pair, bump rule, rename coverage. */
+function decideSemVerGate(inputs: GateInputs): SemVerGateResult {
+  const { candidate, progression, lineage, id, version } = inputs;
+  const sink: ValidationSink = { diagnostics: [...inputs.diagnostics], lineage, subject: id ?? "template" };
+  const requireMapping = (renames: readonly DeclaredBreakingRename[]): void => {
+    if (renames.length === 0 || sink.diagnostics.some((d) => d.code === "MM_VERSION_UNMAPPED_BREAKING_RENAME")) return;
+    if (inputs.mappingFile !== undefined && isMappingFileCoveringRenames(candidate.mapping_pin, inputs.mappingFile, renames)) return;
+    addError(sink, "MM_VERSION_UNMAPPED_BREAKING_RENAME", "mapping_pin", "Breaking rename requires a valid pinned MappingFile covering every renamed subject");
+  };
+  let diff: SemVerDiffReport | null = null;
+  let changeClass: SemVerChangeClass = "initial";
+
+  if (progression.kind === "idempotent") {
+    changeClass = "idempotent";
+    const registered = progression.registered;
+    if (registered !== null && computePresentationDigest(registered) !== inputs.presentationDigest && !sink.diagnostics.some((d) => d.code === "MM_VERSION_IMMUTABLE_CONFLICT")) {
+      addError(sink, "MM_VERSION_IMMUTABLE_CONFLICT", "version", `Version ${lineage}:${id}@${version} is already registered with a different presentation digest`);
+    }
+  } else if (progression.kind === "initial") {
+    requireMapping(inputs.declaredRenames);
+  } else if (progression.comparison !== null) {
+    const { candidateSemVer, parentSemVer, parentVersion, document } = progression.comparison;
+    changeClass = candidateSemVer.major > parentSemVer.major ? "major" : candidateSemVer.minor > parentSemVer.minor ? "minor" : "patch";
+    if (document !== null) {
+      diff = classifyProjectedDocuments(document, candidate).report;
+      if (diff.breaking.length > 0 && candidateSemVer.major === parentSemVer.major) {
+        addError(sink, "MM_VERSION_MAJOR_REQUIRED_FOR_BREAKING", "version", `Breaking changes (${diff.breaking.join(", ")}) require a MAJOR SemVer increment over ${parentVersion}`);
+      } else if (diff.breaking.length === 0 && diff.additive.length > 0 && candidateSemVer.major === parentSemVer.major && candidateSemVer.minor === parentSemVer.minor) {
+        addError(sink, "MM_VERSION_MINOR_REQUIRED_FOR_ADDITIVE", "version", `Additive changes (${diff.additive.join(", ")}) require at least a MINOR SemVer increment over ${parentVersion}`);
+      }
+      requireMapping([...diff.detectedRenames, ...inputs.declaredRenames]);
+    } else {
+      // A digest-only parent cannot be compared: the renames the caller declares still need their mapping.
+      requireMapping(inputs.declaredRenames);
+    }
+  }
+
+  if (sink.diagnostics.some((d) => d.severity === "error")) return refusedGate(sink.diagnostics, diff);
+  return Object.freeze({
+    status: "accepted" as const,
+    template: deepFreeze(structuredClone(candidate)) as unknown as MetamodelTemplateDocument,
+    templateDigestSha256: inputs.templateDigestSha256,
+    presentationDigest: inputs.presentationDigest,
+    changeClass,
+    diff,
+    diagnostics: Object.freeze([...sink.diagnostics]),
+    warnings: Object.freeze(sink.diagnostics.filter((d) => d.severity === "warning")),
+  });
+}
+
+/**
+ * Pure Lot 0.3 SemVer progression gate (Spec 0 §2.3, §3.2, §6 Lot 0.3).
+ * Reuses Lot 0.2 `validateVersionProgression`, `diffMetamodelDocuments`, and `isMappingFileCoveringRenames`.
+ */
+export function evaluateSemVerGate(rawInput: unknown, context?: MetamodelValidationContext): SemVerGateResult {
+  return unfailing(() => {
+    const entered = enterSemVerGate(rawInput, context);
+    return entered.ok ? decideSemVerGate(entered.inputs) : refusedGate(entered.diagnostics, null);
+  }, (failure) => refusedGate([failure], null));
 }
