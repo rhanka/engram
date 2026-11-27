@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
-  BenchInvariantError, compatibleMissionFieldShape, validateProseName, wilson95,
+  BenchInvariantError, compatibleMissionFieldShape, validateBenchResultsInvariants, validateProseName, wilson95,
   type BenchInvariantCode,
 } from "../src/bench-dossier/invariants.js";
 import {
   BenchResultsValidationError, type BenchResultsErrorCode,
 } from "../src/bench-dossier/results-guards.js";
+import type { BenchResultRecord, BenchResultsFile } from "../src/bench-dossier/results-types.js";
 import type { Mission } from "../src/scrap/extract.js";
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
@@ -227,5 +228,102 @@ describe("validateProseName gates", () => {
     ]) {
       refuse(() => validateProseName(bad, "$.p"), "PROSE_NAME_GATE", "$.p");
     }
+  });
+});
+
+const WILSON_6_OF_12 = {
+  estimator: "unweighted", method: "wilson_95_unweighted", clustering: "independent_site", valid: true,
+  low: 0.2537815976337061, high: 0.7462184023662939,
+} as const;
+
+const WILSON_6_OF_8 = {
+  estimator: "unweighted", method: "wilson_95_unweighted", clustering: "independent_site", valid: true,
+  low: 0.40927543031016883, high: 0.9285207872478909,
+} as const;
+
+function makeScalarRecord(overrides: Partial<BenchResultRecord> = {}): BenchResultRecord {
+  return {
+    armId: "arm-astra-low", armMissionSha256: "a".repeat(64), missingDigestAllowed: false,
+    provider: "OpenAI", model: "gpt-6-astra-low", modelLabel: "Astra low", proseName: "OpenAI Astra low",
+    effort: "low", isCascade: false, isHighlighted: true, incomplete: false,
+    field: "headline", comparator: "generic", isPrimaryComparator: true,
+    attempted: 20, accepted: 18, failed: 2, failuresByCode: { llm_error: 2 },
+    unverifiedQuotesNulled: 1, unverifiedWholeRecordsDropped: null, goldPositive: 8, goldAbsent: 10,
+    tp: 6, fp: 6, fpOnPresent: 4, fpOnAbsent: 2, fpElementsOnAbsent: 2, fn: 2, tn: 6,
+    failedOnAbsent: 2, unresolved: 1, insufficient: 1, abstentionSpecificity: 0.75,
+    sitePresence: {
+      goldPresentSites: 8, goldAbsentSites: 10, unresolvedSites: 1, insufficientSites: 1,
+      tpSites: 6, fnSites: 2, wrongValueOnPresentSites: 1, fpOnAbsentSites: 2, tnSites: 6, failedOnAbsentSites: 2,
+      siteRecall: 0.75, siteRecallInterval: { ...WILSON_6_OF_8 },
+      siteAbstentionSpecificity: 0.75, siteAbstentionInterval: { ...WILSON_6_OF_8 },
+    },
+    unweighted: {
+      precision: 0.5, recall: 0.75, f1: 0.6,
+      precisionInterval: { ...WILSON_6_OF_12 }, recallInterval: { ...WILSON_6_OF_8 },
+    },
+    weighted: null, precision: 0.5, recall: 0.75, f1: 0.6,
+    precisionInterval: { ...WILSON_6_OF_12 }, recallInterval: { ...WILSON_6_OF_8 },
+    indeterminate: { precision: true, recall: true, f1: true },
+    calls: 25, callsPerItem: 0.25,
+    tokens: { input: 5000, output: 900, reasoning: 100, cached: "unknown", total: 6000 },
+    cost: {
+      currency: "CAD", costBasisItems: 100, costUnknownReason: null,
+      apiEquivalentTotal: 0.25, apiEquivalentPerItem: 0.0025,
+      tariffStatus: "primary", tariffSource: "openai", tariffAsOf: "2026-11-20", fxApplied: null,
+      seatStatus: "measured", seatMethod: "weekly_burn_delta", seatUnknownReason: null,
+      seatSharePerItem: 0.002, seatCostPerItem: 0.04, seatPlan: "Pro", seatMonthlyPrice: 280,
+      seatLimitScale: 1, seatPlanSource: "invoice", seatPlanAsOf: "2026-11-20",
+    },
+    ...overrides,
+  };
+}
+
+function makeResultsFile(records: BenchResultRecord[] = [makeScalarRecord()]): BenchResultsFile {
+  return {
+    schemaId: "urn:engram:bench-results:1.0.0", schemaVersion: 1,
+    generatedAt: "2026-11-25T10:00:00Z", campaignId: "lotb-eval",
+    corpus: {
+      partition: "eval", primaryEstimator: "unweighted", costBasisLabel: "extracted_packet", currency: "CAD",
+      goldenMissionSha256: "b".repeat(64), candidateMissionSha256: "c".repeat(64), fieldShapeVerified: true,
+      goldenSha256: "d".repeat(64), goldenIds: 20, fields: ["headline"], annotatorCount: 3,
+      krippendorffAlphaByField: { headline: 0.8 },
+    },
+    supportFloors: { recallMinPositives: 30, precisionMinPredictions: 30, failureCeiling: 0.05 },
+    records,
+  };
+}
+
+describe("record uniqueness, primary comparator and proseName coherence", () => {
+  it("validates empty records, secondary comparators, multi-field and multi-arm records", () => {
+    const secondField = makeScalarRecord({ field: "province", comparator: "generic" });
+    const secondaryComparator = makeScalarRecord({ comparator: "alt", isPrimaryComparator: false });
+    const secondArm = makeScalarRecord({ armId: "arm-astra-med", proseName: "OpenAI Astra med" });
+    const file = makeResultsFile([makeScalarRecord(), secondaryComparator, secondField, secondArm]);
+    expect(validateBenchResultsInvariants(file).records).toHaveLength(4);
+    expect(validateBenchResultsInvariants(makeResultsFile([])).records).toEqual([]);
+  });
+
+  it("refuses duplicate keys, primary comparator mismatches and proseName arm collisions", () => {
+    refuse(
+      () => validateBenchResultsInvariants(makeResultsFile([makeScalarRecord(), makeScalarRecord()])),
+      "DUPLICATE_RECORD_KEY",
+      "$.records[1]",
+    );
+    refuse(() => validateBenchResultsInvariants(makeResultsFile([
+      makeScalarRecord(), makeScalarRecord({ comparator: "alt", isPrimaryComparator: true }),
+    ])), "PRIMARY_COMPARATOR", "$.records[1].isPrimaryComparator");
+    refuse(() => validateBenchResultsInvariants(makeResultsFile([
+      makeScalarRecord({ isPrimaryComparator: false }),
+      makeScalarRecord({ comparator: "alt", isPrimaryComparator: false }),
+    ])), "PRIMARY_COMPARATOR", "$.records[0].isPrimaryComparator");
+    refuse(() => validateBenchResultsInvariants(makeResultsFile([
+      makeScalarRecord(), makeScalarRecord({ field: "province", proseName: "OpenAI Astra med" }),
+    ])), "PROSE_NAME_CONFLICT", "$.records[1].proseName");
+    refuse(() => validateBenchResultsInvariants(makeResultsFile([
+      makeScalarRecord(), makeScalarRecord({ armId: "arm-other", field: "province" }),
+    ])), "PROSE_NAME_DUPLICATE", "$.records[1].proseName");
+    refuse(() => validateBenchResultsInvariants(makeResultsFile([
+      makeScalarRecord({ proseName: "OpenAI GPT-4.1" }),
+    ])), "PROSE_NAME_GATE", "$.records[0].proseName");
   });
 });

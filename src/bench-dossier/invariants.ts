@@ -1,5 +1,6 @@
 import { specsOf, type FieldSpec, type Mission } from "../scrap/extract.js";
 import { nonEmptyString } from "./results-guards.js";
+import type { BenchResultsFile } from "./results-types.js";
 import { BenchInvariantError, failInv, wilson95, type BenchInvariantCode } from "./invariants-checks.js";
 export { BenchInvariantError, wilson95, type BenchInvariantCode };
 
@@ -57,4 +58,29 @@ export function validateProseName(proseName: string, path = "$"): void {
   if ([...(proseName.match(/\b(?!h2a\b)\S*\d\S*\b/gi) ?? [])].some((token) =>
     token.replace(/^[.,!?:;"'`]+|[.,!?:;"'`]+$/g, "").replace(/^utf-8$/i, "") !== ""))
     failInv("PROSE_NAME_GATE", path);
+}
+/** Validate cross-field, uniqueness, prose-name and record coherence invariants. */
+export function validateBenchResultsInvariants(file: BenchResultsFile): BenchResultsFile {
+  const armToProse = new Map<string, string>();
+  const proseToArm = new Map<string, string>();
+  const primaries = new Map<string, { firstIdx: number; count: number; comparators: Set<string> }>();
+  file.records.forEach((record, index) => {
+    const base = `$.records[${index}]`;
+    const pairKey = JSON.stringify([record.armId, record.field]);
+    const entry = primaries.get(pairKey) ?? { firstIdx: index, count: 0, comparators: new Set<string>() };
+    if (entry.comparators.has(record.comparator)) failInv("DUPLICATE_RECORD_KEY", base);
+    entry.comparators.add(record.comparator);
+    if (record.isPrimaryComparator && ++entry.count > 1) failInv("PRIMARY_COMPARATOR", `${base}.isPrimaryComparator`);
+    primaries.set(pairKey, entry);
+    const prose = record.proseName;
+    const prosePath = `${base}.proseName`;
+    validateProseName(prose, prosePath);
+    if ((armToProse.get(record.armId) ?? prose) !== prose) failInv("PROSE_NAME_CONFLICT", prosePath);
+    if ((proseToArm.get(prose) ?? record.armId) !== record.armId) failInv("PROSE_NAME_DUPLICATE", prosePath);
+    armToProse.set(record.armId, prose);
+    proseToArm.set(prose, record.armId);
+  });
+  for (const primary of primaries.values())
+    if (primary.count !== 1) failInv("PRIMARY_COMPARATOR", `$.records[${primary.firstIdx}].isPrimaryComparator`);
+  return file;
 }
