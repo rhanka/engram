@@ -890,4 +890,112 @@ describe("BD-3 metrics.json to BenchResultsFile lossless importer", () => {
       refuse(() => mapMetricsImportToBenchResults(badSpec), code);
     }
   });
+
+  it("asserts full literal mapped BenchResultRecord, HT weights, costs, optionalities & armCosts", () => {
+    const fx = makeImportFixture();
+    const res = mapMetricsImportToBenchResults(fx as any);
+    const wIv = { estimator: "weighted", method: "design_bootstrap_95", clustering: "group_resampled",
+      valid: true, low: 0.55, high: 0.85 };
+    const dis = { estimator: "unweighted", method: "none", clustering: "clustered_record_invalid",
+      valid: false, low: null, high: null };
+    expect(res.records[0]).toEqual({
+      armId: "arm-a", armMissionSha256: "e".repeat(64), missingDigestAllowed: true, provider: "OpenAI",
+      model: "gpt-6-astra", modelLabel: "Astra", proseName: "OpenAI Astra", effort: "low", isCascade: false,
+      isHighlighted: true, incomplete: true, field: "office.city", comparator: "lotb_ca_post_v1",
+      isPrimaryComparator: true, attempted: 43, accepted: 40, failed: 3, failuresByCode: { llm_error: 3 },
+      unverifiedQuotesNulled: 1, unverifiedWholeRecordsDropped: 0, goldPositive: 30, goldAbsent: 10, tp: 21, fp: 7,
+      fpOnPresent: 5, fpOnAbsent: 2, fpElementsOnAbsent: 2, fn: 9, tn: 8, failedOnAbsent: 0, unresolved: 1,
+      insufficient: 2, abstentionSpecificity: 0.8,
+      sitePresence: { goldPresentSites: 30, goldAbsentSites: 10, unresolvedSites: 1, insufficientSites: 2,
+        tpSites: 21, fnSites: 9, wrongValueOnPresentSites: 3, fpOnAbsentSites: 2, tnSites: 8, failedOnAbsentSites: 0,
+        siteRecall: 0.7,
+        siteRecallInterval: { estimator: "unweighted", method: "wilson_95_unweighted", clustering: "independent_site",
+          valid: true, low: 0.5212421254128504, high: 0.8333525173175619 },
+        siteAbstentionSpecificity: 0.8,
+        siteAbstentionInterval: { estimator: "unweighted", method: "wilson_95_unweighted",
+          clustering: "independent_site", valid: true, low: 0.49016247153664183, high: 0.9433178485456247 } },
+      unweighted: { precision: 0.75, recall: 0.7, f1: 42 / 58, precisionInterval: dis, recallInterval: dis },
+      weighted: { scheme: "horvitz_thompson_s1_s2_v1", deff: 1.14, nEff: 26.3, precision: 0.76, recall: 0.69,
+        f1: 0.723, precisionInterval: wIv, recallInterval: wIv, f1Interval: wIv },
+      precision: 0.76, recall: 0.69, f1: 0.723, precisionInterval: wIv, recallInterval: wIv,
+      independentGroupSupport: { predictions: 28, positives: 29 },
+      indeterminate: { precision: true, recall: true, f1: true },
+      calls: 45, callsPerItem: 45 / 1705,
+      tokens: { input: 10000, output: 1500, reasoning: 200, cached: "unknown", total: 11700 },
+      cost: { currency: "CAD", costBasisItems: 1705, costUnknownReason: null, apiEquivalentTotal: 1.45,
+        apiEquivalentPerItem: 1.45 / 1705, tariffStatus: "secondary_unverified", tariffSource: "card",
+        tariffAsOf: "2026-11-22",
+        fxApplied: { from: "USD", to: "CAD", rate: 1.385, source: "boc", asOf: "2026-11-22" },
+        seatStatus: "unknown", seatMethod: "unknown", seatUnknownReason: "shared-seat-concurrent",
+        seatSharePerItem: "unknown", seatCostPerItem: "unknown", seatPlan: null, seatMonthlyPrice: null,
+        seatLimitScale: null, seatPlanSource: null, seatPlanAsOf: null },
+      diagnostics: { broad: { tp: 22, fp: 6, fn: 8, precision: 22 / 28, recall: 22 / 30, f1: 44 / 58 },
+        conditionalRetainedRecall: 0.81 },
+    });
+    expect([res.records[1]?.cost.costUnknownReason, res.records[1]?.cost.seatUnknownReason,
+      res.records[1]?.armMissionSha256]).toEqual(["missing-usage", "shared-seat-concurrent", "e".repeat(64)]);
+    expect([res.corpus.costBasisLabel, res.corpus.goldenLabel, res.corpus.maxValuesChanged,
+      res.corpus.captureSuppliedIds, res.corpus.captureAttemptedIds, res.corpus.captureOkIds,
+      res.corpus.missingDigestRuns]).toEqual(["attempted_id", "pass1", false, 50, 48, 45, ["r1"]]);
+    expect(res.corpus.fieldLabels).toEqual({
+      "office.city": { en: "office municipality", fr: "municipalité du bureau" },
+    });
+    expect(res.corpus.annotatorRunStats).toEqual({ r1: { answered: 42, failed: 1, missing: 0 } });
+
+    const unw = cloneJson(fx) as any;
+    unw.metrics.primaryEstimator = "unweighted";
+    unw.metrics.records[1].weighted = null;
+    const unwOut = mapMetricsImportToBenchResults(unw);
+    expect([unwOut.records[0]?.precision, unwOut.records[0]?.recall, unwOut.records[0]?.weighted?.precision,
+      unwOut.records[1]?.weighted]).toEqual([0.75, 0.7, 0.76, null]);
+    expect(unwOut.records[0]?.precisionInterval).toEqual(dis);
+    expect(unwOut.records[0]?.recallInterval).toEqual(dis);
+
+    const noGen = cloneJson(fx) as any;
+    delete noGen.generatedAt;
+    expect(mapMetricsImportToBenchResults(noGen).generatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+
+    const noAllow = cloneJson(fx) as any;
+    delete noAllow.arms["arm-a"].allowLegacyMissingMissionDigest;
+    expect(mapMetricsImportToBenchResults(noAllow).records[0]?.missingDigestAllowed).toBe(false);
+
+    const noHigh = cloneJson(fx) as any;
+    delete noHigh.arms["arm-a"].isHighlighted;
+    expect(mapMetricsImportToBenchResults(noHigh).records[0]?.isHighlighted).toBe(false);
+
+    const noInc = cloneJson(fx) as any;
+    delete noInc.arms["arm-a"].incomplete;
+    expect(mapMetricsImportToBenchResults(noInc).records[0]?.incomplete).toBe(false);
+
+    const incFalse = cloneJson(fx) as any;
+    incFalse.arms["arm-a"].incomplete = false;
+    expect(mapMetricsImportToBenchResults(incFalse).records[0]?.incomplete).toBe(false);
+
+    const armTariffStatus = cloneJson(fx) as any;
+    delete armTariffStatus.arms["arm-a"].fx;
+    delete armTariffStatus.arms["arm-a"].tariffOverride;
+    armTariffStatus.arms["arm-a"].tariffStatus = "primary";
+    const atsOut = mapMetricsImportToBenchResults(armTariffStatus);
+    expect([atsOut.records[0]?.cost.tariffStatus, atsOut.records[0]?.cost.tariffSource,
+      atsOut.records[0]?.cost.tariffAsOf, atsOut.records[0]?.cost.fxApplied]).toEqual(["primary", null, null, null]);
+
+    const noSeat = cloneJson(fx) as any;
+    delete noSeat.arms["arm-a"].seat;
+    expect(mapMetricsImportToBenchResults(noSeat).records[0]?.cost.seatUnknownReason).toBe("missing-observation");
+
+    const noApi = cloneJson(fx) as any;
+    delete noApi.metrics.records[0].apiEquivalentTotal;
+    expect(mapMetricsImportToBenchResults(noApi).records[0]?.cost.costUnknownReason).toBe("unpriced-mission");
+
+    const noArmSha = cloneJson(fx) as any;
+    delete noArmSha.arms["arm-a"].missionSha256;
+    delete noArmSha.metrics.records[0].armMissionSha256;
+    expect(mapMetricsImportToBenchResults(noArmSha).records[0]?.armMissionSha256).toBe("d".repeat(64));
+
+    const floorCeil = cloneJson(fx) as any;
+    floorCeil.supportFloors = { precisionMinPredictions: 28, failureCeiling: 0.12 };
+    const fcOut = mapMetricsImportToBenchResults(floorCeil);
+    expect(fcOut.supportFloors).toEqual({ recallMinPositives: 31, precisionMinPredictions: 28, failureCeiling: 0.12 });
+    expect(fcOut.records[0]?.indeterminate).toEqual({ precision: false, recall: true, f1: true });
+  });
 });
