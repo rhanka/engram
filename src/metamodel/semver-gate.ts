@@ -17,6 +17,21 @@ import {
   type ValidationSink,
 } from "./validate-common.js";
 import { parseAndProjectInput, validateIdentity } from "./validate-syntax.js";
+import { diffMetamodelDocuments, isMappingFileCoveringRenames, validateVersionProgression, type SemanticDiffSummary } from "./validate-versioning.js";
+
+export interface SemVerDiffReport extends SemanticDiffSummary {
+  readonly docOnly: readonly string[];
+  readonly refusals?: readonly MetamodelDiagnostic[];
+}
+
+export interface V1CompatibilityDelta {
+  readonly kind: "breaking" | "non-breaking";
+  readonly code: string;
+  readonly path: string;
+  readonly subject: string;
+  readonly before: unknown;
+  readonly after: unknown;
+}
 
 /** Explicit total order of transition authorities from least restrictive (0) to most restrictive (5) (m-4 / Ruling d). */
 export const AUTHORITY_ORDER = [
@@ -82,6 +97,11 @@ const TRACK_HEAD_KEYS = new Set(["relative_path_template", "format"]);
 const TRACK_OTI_KEYS = new Set(["required_folded_collections", "required_event_stream_lookbacks", "options_fields", "confidentiality_policy_contract"]);
 const TRACK_SIDECAR_KEYS = new Set(["relative_path_template", "schema", "hash_algorithm"]);
 const H2A_PROJ_KEYS = new Set(["kind", "include_node_types", "projected_fields", "root_dir", "relative_path_template", "relative_path_templates", "precedence", "format", "order_by"]);
+const PB_ROOT_KEYS = new Set(["id", "version", "metamodel_version", "default_language", "citation_policy", "evidence_policy", "inference_policy", "hierarchies", "class_hierarchies", "outputs", "registries", "presentation", "presentation_hash", "profile_hash", "sourcePath", "parent_pin", "mapping_pin"]);
+const PB_NODE_KEYS = new Set(["aliases", "registry", "source_backed", "status_policy", "linking", "visual_encoding", "properties", "id_prefix", "definition"]);
+const PB_REL_KEYS = new Set(["source", "target", "source_types", "target_types", "requires_evidence", "assertion_basis", "derivation_method", "derivation_methods", "description", "cardinality"]);
+const KNOWN_ROOT_CONTAINERS = new Set(["registries", "relation_types", "composed_lineage_pins", "node_types", "domain_policies", "file_projections"]);
+const KNOWN_DP_CONTAINERS = new Set(["levels", "nesting_matrix", "stage_refinements", "acceptance_gates", "cross_cutting_axes", "legacy_role_remap", "timeboxes", "invariants"]);
 
 const rankIn = (table: Readonly<Record<string, number>>, val: unknown): number | undefined => typeof val === "string" && Object.hasOwn(table, val) ? table[val] : undefined;
 const isFiniteNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
@@ -167,6 +187,12 @@ function bare(entries: Iterable<readonly [string, unknown]>): Record<string, unk
   const out = Object.create(null) as Record<string, unknown>;
   for (const [key, value] of entries) out[key] = value;
   return out;
+}
+
+/** Copy of JSON the gate does not interpret, on null-prototype records. */
+function opaque(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(opaque);
+  return isRecord(value) ? bare(Object.entries(value).map(([key, entry]) => [key, opaque(entry)] as const)) : value;
 }
 
 const TEXT: Spec = { is: "string" };
@@ -487,6 +513,8 @@ const ROOT: Readonly<Record<RootField, Field>> = {
   domain_policies: opt(DOMAIN_POLICIES, "MM_DOMAIN_POLICY_INVALID"),
   file_projections: opt(map(FILE_PROJECTION), "MM_FILE_SHAPE_LINEAGE_FORBIDDEN"),
 };
+/** The closed schema of a template document, root first. */
+const DOCUMENT: ObjectSpec = object(ROOT);
 /** Every root field of the schema, for a check that covers all of them but those it leaves to another. */
 export const ROOT_FIELDS: readonly RootField[] = Object.freeze(Object.keys(ROOT) as RootField[]);
 
@@ -904,6 +932,64 @@ export function admitContext(context: unknown, sink: ValidationSink): AdmittedCo
   return report(local, sink) ? admitted : null;
 }
 
+function normalizeFields(spec: ObjectSpec, holder: JsonRecord): Record<string, unknown> {
+  const interprets = (field: Field | undefined): field is Field => field !== undefined && (field.when === undefined || field.when(holder));
+  const out = bare(Object.entries(holder).map(([key, value]) => {
+    const field = own(spec.fields, key) as Field | undefined;
+    return [key, interprets(field) ? normalizeValue(field.spec, value) : opaque(value)] as const;
+  }));
+  for (const [name, field] of Object.entries(spec.fields)) {
+    if (field.fallback !== undefined && !Object.hasOwn(out, name) && interprets(field)) out[name] = opaque(field.fallback);
+  }
+  spec.settle?.(out);
+  return out;
+}
+
+/**
+ * One entry per `from->to` edge; the edge is the identity, so a transition body compares with the same edge only.
+ * The two members read as endpoints leave the body; every other one stays in it, a shadowed `from` / `to` included.
+ */
+function normalizeTransitions(spec: TransitionsSpec, transitions: readonly JsonRecord[]): Record<string, unknown> {
+  return bare(transitions.flatMap((transition) => {
+    const endpoints = [endpointKey(spec, transition, "from"), endpointKey(spec, transition, "to")];
+    const body = Object.fromEntries(Object.entries(transition).filter(([key]) => !endpoints.includes(key)));
+    const froms = transitionEndpoints(spec, transition, "from") ?? [];
+    const tos = transitionEndpoints(spec, transition, "to") ?? [];
+    return froms.flatMap((from) => tos.map((to) => [`${from}->${to}`, normalizeFields(TRANSITION, body)] as const));
+  }));
+}
+
+/** The diff's view of a value the entry has type-checked against `spec`: sets sorted, keyed arrays as maps. */
+function normalizeValue(spec: Spec, value: JsonValue): unknown {
+  switch (spec.is) {
+    case "strings":
+      return spec.order === "set" ? normStrSet(value) : value;
+    case "list":
+      return (value as readonly JsonValue[]).map((item) => normalizeValue(spec.of, item));
+    case "object":
+      return value === null ? null : normalizeFields(spec, value as JsonRecord);
+    case "map":
+      return bare(Object.entries(value as JsonRecord).map(([key, entry]) => [key, normalizeValue(spec.of, entry)] as const));
+    case "keyed":
+      return bare((value as readonly JsonRecord[]).map((entry) => [spec.key(entry), normalizeFields(spec.of, entry)] as const));
+    case "oneOf":
+      return normalizeValue(spec.specs.find((alternative) => fits(alternative, value))!, value);
+    case "byTag":
+      return normalizeFields(taggedCase(spec, value as JsonRecord).spec, value as JsonRecord);
+    case "lazy":
+      return normalizeValue(spec.spec(), value);
+    case "transitions":
+      return normalizeTransitions(spec, value as readonly JsonRecord[]);
+    default:
+      return opaque(value);
+  }
+}
+
+/** The whole document as the diff compares it. Derived from the same table the entry checks against. */
+function normalizeDocument(doc: ProjectedDocument): NormalizedDocument {
+  return normalizeFields(DOCUMENT, doc) as NormalizedDocument;
+}
+
 /** What a rule may read beside the two values it compares. The two documents are normalised ones: no raw document fits. */
 interface WalkContext {
   readonly oldDoc: NormalizedDocument;
@@ -955,6 +1041,25 @@ function attrPrefixLength(segments: readonly string[]): number | null {
     else break;
   }
   return i;
+}
+
+function matchSinglePattern(pattern: string, segments: readonly string[]): boolean {
+  const pSegs = pattern.split(".");
+  let sStart = 0, pStart = 0;
+  if (pSegs[0] === "@attr") {
+    const attrLen = attrPrefixLength(segments);
+    if (attrLen === null) return false;
+    sStart = attrLen;
+    pStart = 1;
+  }
+  if (pSegs.length - pStart !== segments.length - sStart) return false;
+  for (let i = 0; i < pSegs.length - pStart; i += 1) {
+    const pTok = pSegs[pStart + i]!, seg = segments[sStart + i]!;
+    if (pTok === "*") continue;
+    if (pTok.startsWith("{") && pTok.endsWith("}")) { if (!pTok.slice(1, -1).split(",").includes(seg)) return false; }
+    else if (pTok !== seg) return false;
+  }
+  return true;
 }
 
 function attrOwnerSubject(segments: readonly string[]): string {
@@ -1284,3 +1389,219 @@ export const WIDENING_RULES: readonly WideningRule[] = [
     formatSubject: segAt(1), formatTag: (out, _code, c) => `${out === "additive" ? "added" : "removed"}_projection_${c.segments.at(-1)!}:${c.segments[1]!}`,
   },
 ];
+
+interface DeltaAcc { readonly breaking: string[]; readonly additive: string[]; readonly docOnly: string[]; readonly bundleDeltas: V1CompatibilityDelta[]; }
+
+function emitDelta(acc: DeltaAcc, kind: "breaking" | "additive" | "docOnly", tag: string, code: string, path: string, subject: string, before: unknown, after: unknown, inSemVer: boolean, inBundle: boolean): void {
+  if (inSemVer) (kind === "breaking" ? acc.breaking : kind === "additive" ? acc.additive : acc.docOnly).push(tag);
+  if (inBundle) acc.bundleDeltas.push({ kind: kind === "breaking" ? "breaking" : "non-breaking", code, path, subject, before, after });
+}
+
+function defaultBreakingInfo(segments: readonly string[]): { readonly code: string; readonly tag: string; readonly path: string; readonly subject: string; readonly inBundle: boolean } {
+  const path = segments.join(".");
+  if (segments.length === 1) {
+    const k = segments[0]!;
+    if (k === "lineage") return { code: "changed_lineage", tag: "changed_lineage", path, subject: k, inBundle: true };
+    if (k === "id") return { code: "changed_template_id", tag: "changed_template_id", path, subject: k, inBundle: false };
+    if (k === "metamodel_version") return { code: "changed_metamodel_version", tag: "changed_metamodel_version", path, subject: k, inBundle: false };
+    if (k === "default_language") return { code: "changed_default_language", tag: "changed_default_language", path, subject: k, inBundle: false };
+    const code = PB_ROOT_KEYS.has(k) ? "changed_top_level_policy" : "changed_unmodeled_root";
+    return { code, tag: `${code}:${k}`, path, subject: k, inBundle: false };
+  }
+  if (segments[0] === "registries" && segments.length >= 2) return { code: "changed_registry_binding", tag: `changed_registry_binding:${segments[1]!}`, path: `registries.${segments[1]!}.binding`, subject: segments[1]!, inBundle: false };
+  if (segments[0] === "node_types" && segments.length >= 3) {
+    const nodeId = segments[1]!, key = segments[2]!;
+    if (key === "state_machine" || key === "state_machines") return { code: "changed_state_machine", tag: `changed_state_machine:${smSubject(segments)}`, path, subject: smSubject(segments), inBundle: true };
+    if (key === "admission_policy") return { code: "changed_admission_policy", tag: `changed_admission_policy:${nodeId}`, path: `node_types.${nodeId}.admission_policy`, subject: nodeId, inBundle: true };
+    if (key === "attributes" || key === "properties") return { code: "changed_attr_kind", tag: `changed_attr_kind:${attrOwnerSubject(segments)}`, path: attrDeclPath(segments), subject: attrOwnerSubject(segments), inBundle: key === "attributes" };
+    if (PB_NODE_KEYS.has(key)) return { code: `changed_node_${key}`, tag: `changed_node_${key}:${nodeId}`, path, subject: nodeId, inBundle: false };
+    return { code: "changed_node_unmodeled", tag: `changed_node_unmodeled:${nodeId}.${key}`, path, subject: nodeId, inBundle: false };
+  }
+  if (segments[0] === "relation_types" && segments.length >= 3) {
+    const relId = segments[1]!, key = segments[2]!;
+    if (key === "hierarchy") return { code: "changed_relation_hierarchy", tag: `changed_relation_hierarchy:${relId}`, path: `relation_types.${relId}.hierarchy`, subject: relId, inBundle: true };
+    if (key === "attributes") return { code: "changed_attr_kind", tag: `changed_attr_kind:${attrOwnerSubject(segments)}`, path: attrDeclPath(segments), subject: attrOwnerSubject(segments), inBundle: true };
+    if (PB_REL_KEYS.has(key)) return { code: `changed_relation_${key}`, tag: `changed_relation_${key}:${relId}`, path, subject: relId, inBundle: false };
+    return { code: "changed_relation_unmodeled", tag: `changed_relation_unmodeled:${relId}.${key}`, path, subject: relId, inBundle: false };
+  }
+  if (segments[0] === "hardening") return { code: "changed_hardening_unmodeled", tag: `changed_hardening_unmodeled:${segments.slice(1).join(".")}`, path, subject: "hardening", inBundle: segments[1] !== "default_status" };
+  if (segments[0] === "domain_policies") {
+    if (segments[1] === "levels" && segments.length === 4 && (segments[3] === "rank" || segments[3] === "rollup")) {
+      const code = segments[3] === "rank" ? "changed_domain_level_rank" : "changed_level_rollup";
+      return { code, tag: `${code}:${segments[2]!}`, path, subject: segments[2]!, inBundle: true };
+    }
+    if (segments[1] === "autonomy_policy" && segments[2] === "overlay_precedence") return { code: "changed_overlay_precedence", tag: "changed_overlay_precedence", path, subject: "overlay_precedence", inBundle: true };
+    if (segments[1] === "risk_policy" && (segments[2] === "likelihood_scale" || segments[2] === "impact_scale")) return { code: "changed_risk_scale", tag: "changed_risk_scale", path: "domain_policies.risk_policy", subject: "risk_policy", inBundle: true };
+    if (segments[1] === "risk_policy" && segments[2] === "severity_bands" && segments.length === 5 && (segments[4] === "min_score" || segments[4] === "max_score")) return { code: "changed_risk_band_bounds", tag: `changed_risk_band_bounds:${segments[3]!}`, path: `domain_policies.risk_policy.severity_bands.${segments[3]!}`, subject: segments[3]!, inBundle: true };
+    return { code: "changed_domain_policies_unmodeled", tag: "changed_domain_policies_unmodeled", path: "domain_policies", subject: "domain_policies", inBundle: true };
+  }
+  if (segments[0] === "file_projections") return { code: "changed_file_projection_unmodeled", tag: "changed_file_projection_unmodeled", path: "file_projections", subject: "file_projections", inBundle: true };
+  return { code: "changed_unmodeled", tag: `changed_unmodeled:${path}`, path, subject: segments.at(-1) ?? "template", inBundle: true };
+}
+
+function shouldRecurseObjects(segments: readonly string[], oldVal: unknown, newVal: unknown): boolean {
+  if (isRecord(oldVal) && isRecord(newVal)) {
+    if (segments.length === 0) return true;
+    const attrLen = attrPrefixLength(segments);
+    return !(attrLen !== null && segments.length === attrLen && oldVal.kind !== newVal.kind);
+  }
+  if (!((oldVal === undefined && isRecord(newVal)) || (newVal === undefined && isRecord(oldVal)))) return false;
+  return (segments.length === 1 && KNOWN_ROOT_CONTAINERS.has(segments[0]!)) ||
+    (segments.length === 2 && segments[0] === "domain_policies" && KNOWN_DP_CONTAINERS.has(segments[1]!)) ||
+    (segments.length === 3 && segments[0] === "node_types" && ["attributes", "properties", "state_machines"].includes(segments[2]!)) ||
+    (segments.length === 3 && segments[0] === "relation_types" && segments[2] === "attributes");
+}
+
+/**
+ * The whole-document diff. Two normalised documents are its only way in: the recursive walk is local to this
+ * function, so no other code of the module, and no raw document, can start it.
+ */
+function diffNormalizedDocuments(
+  normOld: NormalizedDocument,
+  normNew: NormalizedDocument,
+  scales: Pick<WalkContext, "oldLevelRankById" | "newLevelRankById" | "oldBandIds" | "newBandIds">,
+): DeltaAcc {
+  const acc: DeltaAcc = { breaking: [], additive: [], docOnly: [], bundleDeltas: [] };
+
+  function diffNormalizedValues(oldVal: unknown, newVal: unknown, segments: readonly string[], ctx: WalkContext, acc: DeltaAcc): void {
+    if (oldVal === undefined && newVal === undefined) return;
+    if (oldVal !== undefined && newVal !== undefined && canonicalBytes(oldVal) === canonicalBytes(newVal)) return;
+
+    const pRule = PRESENTATION_ONLY_RULES.find((r) => r.patterns.some((p) => matchSinglePattern(p, segments)));
+    if (pRule !== undefined) {
+      if (pRule.docOnly) {
+        const inBundle = typeof pRule.inBundle === "function" ? pRule.inBundle(segments) : pRule.inBundle;
+        emitDelta(acc, "docOnly", pRule.formatTag(segments), pRule.code, segments.join("."), segments.at(-1) ?? "template", oldVal, newVal, true, inBundle);
+      }
+      return;
+    }
+
+    const wRule = WIDENING_RULES.find((r) => r.patterns.some((p) => matchSinglePattern(p, segments)) && (!r.edgeOnly || oldVal === undefined || newVal === undefined || !isRecord(oldVal) || !isRecord(newVal)));
+    if (wRule !== undefined) {
+      const ruleCtx: RuleContext = { ...ctx, segments, path: segments.join(".") };
+      const outcome = wRule.classify ? wRule.classify(oldVal, newVal, ruleCtx) : (wRule.canWiden(oldVal, newVal, ruleCtx) ? "additive" : "breaking");
+      if (outcome === "noop") return;
+      const baseCode = outcome === "additive" ? wRule.additiveCode : (wRule.breakingCode ?? wRule.additiveCode);
+      const subj = wRule.formatSubject ? wRule.formatSubject(outcome, ruleCtx) : (segments.at(-1) ?? "template");
+      const tag = wRule.formatTag ? wRule.formatTag(outcome, baseCode, ruleCtx) : `${baseCode}:${subj}`;
+      const actualCode = tag.includes(":") ? tag.slice(0, tag.indexOf(":")) : tag;
+      const path = wRule.formatPath ? wRule.formatPath(outcome, ruleCtx) : ruleCtx.path;
+      const inBundle = typeof wRule.inBundle === "function" ? wRule.inBundle(outcome, ruleCtx) : wRule.inBundle;
+      emitDelta(acc, outcome, tag, actualCode, path, subj, oldVal, newVal, true, inBundle);
+      return;
+    }
+
+    if (shouldRecurseObjects(segments, oldVal, newVal)) {
+      const oObj = isRecord(oldVal) ? oldVal : {}, nObj = isRecord(newVal) ? newVal : {};
+      if (oldVal !== undefined && newVal === undefined && Object.keys(oObj).length === 0) {
+        const info = defaultBreakingInfo(segments);
+        emitDelta(acc, "breaking", info.tag, info.code, info.path, info.subject, oldVal, newVal, true, info.inBundle);
+        return;
+      }
+      if (oldVal === undefined && newVal !== undefined && Object.keys(nObj).length === 0) {
+        const k = segments.join(".");
+        if (k === "domain_policies" || k === "file_projections") emitDelta(acc, "additive", `added_${k}`, `added_${k}`, k, k, undefined, newVal, true, true);
+        return;
+      }
+      for (const key of new Set([...Object.keys(oObj), ...Object.keys(nObj)])) {
+        diffNormalizedValues(own(oObj, key), own(nObj, key), [...segments, key], { ...ctx, oldParent: oldVal, newParent: newVal }, acc);
+      }
+      return;
+    }
+
+    const info = defaultBreakingInfo(segments);
+    emitDelta(acc, "breaking", info.tag, info.code, info.path, info.subject, oldVal, newVal, true, info.inBundle);
+  }
+
+  diffNormalizedValues(normOld, normNew, [], { ...scales, oldDoc: normOld, newDoc: normNew, oldParent: normOld, newParent: normNew }, acc);
+  return acc;
+}
+
+function levelRanksMap(doc: ProjectedDocument): Map<string, number> {
+  const map = new Map<string, number>(), dp = isRecord(doc.domain_policies) ? doc.domain_policies : null;
+  if (dp && Array.isArray(dp.levels)) for (const l of dp.levels) if (isRecord(l) && typeof l.id === "string" && isFiniteNum(l.rank)) map.set(l.id, l.rank);
+  return map;
+}
+
+function bandIdsSet(doc: ProjectedDocument): Set<string> {
+  const set = new Set<string>(), dp = isRecord(doc.domain_policies) ? doc.domain_policies : null, rp = dp && isRecord(dp.risk_policy) ? dp.risk_policy : null;
+  if (rp && Array.isArray(rp.severity_bands)) for (const b of rp.severity_bands) if (isRecord(b) && typeof b.id === "string") set.add(b.id);
+  return set;
+}
+
+export interface ProjectedClassification {
+  readonly report: SemVerDiffReport;
+  readonly deltas: readonly V1CompatibilityDelta[];
+}
+
+/** Classifies two documents that both crossed the entry. Passing a raw document here is a compile error. */
+export function classifyProjectedDocuments(parent: ProjectedDocument, candidate: ProjectedDocument): ProjectedClassification {
+  const { detectedRenames } = diffMetamodelDocuments(parent, candidate);
+  const acc = diffNormalizedDocuments(normalizeDocument(parent), normalizeDocument(candidate), {
+    oldLevelRankById: levelRanksMap(parent),
+    newLevelRankById: levelRanksMap(candidate),
+    oldBandIds: bandIdsSet(parent),
+    newBandIds: bandIdsSet(candidate),
+  });
+  const report = Object.freeze({ breaking: acc.breaking, additive: acc.additive, docOnly: acc.docOnly, detectedRenames: [...detectedRenames] });
+  return { report, deltas: acc.bundleDeltas };
+}
+
+/** Both entry steps on one raw document. */
+function admitDocument(raw: unknown, sink: ValidationSink, root: string): ProjectedDocument | null {
+  const projected = projectDocument(raw, sink, root);
+  return projected === null ? null : checkDocument(projected, sink);
+}
+
+type PairEntry =
+  | { readonly ok: false; readonly refusals: readonly MetamodelDiagnostic[] }
+  | { readonly ok: true; readonly parent: ProjectedDocument; readonly candidate: ProjectedDocument };
+
+/** Entry of the document-pair APIs (`diffSemVerDocuments`, `classifyV1Compatibility`). */
+function enterDocumentPair(parentRaw: unknown, candidateRaw: unknown): PairEntry {
+  const sink: ValidationSink = { diagnostics: [], lineage: null, subject: "template" };
+  const parent = admitDocument(parentRaw, sink, "parent");
+  const candidate = admitDocument(candidateRaw, sink, "candidate");
+  if (parent === null || candidate === null) return { ok: false, refusals: Object.freeze([...sink.diagnostics]) };
+  return { ok: true, parent, candidate };
+}
+
+/**
+ * The last line of a public API. Its entry is total by construction, but what it reuses is not its own (Lot 0.2, the
+ * runtime): whatever still fails past the entry is a refusal of the document, never an exception of the gate.
+ */
+export function unfailing<Result>(evaluate: () => Result, refused: (failure: MetamodelDiagnostic) => Result): Result {
+  try {
+    return evaluate();
+  } catch (error) {
+    const sink: ValidationSink = { diagnostics: [], lineage: null, subject: "template" };
+    refuse(sink, CONTEXT_CODE, "template", `be evaluated without failure (${error instanceof Error ? error.name : "thrown value"})`);
+    return refused(sink.diagnostics[0]!);
+  }
+}
+
+/** The pair entry and the classification of the pair, as the one unfailing step of both pair APIs. */
+function classifyPair(parentRaw: unknown, candidateRaw: unknown): { readonly refusals: readonly MetamodelDiagnostic[]; readonly classified: ProjectedClassification | null } {
+  return unfailing(() => {
+    const entered = enterDocumentPair(parentRaw, candidateRaw);
+    return entered.ok ? { refusals: [], classified: classifyProjectedDocuments(entered.parent, entered.candidate) } : { refusals: entered.refusals, classified: null };
+  }, (failure) => ({ refusals: Object.freeze([failure]), classified: null }));
+}
+
+/** Semantic + doc-only diff for Metamodel v1 documents, using whole-document structural diff (default breaking). */
+export function diffSemVerDocuments(parentDoc: unknown, candidateDoc: unknown): SemVerDiffReport {
+  const { refusals, classified } = classifyPair(parentDoc, candidateDoc);
+  return classified !== null ? classified.report : Object.freeze({ breaking: [], additive: [], docOnly: [], detectedRenames: [], refusals });
+}
+
+export interface V1CompatibilityOutcome {
+  /** Rule 5 / Rule 6 refusals; when any, no delta is classified. */
+  readonly refusals: readonly MetamodelDiagnostic[];
+  readonly deltas: readonly V1CompatibilityDelta[];
+}
+
+/** The gate as `checkProfileCompatibility` uses it: one call, each document projected once, refusals or deltas. */
+export function classifyV1Compatibility(oldDoc: unknown, newDoc: unknown): V1CompatibilityOutcome {
+  const { refusals, classified } = classifyPair(oldDoc, newDoc);
+  return { refusals, deltas: classified?.deltas ?? [] };
+}
