@@ -12,6 +12,8 @@ import {
   classifyV1Compatibility,
   diffSemVerDocuments,
   evaluateSemVerGate,
+  PRESENTATION_ONLY_RULES,
+  WIDENING_RULES,
 } from "../src/metamodel/semver-gate.js";
 import type {
   MetamodelTemplateDocument,
@@ -2564,6 +2566,580 @@ describe("metamodel versioning and composition (Lot 0.3)", () => {
       expect(defaultStatusCompat.breaking.map((d) => ({ code: d.code, path: d.path }))).toEqual([
         { code: "changed_default_status", path: "hardening.default_status" },
       ]);
+    });
+
+    it("M-1 (R3 / Rule 5): classifies projected documents so explicit undefined never reaches canonicalBytes and refuses unserializable or missing required containers", () => {
+      const ctx = makeR3RichBase();
+
+      // M09 & P2-03: Lot-0.2-valid parent with explicit undefined property never throws unserializable:undefined
+      const undefParent = { ...structuredClone(ctx.doc), parent_pin: undefined } as unknown as MetamodelTemplateDocument;
+      (undefParent.node_types.WorkItem!.attributes!.title as Record<string, unknown>).description = undefined;
+      expect(validateTemplateAgainstMetamodel(undefParent, { registry: ctx.registry }).status).toBe("accepted");
+      const undefInit = registerR3Initial(undefParent, ctx.registry);
+      const undefCand = { ...structuredClone(ctx.doc), version: "1.0.1", parent_pin: undefInit.pin };
+      expect(evaluateSemVerGate(freezeInput(undefCand), { registry: undefInit.reg })).toMatchObject({
+        status: "accepted",
+        changeClass: "patch",
+        diff: { breaking: [], additive: [], docOnly: [], detectedRenames: [] },
+      });
+      expect(diffSemVerDocuments(undefParent as unknown as Record<string, unknown>, ctx.doc as unknown as Record<string, unknown>)).toEqual({
+        breaking: [],
+        additive: [],
+        docOnly: [],
+        detectedRenames: [],
+      });
+      expect(diffSemVerDocuments(ctx.doc as unknown as Record<string, unknown>, undefParent as unknown as Record<string, unknown>)).toEqual({
+        breaking: [],
+        additive: [],
+        docOnly: [],
+        detectedRenames: [],
+      });
+
+      // Unserializable values in direct diff/gate refuse with stable MM_SYNTAX_NON_PLAIN_OBJECT
+      const badParent = { ...structuredClone(ctx.doc), custom_unserializable: BigInt(1) };
+      expect(diffSemVerDocuments(badParent as unknown as Record<string, unknown>, ctx.doc as unknown as Record<string, unknown>)).toMatchObject({
+        breaking: [],
+        additive: [],
+        docOnly: [],
+        refusals: [expect.objectContaining({ code: "MM_SYNTAX_NON_PLAIN_OBJECT", path: "custom_unserializable" })],
+      });
+      const nanRegInit = [{ ...ctx.registry[3]!, document: { ...structuredClone(ctx.doc), custom_bad: Number.NaN } as unknown as MetamodelTemplateDocument }];
+      expectSemVerRefusal({ ...structuredClone(ctx.doc), version: "1.0.1", parent_pin: ctx.pin }, { registry: [...ctx.registry.slice(0, 3), ...nanRegInit] }, "MM_SYNTAX_NON_PLAIN_OBJECT", "custom_bad");
+      const exactNanReg = [{ lineage: "track" as const, templateId: ctx.doc.id, templateVersion: ctx.doc.version, templateDigestSha256: ctx.digest, document: { ...structuredClone(ctx.doc), presentation: { bad: Number.NaN } } as unknown as MetamodelTemplateDocument }];
+      expectSemVerRefusal(structuredClone(ctx.doc), { registry: exactNanReg }, "MM_SYNTAX_NON_PLAIN_OBJECT", "presentation.bad");
+
+      // M01..M08: 8 deleted required domain_policies / file_projections fields refused cleanly (never throw)
+      const trackBase = makeTrackTemplate();
+      const trackBaseDigest = independentTemplateSha256(trackBase);
+      const h2aOverlayParent: MetamodelTemplateDocument = {
+        ...structuredClone(makeH2aTemplate(trackBaseDigest)),
+        id: "sentropic.r3-h2a-overlay-m1",
+        relation_types: {},
+        file_projections: {
+          overlay_view: {
+            kind: "h2a-harness-overlay",
+            root_dir: ".h2a",
+            relative_path_template: ".h2a/overlays/repo/view.json",
+            format: "json",
+            include_node_types: ["HarnessSkill"],
+            order_by: ["entity_id"],
+            projected_fields: ["skill_id"],
+          },
+        },
+      };
+      const h2aInit = registerR3Initial(h2aOverlayParent, [
+        ...ctx.registry,
+        {
+          lineage: "track",
+          templateId: trackBase.id,
+          templateVersion: trackBase.version,
+          templateDigestSha256: trackBaseDigest,
+          presentationDigest: independentPresentationSha256(trackBase),
+          nodeTypeIds: Object.keys(trackBase.node_types),
+          document: trackBase,
+        },
+      ]);
+
+      const m1Vectors: ReadonlyArray<{
+        readonly label: string;
+        readonly code: MetamodelDiagnosticCode;
+        readonly path: string;
+        readonly baseDoc: MetamodelTemplateDocument;
+        readonly basePin: { readonly id: string; readonly version: string; readonly contentDigest: string };
+        readonly baseReg: readonly RegisteredTemplateRecord[];
+        readonly mutate: (d: MetamodelTemplateDocument) => void;
+      }> = [
+        {
+          label: "M01 delete risk_policy.severity_bands",
+          code: "MM_DOMAIN_POLICY_INVALID",
+          path: "domain_policies.risk_policy.severity_bands",
+          baseDoc: ctx.doc,
+          basePin: ctx.pin,
+          baseReg: ctx.registry,
+          mutate: (d) => { delete (d.domain_policies!.risk_policy as unknown as Record<string, unknown>).severity_bands; },
+        },
+        {
+          label: "M02 delete nesting_matrix[0].allowed_child_levels",
+          code: "MM_DOMAIN_POLICY_INVALID",
+          path: "domain_policies.nesting_matrix[0].allowed_child_levels",
+          baseDoc: ctx.doc,
+          basePin: ctx.pin,
+          baseReg: ctx.registry,
+          mutate: (d) => { delete (d.domain_policies!.nesting_matrix![0] as unknown as Record<string, unknown>).allowed_child_levels; },
+        },
+        {
+          label: "M03 delete stage_refinements[0].sub_stages",
+          code: "MM_DOMAIN_POLICY_INVALID",
+          path: "domain_policies.stage_refinements[0].sub_stages",
+          baseDoc: ctx.doc,
+          basePin: ctx.pin,
+          baseReg: ctx.registry,
+          mutate: (d) => { delete (d.domain_policies!.stage_refinements![0] as unknown as Record<string, unknown>).sub_stages; },
+        },
+        {
+          label: "M04 delete default_pr_slice.event_journal",
+          code: "MM_FILE_SHAPE_INCOMPLETE_D29_PAIR",
+          path: "file_projections.default_pr_slice.event_journal",
+          baseDoc: ctx.doc,
+          basePin: ctx.pin,
+          baseReg: ctx.registry,
+          mutate: (d) => { delete (d.file_projections!.default_pr_slice as unknown as Record<string, unknown>).event_journal; },
+        },
+        {
+          label: "M05 delete default_pr_slice.state_snapshot",
+          code: "MM_FILE_SHAPE_INCOMPLETE_D29_PAIR",
+          path: "file_projections.default_pr_slice.state_snapshot",
+          baseDoc: ctx.doc,
+          basePin: ctx.pin,
+          baseReg: ctx.registry,
+          mutate: (d) => { delete (d.file_projections!.default_pr_slice as unknown as Record<string, unknown>).state_snapshot; },
+        },
+        {
+          label: "M06 delete event_journal.aggregates",
+          code: "MM_FILE_SHAPE_INCOMPLETE_D29_PAIR",
+          path: "file_projections.default_pr_slice.event_journal.aggregates",
+          baseDoc: ctx.doc,
+          basePin: ctx.pin,
+          baseReg: ctx.registry,
+          mutate: (d) => { delete ((d.file_projections!.default_pr_slice as { event_journal: Record<string, unknown> }).event_journal).aggregates; },
+        },
+        {
+          label: "M07 delete state_snapshot.include_collections",
+          code: "MM_FILE_SHAPE_INCOMPLETE_D29_PAIR",
+          path: "file_projections.default_pr_slice.state_snapshot.include_collections",
+          baseDoc: ctx.doc,
+          basePin: ctx.pin,
+          baseReg: ctx.registry,
+          mutate: (d) => { delete ((d.file_projections!.default_pr_slice as { state_snapshot: Record<string, unknown> }).state_snapshot).include_collections; },
+        },
+        {
+          label: "M08 delete overlay_view.include_node_types",
+          code: "MM_FILE_SHAPE_LINEAGE_FORBIDDEN",
+          path: "file_projections.overlay_view.include_node_types",
+          baseDoc: h2aOverlayParent,
+          basePin: h2aInit.pin,
+          baseReg: h2aInit.reg,
+          mutate: (d) => { delete (d.file_projections!.overlay_view as unknown as Record<string, unknown>).include_node_types; },
+        },
+      ];
+
+      for (const vec of m1Vectors) {
+        const cand = { ...structuredClone(vec.baseDoc), version: "1.1.0", parent_pin: vec.basePin };
+        vec.mutate(cand);
+        expectSemVerRefusal(cand, { registry: vec.baseReg }, vec.code, vec.path);
+        const diffRes = diffSemVerDocuments(vec.baseDoc as unknown as Record<string, unknown>, cand as unknown as Record<string, unknown>);
+        expect(diffRes.breaking, vec.label).toEqual([]);
+        expect(diffRes.additive, vec.label).toEqual([]);
+        expect(diffRes.refusals?.map((r) => ({ code: r.code, path: r.path })), vec.label).toEqual([{ code: vec.code, path: vec.path }]);
+        expect(classifyV1Compatibility(vec.baseDoc as unknown as Record<string, unknown>, cand as unknown as Record<string, unknown>).refusals.map((r) => ({ code: r.code, path: r.path })), vec.label).toEqual([{ code: vec.code, path: vec.path }]);
+        const compat = checkProfileCompatibility(vec.baseDoc as unknown as OntologyProfile, cand as unknown as OntologyProfile);
+        expect(compat.ok, vec.label).toBe(false);
+        expect(compat.compatible, vec.label).toBe(false);
+        expect(compat.validationIssues.map((i) => ({ code: i.code, path: i.path })), vec.label).toEqual([{ code: vec.code, path: vec.path }]);
+      }
+    });
+
+    it("M-2 (R3 / Rule 5): refuses non-boolean and non-array inputs with stable codes, never coerced or classified ADDITIVE", () => {
+      const ctx = makeR3RichBase();
+      const noEtaParent = structuredClone(ctx.doc);
+      noEtaParent.id = "sentropic.r3-no-eta-parent";
+      delete noEtaParent.domain_policies!.eta_policy;
+      const noEtaInit = registerR3Initial(noEtaParent, ctx.registry);
+
+      const gateFalseParent = structuredClone(ctx.doc);
+      gateFalseParent.id = "sentropic.r3-gate-false-parent";
+      gateFalseParent.domain_policies!.acceptance_gates!.feature_uat!.require_all_children_terminal = false;
+      const gateFalseInit = registerR3Initial(gateFalseParent, ctx.registry);
+
+      const m2Vectors: ReadonlyArray<{
+        readonly label: string;
+        readonly lot02Accepted?: boolean;
+        readonly code: MetamodelDiagnosticCode;
+        readonly path: string;
+        readonly baseDoc: MetamodelTemplateDocument;
+        readonly basePin: { readonly id: string; readonly version: string; readonly contentDigest: string };
+        readonly baseReg: readonly RegisteredTemplateRecord[];
+        readonly checkCompat?: boolean;
+        readonly mutate: (d: MetamodelTemplateDocument) => void;
+      }> = [
+        {
+          label: "M14 acceptance_gates.feature_uat.require_all_children_terminal = null (Lot-0.2-accepted)",
+          lot02Accepted: true,
+          code: "MM_DOMAIN_POLICY_INVALID",
+          path: "domain_policies.acceptance_gates.feature_uat.require_all_children_terminal",
+          baseDoc: ctx.doc,
+          basePin: ctx.pin,
+          baseReg: ctx.registry,
+          checkCompat: true,
+          mutate: (d) => { (d.domain_policies!.acceptance_gates!.feature_uat as unknown as Record<string, unknown>).require_all_children_terminal = null; },
+        },
+        {
+          label: "P2-02 acceptance_gates.feature_uat.require_all_children_terminal = 'false' (Lot-0.2-accepted)",
+          lot02Accepted: true,
+          code: "MM_DOMAIN_POLICY_INVALID",
+          path: "domain_policies.acceptance_gates.feature_uat.require_all_children_terminal",
+          baseDoc: gateFalseParent,
+          basePin: gateFalseInit.pin,
+          baseReg: gateFalseInit.reg,
+          checkCompat: true,
+          mutate: (d) => { (d.domain_policies!.acceptance_gates!.feature_uat as unknown as Record<string, unknown>).require_all_children_terminal = "false"; },
+        },
+        {
+          label: "P2-01 added eta_policy with measured_provenance_required_fields = 'not-an-array' (Lot-0.2-accepted)",
+          lot02Accepted: true,
+          code: "MM_DOMAIN_POLICY_INVALID",
+          path: "domain_policies.eta_policy.measured_provenance_required_fields",
+          baseDoc: noEtaParent,
+          basePin: noEtaInit.pin,
+          baseReg: noEtaInit.reg,
+          checkCompat: true,
+          mutate: (d) => {
+            d.domain_policies!.eta_policy = {
+              source_kinds: ["measured"],
+              append_only_slip_journal: true,
+              measured_provenance_required_fields: "not-an-array" as unknown as string[],
+            };
+          },
+        },
+        {
+          label: "eta_policy.rebaseline_requires_decision = 'true' (non-boolean)",
+          code: "MM_DOMAIN_POLICY_INVALID",
+          path: "domain_policies.eta_policy.rebaseline_requires_decision",
+          baseDoc: noEtaParent,
+          basePin: noEtaInit.pin,
+          baseReg: noEtaInit.reg,
+          checkCompat: true,
+          mutate: (d) => {
+            d.domain_policies!.eta_policy = {
+              source_kinds: ["measured"],
+              append_only_slip_journal: true,
+              rebaseline_requires_decision: "true" as unknown as boolean,
+            };
+          },
+        },
+        {
+          label: "M10 attributes.title.required = 0",
+          code: "MM_ATTR_INVALID_DECLARATION",
+          path: "node_types.WorkItem.attributes.title.required",
+          baseDoc: ctx.doc,
+          basePin: ctx.pin,
+          baseReg: ctx.registry,
+          checkCompat: true,
+          mutate: (d) => { (d.node_types.WorkItem!.attributes!.title as unknown as Record<string, unknown>).required = 0; },
+        },
+        {
+          label: "M11 node_types.WorkItem.source_backed = 0",
+          code: "MM_NODE_INVALID_IDENTIFIER",
+          path: "node_types.WorkItem.source_backed",
+          baseDoc: ctx.doc,
+          basePin: ctx.pin,
+          baseReg: ctx.registry,
+          mutate: (d) => { (d.node_types.WorkItem as unknown as Record<string, unknown>).source_backed = 0; },
+        },
+        {
+          label: "M12 relation_types.governs_risk.requires_evidence = ''",
+          code: "MM_ATTR_INVALID_DECLARATION",
+          path: "relation_types.governs_risk.requires_evidence",
+          baseDoc: ctx.doc,
+          basePin: ctx.pin,
+          baseReg: ctx.registry,
+          mutate: (d) => { (d.relation_types!.governs_risk as unknown as Record<string, unknown>).requires_evidence = ""; },
+        },
+        {
+          label: "M13 domain_policies.levels[1].requires_parent = null",
+          code: "MM_DOMAIN_POLICY_INVALID",
+          path: "domain_policies.levels[1].requires_parent",
+          baseDoc: ctx.doc,
+          basePin: ctx.pin,
+          baseReg: ctx.registry,
+          checkCompat: true,
+          mutate: (d) => { (d.domain_policies!.levels![1] as unknown as Record<string, unknown>).requires_parent = null; },
+        },
+        {
+          label: "M15 admission_policy.third_party_distinct_from_author = null",
+          code: "MM_STATE_INVALID_MACHINE",
+          path: "node_types.WorkItem.admission_policy.third_party_distinct_from_author",
+          baseDoc: ctx.doc,
+          basePin: ctx.pin,
+          baseReg: ctx.registry,
+          checkCompat: true,
+          mutate: (d) => { (d.node_types.WorkItem!.admission_policy as unknown as Record<string, unknown>).third_party_distinct_from_author = null; },
+        },
+        {
+          label: "node_types.WorkItem.aliases = 'work-item' (non-array)",
+          code: "MM_NODE_INVALID_IDENTIFIER",
+          path: "node_types.WorkItem.aliases",
+          baseDoc: ctx.doc,
+          basePin: ctx.pin,
+          baseReg: ctx.registry,
+          mutate: (d) => { (d.node_types.WorkItem as unknown as Record<string, unknown>).aliases = "work-item"; },
+        },
+        {
+          label: "domain_policies.levels[0].modes = 'build' (non-array)",
+          code: "MM_DOMAIN_POLICY_INVALID",
+          path: "domain_policies.levels[0].modes",
+          baseDoc: ctx.doc,
+          basePin: ctx.pin,
+          baseReg: ctx.registry,
+          checkCompat: true,
+          mutate: (d) => { (d.domain_policies!.levels![0] as unknown as Record<string, unknown>).modes = "build"; },
+        },
+        {
+          label: "hardening.statuses = 'draft' (non-array)",
+          code: "MM_STATE_INVALID_MACHINE",
+          path: "hardening.statuses",
+          baseDoc: ctx.doc,
+          basePin: ctx.pin,
+          baseReg: ctx.registry,
+          mutate: (d) => { (d.hardening as unknown as Record<string, unknown>).statuses = "draft"; },
+        },
+        {
+          label: "attributes.subkind.values = 'standard' (non-array)",
+          code: "MM_ATTR_INVALID_DECLARATION",
+          path: "node_types.WorkItem.attributes.subkind.values",
+          baseDoc: ctx.doc,
+          basePin: ctx.pin,
+          baseReg: ctx.registry,
+          checkCompat: true,
+          mutate: (d) => { (d.node_types.WorkItem!.attributes!.subkind as unknown as Record<string, unknown>).values = "standard"; },
+        },
+        {
+          label: "relation_types.governs_risk.source_types = 'WorkItem' (non-array)",
+          code: "MM_REL_MISSING_ENDPOINTS",
+          path: "relation_types.governs_risk.source_types",
+          baseDoc: ctx.doc,
+          basePin: ctx.pin,
+          baseReg: ctx.registry,
+          mutate: (d) => { (d.relation_types!.governs_risk as unknown as Record<string, unknown>).source_types = "WorkItem"; },
+        },
+        {
+          label: "event_journal.forbid_header_lines = 'true' (non-boolean)",
+          code: "MM_FILE_SHAPE_INCOMPLETE_D29_PAIR",
+          path: "file_projections.default_pr_slice.event_journal.forbid_header_lines",
+          baseDoc: ctx.doc,
+          basePin: ctx.pin,
+          baseReg: ctx.registry,
+          checkCompat: true,
+          mutate: (d) => { ((d.file_projections!.default_pr_slice as { event_journal: Record<string, unknown> }).event_journal).forbid_header_lines = "true"; },
+        },
+      ];
+
+      for (const vec of m2Vectors) {
+        const cand = { ...structuredClone(vec.baseDoc), version: "1.1.0", parent_pin: vec.basePin };
+        vec.mutate(cand);
+        if (vec.lot02Accepted) {
+          expect(validateTemplateAgainstMetamodel(cand, { registry: vec.baseReg }).status, vec.label).toBe("accepted");
+        }
+        expectSemVerRefusal(cand, { registry: vec.baseReg }, vec.code, vec.path);
+        const diffRes = diffSemVerDocuments(vec.baseDoc as unknown as Record<string, unknown>, cand as unknown as Record<string, unknown>);
+        expect(diffRes.additive, vec.label).toEqual([]);
+        expect(diffRes.breaking, vec.label).toEqual([]);
+        expect(diffRes.refusals?.map((r) => ({ code: r.code, path: r.path })), vec.label).toEqual([{ code: vec.code, path: vec.path }]);
+        expect(classifyV1Compatibility(vec.baseDoc as unknown as Record<string, unknown>, cand as unknown as Record<string, unknown>).refusals.map((r) => ({ code: r.code, path: r.path })), vec.label).toEqual([{ code: vec.code, path: vec.path }]);
+        const compat = checkProfileCompatibility(vec.baseDoc as unknown as OntologyProfile, cand as unknown as OntologyProfile);
+        expect(compat.ok, vec.label).toBe(false);
+        expect(compat.compatible, vec.label).toBe(false);
+        if (vec.checkCompat) {
+          expect(compat.validationIssues.map((i) => ({ code: i.code, path: i.path })), vec.label).toEqual([{ code: vec.code, path: vec.path }]);
+        }
+      }
+
+      // Direct widening-rule predicate checks: non-array / non-boolean never coerce to permissive defaults
+      const etaRule = WIDENING_RULES.find((r) => r.id === "added-domain-eta-policy")!;
+      const optAttrRule = WIDENING_RULES.find((r) => r.id === "added-optional-attr")!;
+      const dummyRuleCtx = {
+        oldDoc: {}, newDoc: {}, oldParent: {}, newParent: {},
+        oldLevelRankById: new Map<string, number>(), newLevelRankById: new Map<string, number>(),
+        oldBandIds: new Set<string>(), newBandIds: new Set<string>(),
+        segments: ["domain_policies", "eta_policy"], path: "domain_policies.eta_policy",
+      };
+      expect(etaRule.canWiden(undefined, { source_kinds: ["measured"], append_only_slip_journal: true, measured_provenance_required_fields: "not-an-array" }, dummyRuleCtx)).toBe(false);
+      expect(etaRule.canWiden(undefined, { source_kinds: ["measured"], append_only_slip_journal: true, rebaseline_requires_decision: "true" }, dummyRuleCtx)).toBe(false);
+      expect(optAttrRule.canWiden(undefined, { kind: "string", required: "true" }, { ...dummyRuleCtx, segments: ["node_types", "WorkItem", "attributes", "x"], path: "node_types.WorkItem.attributes.x" })).toBe(false);
+    });
+
+    it("covers every row of PRESENTATION_ONLY_RULES and WIDENING_RULES with single-change Lot-0.2-valid vectors and literal diffs", () => {
+      const ctx = makeR3RichBase();
+      const mkPatch = () => ({ ...structuredClone(ctx.doc), version: "1.0.1", parent_pin: ctx.pin });
+      const mkMinor = () => ({ ...structuredClone(ctx.doc), version: "1.1.0", parent_pin: ctx.pin });
+
+      // 1. All 9 PRESENTATION_ONLY_RULES rows (PATCH accepted, exact literal diff)
+      const coveredPresIds = new Set<string>();
+      const patchVectors: ReadonlyArray<{
+        readonly id: string;
+        readonly docOnly: readonly string[];
+        readonly build?: () => { readonly doc: MetamodelTemplateDocument; readonly reg: readonly RegisteredTemplateRecord[] };
+        readonly mutate: (d: MetamodelTemplateDocument) => void;
+      }> = [
+        { id: "envelope-version", docOnly: [], mutate: () => {} },
+        { id: "envelope-metadata", docOnly: [], mutate: (d) => { d.presentation_hash = independentPresentationSha256(d); } },
+        { id: "registry-bound-source-path", docOnly: [], mutate: (d) => { (d.registries!.work_items as unknown as Record<string, unknown>).bound_source_path = "data/v2/work.jsonl"; } },
+        { id: "top-presentation", docOnly: ["changed_presentation"], mutate: (d) => { d.presentation = { title: "Updated R3 Showcase" } as never; } },
+        { id: "node-definition", docOnly: ["changed_node_definition:WorkItem"], mutate: (d) => { d.node_types.WorkItem!.definition = "Updated WorkItem wording."; } },
+        { id: "node-visual-encoding", docOnly: ["changed_node_visual_encoding:WorkItem"], mutate: (d) => { d.node_types.WorkItem!.visual_encoding = { shape: "hexagon", fill: "solid", border: "bold", color_hex: "#0ea5e9" }; } },
+        { id: "relation-description", docOnly: ["changed_relation_description:governs_risk"], mutate: (d) => { d.relation_types!.governs_risk!.description = "Updated risk description."; } },
+        { id: "attr-description", docOnly: ["changed_attr_description:WorkItem.title"], mutate: (d) => { d.node_types.WorkItem!.attributes!.title!.description = "Updated title description."; } },
+        { id: "invariant-summary", docOnly: ["changed_domain_invariant_summary:inv-uat-human-only"], mutate: (d) => { d.domain_policies!.invariants![0]!.summary = "Updated invariant wording."; } },
+      ];
+      for (const vec of patchVectors) {
+        coveredPresIds.add(vec.id);
+        const cand = mkPatch();
+        vec.mutate(cand);
+        assertLot02DocumentValid(cand, ctx.registry);
+        expect(evaluateSemVerGate(freezeInput(cand), { registry: ctx.registry })).toMatchObject({
+          status: "accepted",
+          changeClass: "patch",
+          diff: { breaking: [], additive: [], docOnly: [...vec.docOnly], detectedRenames: [] },
+        });
+      }
+      // Exercise sourcePath directly on envelope-metadata as well
+      const sourcePathCand = { ...mkPatch(), sourcePath: "/tmp/alt-track.yaml" };
+      expect(diffSemVerDocuments(ctx.doc as unknown as Record<string, unknown>, sourcePathCand as unknown as Record<string, unknown>)).toEqual({
+        breaking: [], additive: [], docOnly: [], detectedRenames: [],
+      });
+      expect([...coveredPresIds].sort()).toEqual(PRESENTATION_ONLY_RULES.map((r) => r.id).sort());
+
+      // 2. All 68 WIDENING_RULES rows (PATCH -> MM_VERSION_MINOR_REQUIRED_FOR_ADDITIVE, MINOR -> accepted + exact literal diff)
+      const trackNoHardening = makeTrackTemplate();
+      trackNoHardening.id = "sentropic.r3-no-hardening";
+      delete (trackNoHardening as { hardening?: unknown }).hardening;
+      const nhInit = registerR3Initial(trackNoHardening, ctx.registry);
+
+      const levelAutonomyParent = structuredClone(ctx.doc);
+      levelAutonomyParent.id = "sentropic.r3-level-autonomy";
+      delete levelAutonomyParent.domain_policies!.autonomy_policy!.max_autonomous_create_rank;
+      levelAutonomyParent.domain_policies!.autonomy_policy!.max_autonomous_create_level = "feature";
+      const laInit = registerR3Initial(levelAutonomyParent, ctx.registry);
+
+      const coveredWideningIds = new Set<string>();
+      const wideningVectors: ReadonlyArray<{
+        readonly id: string;
+        readonly idsAlsoCovered?: readonly string[];
+        readonly tag: string;
+        readonly baseDoc?: MetamodelTemplateDocument;
+        readonly baseInit?: { readonly pin: { readonly id: string; readonly version: string; readonly contentDigest: string }; readonly reg: readonly RegisteredTemplateRecord[] };
+        readonly mutate: (d: MetamodelTemplateDocument) => void;
+      }> = [
+        {
+          id: "added-composed-pin",
+          tag: "added_composed_lineage_pin:archi_v2",
+          mutate: (d) => { d.composed_lineage_pins!.push({ importAlias: "archi_v2", lineage: "archi", templateId: "archi", templateVersion: "2.0.0", templateDigestSha256: ARCHI_V2_SHA256 }); },
+        },
+        {
+          id: "updated-composed-pin-version",
+          idsAlsoCovered: ["updated-composed-pin-digest"],
+          tag: "updated_composed_lineage_pin:archi_v1",
+          mutate: (d) => { d.composed_lineage_pins![0]!.templateVersion = "1.2.0"; d.composed_lineage_pins![0]!.templateDigestSha256 = `sha256:${"a".repeat(64)}`; },
+        },
+        { id: "added-registry", tag: "added_registry:risk_reg", mutate: (d) => { d.registries!.risk_reg = { source: "risk_entries", id_column: "id", label_column: "likelihood", node_type: "RiskEntry" }; } },
+        { id: "added-node-type", tag: "added_node_type:Milestone", mutate: (d) => { d.node_types.Milestone = { definition: "Milestone node." }; } },
+        { id: "added-node-aliases", tag: "added_node_alias:WorkItem", mutate: (d) => { d.node_types.WorkItem!.aliases = ["work-item", "wi"]; } },
+        { id: "relaxed-node-source-backed", tag: "relaxed_node_source_backed:WorkItem", mutate: (d) => { d.node_types.WorkItem!.source_backed = false; } },
+        { id: "added-optional-attr", tag: "added_optional_attr:WorkItem.notes", mutate: (d) => { d.node_types.WorkItem!.attributes!.notes = { kind: "string" }; } },
+        { id: "relaxed-attr-required", tag: "relaxed_attr_required:WorkItem.rank", mutate: (d) => { d.node_types.WorkItem!.attributes!.rank!.required = false; } },
+        { id: "widened-attr-enum", tag: "widened_attr_enum:WorkItem.subkind", mutate: (d) => { (d.node_types.WorkItem!.attributes!.subkind as { values: string[] }).values.push("chore"); } },
+        { id: "widened-attr-ref-targets", tag: "widened_attr_ref_targets:WorkItem.tags.item", mutate: (d) => { ((d.node_types.WorkItem!.attributes!.tags as { item: { targetTypes: string[] } }).item).targetTypes = ["RiskEntry", "WorkItem"]; } },
+        { id: "widened-attr-length", tag: "widened_attr_length:WorkItem.code", mutate: (d) => { (d.node_types.WorkItem!.attributes!.code as { maxLength: number }).maxLength = 40; } },
+        { id: "widened-attr-range", tag: "widened_attr_range:WorkItem.rank", mutate: (d) => { (d.node_types.WorkItem!.attributes!.rank as { max: number }).max = 5; } },
+        { id: "widened-attr-items", tag: "widened_attr_items:WorkItem.tags", mutate: (d) => { (d.node_types.WorkItem!.attributes!.tags as { maxItems: number }).maxItems = 10; } },
+        { id: "relaxed-attr-pattern", tag: "relaxed_attr_pattern:WorkItem.code", mutate: (d) => { delete (d.node_types.WorkItem!.attributes!.code as { pattern?: string }).pattern; } },
+        {
+          id: "added-state-machine",
+          tag: "added_state_machine:WorkItem.review",
+          mutate: (d) => { d.node_types.WorkItem!.state_machines!.review = { states: ["open", "approved"], initial_state: "open", terminal_states: ["approved"], transitions: [{ from: ["open"], to: ["approved"], authority: "author" }] }; },
+        },
+        { id: "added-state", tag: "added_state:RiskEntry", mutate: (d) => { d.node_types.RiskEntry!.state_machine!.states.push("deferred"); } },
+        { id: "added-terminal-state", tag: "added_terminal_state:RiskEntry", mutate: (d) => { d.node_types.RiskEntry!.state_machine!.terminal_states!.push("mitigated"); } },
+        {
+          id: "added-transition",
+          tag: "added_transition:RiskEntry:identified->closed",
+          mutate: (d) => { d.node_types.RiskEntry!.state_machine!.transitions!.push({ from: ["identified"], to: ["closed"], authority: "author" }); },
+        },
+        { id: "relaxed-transition-authority", tag: "relaxed_transition_authority:WorkItem.specification:scoped->specified", mutate: (d) => { d.node_types.WorkItem!.state_machines!.specification!.transitions![1]!.authority = "author"; } },
+        { id: "relaxed-transition-requires", tag: "relaxed_transition_requires:WorkItem.specification:request-recorded->scoped", mutate: (d) => { d.node_types.WorkItem!.state_machines!.specification!.transitions![0]!.requires = []; } },
+        {
+          id: "added-hardening",
+          tag: "added_hardening",
+          baseDoc: trackNoHardening,
+          baseInit: nhInit,
+          mutate: (d) => { d.hardening = { statuses: ["draft", "verified"], default_status: "draft", promotion_requires: [], status_transitions: [{ from_statuses: ["draft"], to_statuses: ["verified"], authority: "author" }] }; },
+        },
+        { id: "relaxed-hardening-promotion", tag: "relaxed_hardening_promotion", mutate: (d) => { d.hardening!.promotion_requires = []; } },
+        { id: "removed-admission-policy", tag: "removed_admission_policy:WorkItem", mutate: (d) => { delete d.node_types.WorkItem!.admission_policy; } },
+        { id: "relaxed-admission-mode", tag: "relaxed_admission_mode:WorkItem", mutate: (d) => { d.node_types.WorkItem!.admission_policy!.mode = "bounded-auto"; } },
+        { id: "relaxed-admission-distinct", tag: "relaxed_admission_distinct:WorkItem", mutate: (d) => { d.node_types.WorkItem!.admission_policy!.third_party_distinct_from_author = false; } },
+        { id: "relaxed-admission-override", tag: "relaxed_admission_by_rank:WorkItem.2", mutate: (d) => { delete d.node_types.WorkItem!.admission_policy!.by_rank!["2"]; } },
+        { id: "added-relation", tag: "added_relation:depends_on", mutate: (d) => { d.relation_types!.depends_on = { description: "Dependency edge.", source_types: ["WorkItem"], target_types: ["WorkItem"] }; } },
+        { id: "widened-relation-endpoints", tag: "added_target_types:governs_risk", mutate: (d) => { d.relation_types!.governs_risk!.target_types = ["RiskEntry", "WorkItem"]; } },
+        { id: "widened-relation-cardinality", tag: "widened_cardinality:governs_risk.out", mutate: (d) => { (d.relation_types!.governs_risk!.cardinality!.out as { max: number }).max = 5; } },
+        { id: "relaxed-relation-requires-evidence", tag: "relaxed_relation_requires_evidence:governs_risk", mutate: (d) => { d.relation_types!.governs_risk!.requires_evidence = false; } },
+        { id: "added-relation-basis-or-method", tag: "added_relation_assertion_basis:governs_risk", mutate: (d) => { d.relation_types!.governs_risk!.assertion_basis = ["manual", "inferred"]; } },
+        { id: "added-domain-level", tag: "added_domain_level:subtask", mutate: (d) => { d.domain_policies!.levels!.push({ id: "subtask", rank: 4, modes: ["build"], requires_parent: true, rollup: false }); } },
+        { id: "added-domain-level-mode", tag: "added_domain_level_mode:feature", mutate: (d) => { d.domain_policies!.levels![2]!.modes = ["build", "run"]; } },
+        { id: "relaxed-level-requires-parent", tag: "relaxed_level_requires_parent:epic", mutate: (d) => { d.domain_policies!.levels![1]!.requires_parent = false; } },
+        { id: "relaxed-level-closure-gate", tag: "relaxed_level_closure_gate:feature", mutate: (d) => { delete d.domain_policies!.levels![2]!.closure_gate_ref; } },
+        {
+          id: "added-domain-map-entry",
+          tag: "added_domain_cross_cutting_axes:security",
+          mutate: (d) => { d.domain_policies!.cross_cutting_axes!.security = { attribute: "sec_tag", pattern: "^SEC-[0-9]+$", inherited_downward: false }; },
+        },
+        { id: "added-nesting-rule", tag: "added_nesting_rule:epic", mutate: (d) => { d.domain_policies!.nesting_matrix!.push({ parent_level: "epic", parent_modes: ["run"], allowed_child_levels: ["task"] }); } },
+        { id: "widened-nesting-children", tag: "widened_nesting_children:epic", mutate: (d) => { d.domain_policies!.nesting_matrix![1]!.allowed_child_levels = ["feature", "task"]; } },
+        { id: "added-stage-refinement", tag: "added_stage_refinement:in-review", mutate: (d) => { d.domain_policies!.stage_refinements!.push({ parent_stage: "in-review", sub_stages: ["peer-check"] }); } },
+        { id: "added-sub-stage", tag: "added_sub_stage:in-implementation", mutate: (d) => { d.domain_policies!.stage_refinements![0]!.sub_stages = ["coding", "refactor"]; } },
+        { id: "relaxed-stage-witnesses", tag: "relaxed_stage_witnesses:in-implementation", mutate: (d) => { d.domain_policies!.stage_refinements![0]!.witness_link_kinds = []; } },
+        { id: "added-domain-actor-class", tag: "added_domain_actor_class", mutate: (d) => { d.domain_policies!.autonomy_policy!.actor_classes = ["human", "agent", "conductor", "reviewer"]; } },
+        { id: "widened-max-autonomous-create-rank", tag: "widened_max_autonomous_create_rank", mutate: (d) => { d.domain_policies!.autonomy_policy!.max_autonomous_create_rank = 3; } },
+        { id: "widened-max-autonomous-create-level", tag: "widened_max_autonomous_create_level", baseDoc: levelAutonomyParent, baseInit: laInit, mutate: (d) => { d.domain_policies!.autonomy_policy!.max_autonomous_create_level = "task"; } },
+        { id: "widened-autonomous-stage-ceiling", tag: "widened_autonomous_stage_ceiling:feature", mutate: (d) => { d.domain_policies!.autonomy_policy!.autonomous_stage_ceiling_by_level!.feature = "verified"; } },
+        { id: "relaxed-autonomy-operations", tag: "relaxed_mandated_act_operations", mutate: (d) => { d.domain_policies!.autonomy_policy!.mandated_act_operations = ["item.create"]; } },
+        { id: "added-mandated-proof-source", tag: "added_mandated_proof_source", mutate: (d) => { d.domain_policies!.autonomy_policy!.mandated_act_proof_sources = ["ci-log", "signed-attestation"]; } },
+        { id: "relaxed-gate-levels", tag: "relaxed_gate_levels:feature_uat", mutate: (d) => { d.domain_policies!.acceptance_gates!.feature_uat!.applies_to_levels = ["feature"]; } },
+        { id: "relaxed-gate-evidence", tag: "relaxed_gate_evidence:feature_uat", mutate: (d) => { d.domain_policies!.acceptance_gates!.feature_uat!.non_waivable_evidence_kinds = ["verification_run"]; } },
+        { id: "relaxed-gate-children-terminal", tag: "relaxed_gate_children_terminal:feature_uat", mutate: (d) => { d.domain_policies!.acceptance_gates!.feature_uat!.require_all_children_terminal = false; } },
+        { id: "added-timebox", tag: "added_timebox:task", mutate: (d) => { d.domain_policies!.timeboxes!.push({ applies_to_level: "task", target_days: 5, hard_ceiling_days: 10, clock_start_trigger: "in-progress", clock_stop_triggers: ["closed"] }); } },
+        { id: "widened-timebox-ceiling", tag: "widened_timebox_ceiling:feature", mutate: (d) => { d.domain_policies!.timeboxes![0]!.hard_ceiling_days = 30; } },
+        { id: "widened-timebox-target", tag: "widened_timebox_target:feature", mutate: (d) => { d.domain_policies!.timeboxes![0]!.target_days = 14; } },
+        { id: "widened-timebox-stop-triggers", tag: "widened_timebox_stop_triggers:feature", mutate: (d) => { d.domain_policies!.timeboxes![0]!.clock_stop_triggers = ["verified", "accepted", "closed"]; } },
+        {
+          id: "added-domain-eta-policy",
+          tag: "added_domain_policy:eta_policy",
+          baseDoc: trackNoHardening,
+          baseInit: nhInit,
+          mutate: (d) => { d.domain_policies!.eta_policy = { source_kinds: ["measured"], append_only_slip_journal: true }; },
+        },
+        { id: "added-eta-source-kind", tag: "added_eta_source_kind", mutate: (d) => { d.domain_policies!.eta_policy!.source_kinds = ["measured", "estimate", "historical"]; } },
+        { id: "relaxed-eta-provenance-fields", tag: "relaxed_eta_provenance_fields", mutate: (d) => { d.domain_policies!.eta_policy!.measured_provenance_required_fields = []; } },
+        { id: "added-risk-severity-band", tag: "added_risk_severity_band:extreme", mutate: (d) => { d.domain_policies!.risk_policy!.severity_bands!.push({ id: "extreme", min_score: 26, max_score: 30 }); } },
+        { id: "added-risk-category-or-response", tag: "added_risk_category", mutate: (d) => { d.domain_policies!.risk_policy!.categories!.push("compliance"); } },
+        { id: "widened-risk-review-validity", tag: "widened_risk_review_validity:low", mutate: (d) => { d.domain_policies!.risk_policy!.max_review_validity_days_by_band!.low = 120; } },
+        { id: "widened-external-register-max-age", tag: "widened_external_register_max_age", mutate: (d) => { d.domain_policies!.risk_policy!.external_register_max_age_days = 60; } },
+        { id: "lowered-risk-sensitivity-floor", tag: "lowered_risk_sensitivity_floor:regulated", mutate: (d) => { d.domain_policies!.risk_policy!.sensitivity_impact_floors!.regulated = 3; } },
+        { id: "relaxed-forbidden-risk-actor", tag: "relaxed_forbidden_risk_actor:accept", mutate: (d) => { d.domain_policies!.risk_policy!.forbid_actor_classes_by_response!.accept = ["agent"]; } },
+        { id: "added-domain-invariant", tag: "added_domain_invariant:inv-2", mutate: (d) => { d.domain_policies!.invariants!.push({ id: "inv-2", summary: "Advisory note.", scope: "risk_policy", severity: "warning" }); } },
+        { id: "relaxed-domain-invariant-severity", tag: "relaxed_domain_invariant_severity:inv-uat-human-only", mutate: (d) => { d.domain_policies!.invariants![0]!.severity = "warning"; } },
+        { id: "added-file-projection", tag: "added_file_projection:secondary_pr_slice", mutate: (d) => { d.file_projections!.secondary_pr_slice = structuredClone(d.file_projections!.default_pr_slice!); } },
+        { id: "added-projection-vocab", tag: "added_projection_report_sections:default_pr_slice", mutate: (d) => { (d.file_projections!.default_pr_slice as { state_snapshot: { report_sections: string[] } }).state_snapshot.report_sections.push("risks"); } },
+      ];
+
+      for (const vec of wideningVectors) {
+        coveredWideningIds.add(vec.id);
+        for (const extra of vec.idsAlsoCovered ?? []) coveredWideningIds.add(extra);
+        const doc = vec.baseDoc ?? ctx.doc;
+        const init = vec.baseInit ?? { pin: ctx.pin, reg: ctx.registry };
+        const patchCand = { ...structuredClone(doc), version: "1.0.1", parent_pin: init.pin };
+        vec.mutate(patchCand);
+        assertLot02DocumentValid(patchCand, init.reg, vec.id);
+        expectSemVerRefusal(patchCand, { registry: init.reg }, "MM_VERSION_MINOR_REQUIRED_FOR_ADDITIVE", "version");
+
+        const minorCand = { ...structuredClone(patchCand), version: "1.1.0" };
+        expect(evaluateSemVerGate(freezeInput(minorCand), { registry: init.reg })).toMatchObject({
+          status: "accepted",
+          changeClass: "minor",
+          diff: { breaking: [], additive: [vec.tag], docOnly: [], detectedRenames: [] },
+        });
+      }
+      expect([...coveredWideningIds].sort()).toEqual(WIDENING_RULES.map((r) => r.id).sort());
     });
 
     describe("round-5 single entry: each public API projects every document once, type-checks it against the closed schema and hands on a branded document", () => {
