@@ -358,4 +358,130 @@ describe("BD-6 DS-token SVG primitives, normalization & 7x5 glyph registry", () 
     const v12Reg = buildShapeRegistry(v12Arms);
     expect(v12Arms.map((arm) => v12Reg.shapeFor(arm))).toEqual(v12Cases.map(([, , shape]) => shape));
   });
+
+  it("assigns collision-free shapes across Lot B / OWNER-REQUESTS models, aliases and cascades", () => {
+    const lotbArms: ModelShapeInput[] = [
+      { provider: "OpenAI", model: "gpt-6.2-sol-low", isCascade: false },
+      { provider: "OpenAI", model: "gpt-6.2-astra-low", isCascade: false, effort: "low" },
+      { provider: "OpenAI", model: "gpt-6-luna-low", isCascade: false, effort: undefined },
+      { provider: "OpenAI", model: "gpt-5.6-luna-low", isCascade: false },
+      { provider: "OpenAI", model: "gpt-5.6-sol-low", isCascade: false },
+      { provider: "OpenAI", model: "gpt-6-astra-low", isCascade: false },
+      { provider: "Google", model: "gemini-3.8-flash", isCascade: false },
+      { provider: "Google", model: "gemini-4-argon-low", isCascade: false },
+      { provider: "Google", model: "gemini-4-hydrogen-low", isCascade: false },
+      { provider: "Google", model: "mesh:gemini-4-carbon-max", isCascade: false },
+      { provider: "Google", model: "mesh:gemini-4-neon-max", isCascade: false },
+      { provider: "Anthropic", model: "claude-opus-5-5-low", isCascade: false },
+      { provider: "Anthropic", model: "claude-fable-5-2-max", isCascade: false },
+      { provider: "Anthropic", model: "claude-haiku-5-5-low", isCascade: false },
+      { provider: "Anthropic", model: "claude-sonnet-5-5-low", isCascade: false },
+      { provider: "Meta", model: "muse-1.3", isCascade: false },
+      { provider: "Meta", model: "muse-wonder-full-1.0", isCascade: false },
+      { provider: "Mistral", model: "mistral-small-4", isCascade: false },
+      { provider: "Mistral", model: "mistral-large-4-low", isCascade: false },
+      { provider: "Zhipu", model: "zai-glm-5-3-low", isCascade: false },
+      { provider: "z.ai", model: "a-model", isCascade: false },
+      { provider: "OpenAI", model: "CP-low", isCascade: true, effort: "low" },
+    ];
+    const reg = buildShapeRegistry([
+      ...lotbArms,
+      { provider: "openai", model: "gpt-6-astra-high", isCascade: false },
+    ]);
+    expect(lotbArms.map((arm) => reg.shapeFor(arm))).toEqual([
+      "cross", "pentagon", "diamond", "triangle", "square", "circle",
+      "circle", "square", "triangle", "diamond", "pentagon",
+      "cross", "diamond", "pentagon", "circle",
+      "circle", "square",
+      "circle", "square",
+      "circle", "square",
+      "star",
+    ]);
+    expect(reg.byProvider.get("zhipu")).toEqual(new Map([["zai-glm-5.3", "circle"], ["a-model", "square"]]));
+    const lex = buildShapeRegistry([
+      { provider: "Acme", model: "z-model", isCascade: false },
+      { provider: "Acme", model: "a-model", isCascade: false },
+    ]);
+    const lexRev = buildShapeRegistry([
+      { provider: "Acme", model: "a-model", isCascade: false },
+      { provider: "Acme", model: "z-model", isCascade: false },
+    ]);
+    expect([
+      lex.shapeFor({ provider: "Acme", model: "a-model", isCascade: false }),
+      lex.shapeFor({ provider: "Acme", model: "z-model", isCascade: false }),
+      lexRev.shapeFor({ provider: "Acme", model: "a-model", isCascade: false }),
+      lexRev.shapeFor({ provider: "Acme", model: "z-model", isCascade: false }),
+      resolveModelShape({ provider: "Zhipu", model: "zai-glm-5-3-low", isCascade: false }),
+      resolveModelShape({ provider: "Cascades", model: "c2", isCascade: true, effort: "cascade" }),
+      resolveModelShape({ provider: "toString", model: "name", isCascade: false }),
+      resolveModelShape({ provider: "constructor", model: "name", isCascade: false }),
+      resolveModelShape({ provider: "OpenAI", model: "constructor", isCascade: false }),
+    ]).toEqual(["circle", "square", "circle", "square", "circle", "star", "circle", "circle", "circle"]);
+  });
+
+  it("refuses malformed shape registry inputs, >6 overflow and both-side cascade conflicts", () => {
+    const reg = buildShapeRegistry([{ provider: "OpenAI", model: "gpt-6-astra", isCascade: false }]);
+    refuse(() => reg.shapeFor(null as never), "NOT_OBJECT", "arm");
+    refuse(() => reg.shapeFor({ provider: "OpenAI", model: "gpt-4.1", isCascade: false }), "BAD_ENUM", "arm.model");
+    refuse(
+      () => reg.shapeFor({ provider: "Google", model: "gemini-4-argon", isCascade: false }),
+      "BAD_ENUM",
+      "arm.model",
+    );
+    refuse(() => resolveModelShape(null as never), "NOT_OBJECT", "arm");
+    refuse(() => resolveModelShape({ provider: "", model: "m", isCascade: false }), "EMPTY_STRING", "arm.provider");
+    refuse(
+      () => resolveModelShape({ provider: "Cascade", model: "c2", isCascade: false }),
+      "CASCADE_CONFLICT",
+      "arm.isCascade",
+    );
+    refuse(() => buildShapeRegistry(null as never), "NOT_ARRAY", "arms");
+    refuse(() => buildShapeRegistry([null as never]), "NOT_OBJECT", "arms[0]");
+    refuse(
+      () => buildShapeRegistry([{ provider: "", model: "m", isCascade: false }]),
+      "EMPTY_STRING",
+      "arms[0].provider",
+    );
+    refuse(
+      () => buildShapeRegistry([{ provider: "OpenAI", model: "", isCascade: false }]),
+      "EMPTY_STRING",
+      "arms[0].model",
+    );
+    refuse(
+      () => buildShapeRegistry([{ provider: "OpenAI", model: "gpt-4.1", isCascade: null as never }]),
+      "WRONG_TYPE",
+      "arms[0].isCascade",
+    );
+    refuse(
+      () => buildShapeRegistry([{ provider: "OpenAI", model: "gpt-4.1", isCascade: false, effort: null as never }]),
+      "BAD_ENUM",
+      "arms[0].effort",
+    );
+    refuse(
+      () => buildShapeRegistry([
+        { provider: "OpenAI", model: "gpt-4.1", isCascade: false, effort: "unknown" as never },
+      ]),
+      "BAD_ENUM",
+      "arms[0].effort",
+    );
+    refuse(
+      () => buildShapeRegistry([{ provider: "OpenAI", model: "gpt-4.1", isCascade: false, effort: "cascade" }]),
+      "CASCADE_CONFLICT",
+      "arms[0].effort",
+    );
+    refuse(
+      () => buildShapeRegistry([{ provider: "Cascade", model: "c2", isCascade: false }]),
+      "CASCADE_CONFLICT",
+      "arms[0].isCascade",
+    );
+    refuse(
+      () => buildShapeRegistry([{ provider: "Cascades", model: "c2", isCascade: false }]),
+      "CASCADE_CONFLICT",
+      "arms[0].isCascade",
+    );
+    const sevenOpenAi: ModelShapeInput[] = [
+      "gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-luna", "gpt-6-luna", "gpt-6.2-astra", "gpt-6.2-sol", "gpt-4.1",
+    ].map((model) => ({ provider: "OpenAI", model, isCascade: false }));
+    refuse(() => buildShapeRegistry(sevenOpenAi), "PROVIDER_SHAPE_OVERFLOW", "arms.openai");
+  });
 });
