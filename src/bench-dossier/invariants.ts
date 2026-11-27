@@ -1,8 +1,8 @@
 import { specsOf, type FieldSpec, type Mission } from "../scrap/extract.js";
 import { nonEmptyString } from "./results-guards.js";
 import type { BenchResultsFile } from "./results-types.js";
-import { BenchInvariantError, failInv, validateCountsAndSites, wilson95,
-  type BenchInvariantCode } from "./invariants-checks.js";
+import { BenchInvariantError, failInv, validateCountsAndSites,
+  validateEstimator, wilson95, type BenchInvariantCode } from "./invariants-checks.js";
 export { BenchInvariantError, wilson95, type BenchInvariantCode };
 
 export type MissionShapeCompatibility = ReturnType<typeof compatibleMissionFieldShape>;
@@ -85,6 +85,7 @@ export function validateBenchResultsInvariants(file: BenchResultsFile,
     proseToArm.set(prose, record.armId);
     const spec = specs.get(record.field);
     validateCountsAndSites(record, base, file.corpus.goldenIds, file.corpus.currency, spec);
+    validateEstimator(record, file.corpus.primaryEstimator, base, spec);
   });
   for (const primary of primaries.values())
     if (primary.count !== 1) failInv("PRIMARY_COMPARATOR", `$.records[${primary.firstIdx}].isPrimaryComparator`);

@@ -702,3 +702,88 @@ describe("zero-denominator, count and sitePresence failure matrix", () => {
     }
   });
 });
+
+function makeWeightedFile(): BenchResultsFile {
+  const weightedBootstrap = (low: number, high: number) => ({
+    estimator: "weighted", method: "design_bootstrap_95", clustering: "group_resampled", valid: true, low, high,
+  } as const);
+  const pooledDisabled = {
+    estimator: "unweighted", method: "none", clustering: "clustered_record_invalid", valid: false,
+    low: null, high: null,
+  } as const;
+  const weightedRecord = makeScalarRecord({
+    field: "office.city", comparator: "lotb_ca_post_v1", unverifiedWholeRecordsDropped: 1,
+    unweighted: {
+      precision: 0.5, recall: 0.75, f1: 0.6,
+      precisionInterval: { ...pooledDisabled }, recallInterval: { ...pooledDisabled },
+    },
+    weighted: {
+      scheme: "horvitz_thompson_s1_s2_v1", deff: 1.14, nEff: 17.5, precision: 0.55, recall: 0.72, f1: 0.6236,
+      precisionInterval: weightedBootstrap(0.35, 0.75), recallInterval: weightedBootstrap(0.5, 0.88),
+      f1Interval: weightedBootstrap(0.4, 0.8),
+    },
+    precision: 0.55, recall: 0.72, f1: 0.6236,
+    precisionInterval: weightedBootstrap(0.35, 0.75), recallInterval: weightedBootstrap(0.5, 0.88),
+  });
+  const base = makeResultsFile([weightedRecord]);
+  return { ...base, corpus: { ...base.corpus, primaryEstimator: "weighted", fields: ["office.city"] } };
+}
+
+describe("estimator pairing, unweighted metrics and Wilson intervals", () => {
+  it("accepts weighted primary, unweighted with optional weighted and null weighted fields", () => {
+    expect(validateBenchResultsInvariants(makeWeightedFile()).corpus.primaryEstimator).toBe("weighted");
+    const unweightedWithWeighted = makeResultsFile([
+      makeScalarRecord({ weighted: makeWeightedFile().records[0]!.weighted }),
+    ]);
+    expect(validateBenchResultsInvariants(unweightedWithWeighted).corpus.primaryEstimator).toBe("unweighted");
+    for (const key of ["deff", "nEff", "precision", "recall", "f1"] as const) {
+      const doc = clone(unweightedWithWeighted) as any;
+      doc.records[0].weighted[key] = null;
+      expect(validateBenchResultsInvariants(doc).records[0]?.weighted?.[key]).toBeNull();
+    }
+    for (const key of ["precision", "recall", "f1"] as const) {
+      const doc = clone(makeWeightedFile()) as any;
+      doc.records[0].weighted[key] = null;
+      doc.records[0][key] = null;
+      expect(validateBenchResultsInvariants(doc).records[0]?.[key]).toBeNull();
+    }
+  });
+
+  it("refuses estimator mismatches, wrong unweighted metrics, bad Wilson and pooled Wilson claims", () => {
+    const cases: [() => BenchResultsFile, (doc: any) => void, BenchInvariantCode, string, BenchResultsErrorCode][] = [
+      [makeWeightedFile, (doc) => { doc.records[0].weighted = null; },
+        "ESTIMATOR_PAIRING", "$.records[0].weighted", "BAD_SHAPE"],
+      [makeWeightedFile, (doc) => { doc.records[0].precision = 0.54; },
+        "ESTIMATOR_PAIRING", "$.records[0].precision", "BAD_SHAPE"],
+      [makeWeightedFile, (doc) => { doc.records[0].precisionInterval.estimator = "unweighted"; },
+        "INTERVAL_ESTIMATOR", "$.records[0].precisionInterval.estimator", "BAD_INTERVAL"],
+      [makeWeightedFile, (doc) => { doc.records[0].weighted.precisionInterval.estimator = "unweighted"; },
+        "INTERVAL_ESTIMATOR", "$.records[0].weighted.precisionInterval.estimator", "BAD_INTERVAL"],
+      [makeWeightedFile, (doc) => { doc.records[0].weighted.precisionInterval.method = "wilson_95_unweighted"; },
+        "WILSON_INTERVAL", "$.records[0].weighted.precisionInterval", "BAD_INTERVAL"],
+      [makeWeightedFile, (doc) => { doc.records[0].unweighted.precisionInterval = { ...WILSON_6_OF_12 }; },
+        "POOLED_WILSON_FORBIDDEN", "$.records[0].unweighted.precisionInterval", "BAD_INTERVAL"],
+      [makeWeightedFile, (doc) => { doc.records[0].unweighted.recallInterval = { ...WILSON_6_OF_8 }; },
+        "POOLED_WILSON_FORBIDDEN", "$.records[0].unweighted.recallInterval", "BAD_INTERVAL"],
+      [makeResultsFile, (doc) => { doc.records[0].unweighted.precision = 0.51; },
+        "UNWEIGHTED_METRIC", "$.records[0].unweighted.precision", "BAD_SHAPE"],
+      [makeResultsFile, (doc) => { doc.records[0].unweighted.recall = null; },
+        "UNWEIGHTED_METRIC", "$.records[0].unweighted.recall", "BAD_SHAPE"],
+      [makeResultsFile, (doc) => { doc.records[0].unweighted.f1 = 0.61; },
+        "UNWEIGHTED_METRIC", "$.records[0].unweighted.f1", "BAD_SHAPE"],
+      [makeResultsFile, (doc) => { doc.records[0].precisionInterval.low = 0.26; },
+        "ESTIMATOR_PAIRING", "$.records[0].precisionInterval", "BAD_INTERVAL"],
+      [makeResultsFile, (doc) => { doc.records[0].unweighted.precisionInterval.low = 0.26; },
+        "WILSON_INTERVAL", "$.records[0].unweighted.precisionInterval", "BAD_INTERVAL"],
+      [makeResultsFile, (doc) => { doc.records[0].unweighted.recallInterval.clustering = "group_resampled"; },
+        "WILSON_INTERVAL", "$.records[0].unweighted.recallInterval", "BAD_INTERVAL"],
+      [makeResultsFile, (doc) => { doc.records[0].sitePresence.siteRecallInterval.high = 0.91; },
+        "WILSON_INTERVAL", "$.records[0].sitePresence.siteRecallInterval", "BAD_INTERVAL"],
+    ];
+    for (const [buildDoc, mutate, invariant, path, code] of cases) {
+      const doc = clone(buildDoc());
+      mutate(doc);
+      refuse(() => validateBenchResultsInvariants(doc), invariant, path, code);
+    }
+  });
+});
