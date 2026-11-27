@@ -1066,3 +1066,130 @@ describe("BD-4 tree-14: Round-3 survivors, FX override, zero-basis, and Check 9 
       .toEqual([["d1"], true]);
   });
 });
+
+describe("BD-4 tree-15: independent seat currency, fxApplied copy, and Check 8 four-form inputs", () => {
+  const fxUsdToCad = { from: "USD" as const, to: "CAD" as const, rate: 1.385, source: "boc", asOf: "2026-11-22" };
+
+  it("keeps estimated observedCurrency independent, checks guard order, and shallow-copies fxApplied", () => {
+    const apiValid = {
+      costUnknownReason: null, apiEquivalentTotal: 4.5705, apiEquivalentPerItem: 0.0026806451612903224,
+    };
+    const apiUnknown = {
+      costUnknownReason: "missing-usage" as const,
+      apiEquivalentTotal: "unknown" as const,
+      apiEquivalentPerItem: "unknown" as const,
+    };
+    const estimatedBase = {
+      status: "estimated" as const, method: "api_cost_proportional" as const, windowMinutes: 10080 as const,
+      isolatedSeat: false, observedApiEquivalent: 10, quotaDeltaFraction: 0.25, basePlanMultiplier: 2,
+      targetPlanMultiplier: 5, plan: "Max", planMonthlyPrice: 100, planSource: "card", planAsOf: "2026-11-20",
+    };
+    // F46: planCurrency: "USD" with omitted observedCurrency defaults observedApiEquivalent to targetCurrency ("CAD").
+    // exact = (4.5705/1705) * (138.5 / ((10/0.25)*(487/112)*2.5)) = 0.000853843280121878518911...
+    expect(resolveSeat({ ...estimatedBase, planCurrency: "USD" }, apiValid, makeArm({ fx: fxUsdToCad }), "CAD"))
+      .toEqual({
+        seatStatus: "estimated", seatMethod: "api_cost_proportional", seatUnknownReason: null,
+        seatSharePerItem: "unknown", seatCostPerItem: 0.0008538432801218785,
+        seatPlan: "Max", seatMonthlyPrice: 138.5, seatLimitScale: 2.5,
+        seatPlanSource: "card", seatPlanAsOf: "2026-11-20",
+      });
+    // F52 & F62: estimated observedCurrency guard runs before unknown API check; planCurrency requires FX.
+    refuse(() => resolveSeat({ ...estimatedBase, observedCurrency: "USD" }, apiUnknown, makeArm(), "CAD"),
+      "CURRENCY_MISMATCH", "$.seat.observedCurrency");
+    refuse(() => resolveSeat({ ...estimatedBase, planCurrency: "USD" }, apiValid, makeArm(), "CAD"),
+      "CURRENCY_MISMATCH", "$.seat.planCurrency");
+    // F75 & F53: seatObservation: undefined falls back to arm.seat; fxApplied is a fresh shallow copy.
+    const fallbackOut = computeArmCostAndSeat({
+      resultRows: [{ id: "a1" }, { type: "summary", ok: 1, failed: 0, cost: { currency: "USD", api_equivalent: 2 } }],
+      arm: makeArm({ fx: fxUsdToCad, seat: { status: "unknown", reason: "shared-seat-concurrent" } }),
+      currency: "CAD",
+      seatObservation: undefined,
+    });
+    expect(fallbackOut.cost.fxApplied).toEqual(fxUsdToCad);
+    expect(fallbackOut.cost.fxApplied).not.toBe(fxUsdToCad);
+    expect(fallbackOut.cost.seatUnknownReason).toBe("shared-seat-concurrent");
+  });
+
+  it("distinguishes absent, null, undefined, and unknown forms across defaulted and nullable inputs", () => {
+    expect(parseValidatedPriceTable({
+      source: "op", as_of: "2026-11-22", currency: undefined, status: undefined,
+      per_million: { input: 2, output: 10, reasoning: undefined },
+    })).toEqual({
+      source: "op", as_of: "2026-11-22", currency: "USD", status: "secondary_unverified",
+      per_million: { input: 2, output: 10 },
+    });
+    expect(parseValidatedPriceTable({
+      source: "op", as_of: "2026-11-22", per_million: { input: 2, output: 10, reasoning: 0 },
+    })).toEqual({
+      source: "op", as_of: "2026-11-22", currency: "USD", status: "secondary_unverified",
+      per_million: { input: 2, output: 10, reasoning: 0 },
+    });
+    expect(parseValidatedPriceTable({
+      source: "op", as_of: "2026-11-22", per_million: { input: 2, output: 10, reasoning: null },
+    })).toBeNull();
+    expect(parseValidatedPriceTable({
+      source: "op", as_of: "2026-11-22", per_million: { input: 2, output: 10, reasoning: "unknown" },
+    })).toBeNull();
+    refuse(() => parseValidatedPriceTable("unknown"), "NOT_OBJECT", "$.priceTable");
+    for (const badValue of [null, "unknown"]) {
+      refuse(() => parseValidatedPriceTable({
+        source: "op", as_of: "2026-11-22", currency: badValue, per_million: { input: 2, output: 10 },
+      }), "BAD_ENUM", "$.priceTable.currency");
+      refuse(() => parseValidatedPriceTable({
+        source: "op", as_of: "2026-11-22", status: badValue, per_million: { input: 2, output: 10 },
+      }), "BAD_ENUM", "$.priceTable.status");
+    }
+    const validSummary = {
+      type: "summary", ok: 1, failed: 0, calls_total: 1,
+      tokens: { input: 1, output: 2, reasoning: 0, cached: 0, total: 3 }, cost: { api_equivalent: 0.1 },
+    };
+    const unknownDigestUsage = summarizeInvocationUsage([
+      { id: "a1" }, { ...validSummary, mission_digest: "unknown" },
+    ]);
+    expect([unknownDigestUsage.missionDigests, unknownDigestUsage.hasMissingDigest])
+      .toEqual([["unknown"], false]);
+    const fourFormRejections: [unknown[], string, string][] = [
+      [[{ id: "a1", type: "unknown" }], "BAD_ENUM", "$.resultRows[0].type"],
+      [[{ id: "a1" }, { ...validSummary, calls_total: null }], "WRONG_TYPE", "$.resultRows[1].calls_total"],
+      [[{ id: "a1" }, { ...validSummary, cost: "unknown" }], "NOT_OBJECT", "$.resultRows[1].cost"],
+      [[{ id: "a1" }, { ...validSummary, cost: { currency: null } }], "WRONG_TYPE", "$.resultRows[1].cost.currency"],
+      [[{ id: "a1" }, { ...validSummary, cost: { currency: "unknown" } }],
+        "BAD_ENUM", "$.resultRows[1].cost.currency"],
+      [[{ id: "a1" }, { ...validSummary, cost: { api_equivalent: null } }],
+        "WRONG_TYPE", "$.resultRows[1].cost.api_equivalent"],
+    ];
+    for (const [rows, code, path] of fourFormRejections) {
+      refuse(() => summarizeInvocationUsage(rows), code, path);
+    }
+    expect(computeFromRates(
+      { input: 10, output: 0, reasoning: 1, cached: "unknown", total: 11 },
+      { input: 2, output: 4, reasoning: undefined }, "USD", "USD", 1, undefined,
+    )).toEqual({
+      costUnknownReason: "reasoning-rate-missing", apiEquivalentTotal: "unknown", apiEquivalentPerItem: "unknown",
+    });
+    const simpleUsage = [{ id: "a1" }, {
+      type: "summary", ok: 1, failed: 0, tokens: { input: 10, output: 10, reasoning: 0, total: 20 },
+    }];
+    const secondaryArmOut = computeArmCostAndSeat({
+      resultRows: simpleUsage, priceTable: undefined,
+      seatObservation: { status: "unknown", reason: "non-weekly-window" },
+      arm: makeArm({
+        seat: { status: "unknown", reason: "missing-observation" },
+        tariffOverride: { status: "secondary_unverified", source: "sec-ov", asOf: "2026-11-26" },
+      }),
+    });
+    expect([
+      secondaryArmOut.cost.costUnknownReason, secondaryArmOut.cost.tariffStatus,
+      secondaryArmOut.cost.tariffSource, secondaryArmOut.cost.tariffAsOf, secondaryArmOut.cost.seatUnknownReason,
+    ]).toEqual(["unpriced-mission", "secondary_unverified", "sec-ov", "2026-11-26", "non-weekly-window"]);
+    refuse(() => computeArmCostAndSeat({ resultRows: simpleUsage, arm: makeArm(), priceTable: null }),
+      "NOT_OBJECT", "$.priceTable");
+    refuse(() => computeArmCostAndSeat({ resultRows: simpleUsage, arm: makeArm(), priceTable: "unknown" }),
+      "NOT_OBJECT", "$.priceTable");
+    refuse(() => computeArmCostAndSeat({ resultRows: simpleUsage, arm: makeArm(), currency: "unknown" as never }),
+      "BAD_ENUM", "$.currency");
+    refuse(() => computeArmCostAndSeat({ resultRows: simpleUsage, arm: makeArm(), seatObservation: "unknown" }),
+      "NOT_OBJECT", "$");
+  });
+});
+
