@@ -14,6 +14,8 @@ import {
 import {
   scoreClusterSite, scoreUnweightedRecord,
 } from "../src/bench-dossier/metrics-records.js";
+import { BenchInvariantError, validateBenchResultsInvariants } from "../src/bench-dossier/invariants.js";
+import { parseBenchResultsFile, type BenchResultsFile } from "../src/bench-dossier/results-contract.js";
 
 const fv = (value: string | null) => ({ value, quote: value });
 const mkKey = (pc: string | null, st: string | null, ci: string | null) => ({ pc, st, ci });
@@ -478,5 +480,131 @@ describe("BD-3 golden record parser, real converge shapes & majority gate", () =
       low: expect.closeTo(0.20654931437723742, 12), high: 1,
     });
     expect(mv1.diagnostics.broad).toEqual({ tp: 1, fp: 1, fn: 1, precision: 0.5, recall: 0.5, f1: 0.5 });
+  });
+
+  it("scores end-to-end record alignment, majority gate, sitePresence, Wilson & BD-1a/1c parity", () => {
+    const cl4 = (pc: string | null, ci: string | null, sup: number) => ({
+      fields: {
+        postal_code: { verdict: sup > 2 ? "majority" : "split", value: sup > 2 ? pc : null, n_answered: 4,
+          runs: Object.fromEntries([1, 2, 3, 4].map((i) => [`r${i}`, fv(i <= sup ? pc : null)])) },
+        city: { verdict: sup > 2 ? "majority" : "split", value: sup > 2 ? ci : null, n_answered: 4,
+          runs: Object.fromEntries([1, 2, 3, 4].map((i) => [`r${i}`, fv(i <= sup ? ci : null)])) },
+      },
+    });
+    const goldenRows = [
+      { id: "s1", fields: { o: { verdict: "majority", n_answered: 3, aligned: [
+        { fields: { postal_code: { verdict: "unanimous", value: "M5X 1A9" },
+          city: { verdict: "unanimous", value: "Toronto" } } },
+        { fields: { street: { verdict: "majority", value: "500 Rue Saint" },
+          city: { verdict: "majority", value: "Montréal" } } },
+      ] } } },
+      { id: "s2", fields: { o: { verdict: "split", n_answered: 3,
+        aligned: [{ fields: { postal_code: { verdict: "unanimous", value: "K1P 6L2" },
+          city: { verdict: "unanimous", value: "Ottawa" } } }],
+        unmatched: [{ fields: { postal_code: fv("B3J 3N4"), city: fv("Halifax") } }] } } },
+      { id: "s3", fields: { o: { verdict: "split", n_answered: 4,
+        aligned: [cl4("T2P 1N2", "Calgary", 3), cl4("T5J 0N3", "Edmonton", 2)] } } },
+      { id: "s4", fields: { o: { verdict: "split", n_answered: 4, aligned: [{ fields: {
+        postal_code: { verdict: "majority", value: "V6B 1A1", n_answered: 4,
+          runs: { r1: fv("V6B 1A1"), r2: fv("V6B 1A1"), r3: fv("V6B 1A1"), r4: fv(null) } },
+        city: { verdict: "split", value: null, n_answered: 4,
+          runs: { r1: fv("Vancouver"), r2: fv("Burnaby"), r3: fv(null), r4: fv(null) } },
+      } }] } } },
+      { id: "s5", fields: { o: { verdict: "absent", n_answered: 3 } } },
+      { id: "s6", fields: { o: { verdict: "absent", n_answered: 3 } } },
+      { id: "s7", fields: { o: { verdict: "absent", n_answered: 3 } } },
+      { id: "s8", fields: { o: { verdict: "insufficient", n_answered: 1 } } },
+      { id: "s9", fields: { o: { verdict: "unanimous", n_answered: 2, aligned: [{ fields: {
+        postal_code: { verdict: "unanimous", value: "G1R 4P5" },
+        city: { verdict: "unanimous", value: "Quebec" } } }] } } },
+      { id: "s10", fields: { o: { verdict: "unanimous", n_answered: 2, aligned: [{ fields: {
+        postal_code: { verdict: "unanimous", value: "L4Z 1X9" }, city: { verdict: "absent", value: null } } }] } } },
+    ];
+    const candidateRows = [
+      { id: "s1", fields: { o: { values: [
+        { postal_code: fv("m5x1a9"), city: fv("toronto") },
+        { street: fv("500  rue saint"), city: fv("Montre\u0301al") },
+        { postal_code: fv("H2Y 9Z9"), city: fv("DuplicateExtra") },
+      ], unverified_dropped: 1, unverified_subfields: 2 } } },
+      { id: "s2", fields: { o: { values: [
+        { postal_code: fv("K1P 6L2"), city: fv("Gatineau"), street: { value: "x", reason: "unverified_quote" } },
+        { postal_code: fv("B3J 3N4"), city: fv("Halifax") },
+      ] } } },
+      { id: "s3", fields: { o: { values: [
+        { postal_code: fv("T2P 1N2"), city: fv("Calgary") }, { postal_code: fv("T5J 0N3"), city: fv("Edmonton") },
+      ] } } },
+      { id: "s4", fields: { o: { values: [{ postal_code: fv("V6B 1A1"), city: fv("Vancouver") }] } } },
+      { id: "s5", fields: { o: { values: [
+        { postal_code: fv("R3B 3K6"), city: fv("Winnipeg") }, { postal_code: fv("S7K 1J5"), city: fv("Saskatoon") },
+      ] } } },
+      { id: "s6", fields: { o: { values: [{ postal_code: fv("E1C 1G2"), city: fv(null) }] } } },
+      { id: "s7", error: "llm_error", fields: null },
+      { id: "s8", fields: { o: { values: [{ city: fv("Victoria") }] } } },
+      { id: "s9", fields: { o: { values: [{ postal_code: fv("H2Y 1S1"), city: fv("Quebec") }] } } },
+      { id: "s10", fields: { o: { values: [{ postal_code: fv("L4Z 1X9"), city: fv("Mississauga") }] } } },
+    ];
+    const res = scoreUnweightedRecord({
+      field: "o.city", maxValues: 3, goldenRows, candidateRows,
+      supportFloors: { precisionMinPredictions: 5, recallMinPositives: 5 },
+    });
+    expect([res.attempted, res.accepted, res.failed, res.unverifiedQuotesNulled,
+      res.unverifiedWholeRecordsDropped]).toEqual([10, 9, 1, 3, 1]);
+    expect(res.failuresByCode).toEqual({ llm_error: 1 });
+    expect([res.goldPositive, res.goldAbsent, res.tp, res.fp, res.fpOnPresent, res.fpOnAbsent,
+      res.fpElementsOnAbsent, res.fn, res.tn, res.failedOnAbsent, res.unresolved, res.insufficient])
+      .toEqual([5, 4, 3, 6, 3, 2, 3, 2, 1, 1, 3, 1]);
+    expect(Math.abs(res.precision! - 1 / 3)).toBeLessThan(1e-12);
+    expect(Math.abs(res.recall! - 0.6)).toBeLessThan(1e-12);
+    expect(Math.abs(res.f1! - 3 / 7)).toBeLessThan(1e-12);
+    expect(Math.abs(res.abstentionSpecificity! - 1 / 3)).toBeLessThan(1e-12);
+    const clusteredInvalid = {
+      estimator: "unweighted", method: "none", clustering: "clustered_record_invalid",
+      valid: false, low: null, high: null,
+    };
+    expect(res.unweighted.precisionInterval).toEqual(clusteredInvalid);
+    expect(res.unweighted.recallInterval).toEqual(clusteredInvalid);
+    expect(res.sitePresence).toEqual({
+      goldPresentSites: 4, goldAbsentSites: 4, unresolvedSites: 1, insufficientSites: 1,
+      tpSites: 3, fnSites: 1, wrongValueOnPresentSites: 1, fpOnAbsentSites: 2, tnSites: 1, failedOnAbsentSites: 1,
+      siteRecall: 0.75,
+      siteRecallInterval: {
+        estimator: "unweighted", method: "wilson_95_unweighted", clustering: "independent_site", valid: true,
+        low: expect.closeTo(0.30064184258240184, 12), high: expect.closeTo(0.9544127391902995, 12),
+      },
+      siteAbstentionSpecificity: expect.closeTo(1 / 3, 12),
+      siteAbstentionInterval: {
+        estimator: "unweighted", method: "wilson_95_unweighted", clustering: "independent_site", valid: true,
+        low: expect.closeTo(0.06149194472039621, 12), high: expect.closeTo(0.7923403991979522, 12),
+      },
+    });
+    expect(res.indeterminate).toEqual({ precision: false, recall: false, f1: false });
+    expect([res.diagnostics.broad.tp, res.diagnostics.broad.fp, res.diagnostics.broad.fn]).toEqual([4, 6, 2]);
+    const file: BenchResultsFile = {
+      schemaId: "urn:engram:bench-results:1.0.0", schemaVersion: 1,
+      generatedAt: "2026-11-26T10:00:00Z", campaignId: "rec-test",
+      corpus: {
+        partition: "eval", primaryEstimator: "unweighted", costBasisLabel: "extracted_packet", currency: "USD",
+        goldenMissionSha256: "a".repeat(64), candidateMissionSha256: "b".repeat(64), fieldShapeVerified: true,
+        goldenSha256: "c".repeat(64), goldenIds: 10, fields: ["o.city"], annotatorCount: 4,
+        krippendorffAlphaByField: { "o.city": 0.7 },
+      },
+      supportFloors: { precisionMinPredictions: 5, recallMinPositives: 5, failureCeiling: 0.2 },
+      records: [{
+        armId: "arm-a", armMissionSha256: "b".repeat(64), missingDigestAllowed: false, provider: "OpenAI",
+        model: "gpt-6-astra", modelLabel: "Astra", proseName: "OpenAI Astra", effort: "low", isCascade: false,
+        isHighlighted: false, incomplete: false, comparator: "generic", isPrimaryComparator: true,
+        weighted: null, calls: 9, callsPerItem: 1, tokens: "unknown",
+        cost: { currency: "USD", costBasisItems: 9, costUnknownReason: "missing-usage",
+          apiEquivalentTotal: "unknown", apiEquivalentPerItem: "unknown", tariffStatus: "unknown", tariffSource: null,
+          tariffAsOf: null, fxApplied: null, seatStatus: "unknown", seatMethod: "unknown",
+          seatUnknownReason: "missing-observation", seatSharePerItem: "unknown", seatCostPerItem: "unknown",
+          seatPlan: null, seatMonthlyPrice: null, seatLimitScale: null, seatPlanSource: null, seatPlanAsOf: null },
+        ...res,
+      }],
+    };
+    expect(validateBenchResultsInvariants(parseBenchResultsFile(file), {
+      missionSpecs: [{ name: "o", kind: "record", maxValues: 3,
+        subFields: [{ name: "postal_code" }, { name: "street" }, { name: "city" }] }],
+    }).records).toHaveLength(1);
   });
 });
