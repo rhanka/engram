@@ -7,6 +7,8 @@ import {
 } from "../src/metamodel/composition.js";
 import type { MetamodelDiagnosticCode } from "../src/metamodel/diagnostics.js";
 import {
+  AUTHORITY_ORDER,
+  AUTHORITY_RANK,
   evaluateSemVerGate,
 } from "../src/metamodel/semver-gate.js";
 import type {
@@ -1469,6 +1471,350 @@ describe("metamodel versioning and composition (Lot 0.3)", () => {
       return { base, baseDigest, parentPin, archiReg, trackReg, registry: [trackReg, archiReg] };
     }
 
+    function registerInitial(doc: MetamodelTemplateDocument, extra: readonly RegisteredTemplateRecord[] = []) {
+      const validation = validateTemplateAgainstMetamodel(doc, { registry: extra });
+      expect(validation.status).toBe("accepted");
+      const digest = independentTemplateSha256(doc);
+      const pin = { id: doc.id, version: doc.version, contentDigest: stripSha256Prefix(digest) };
+      const reg: RegisteredTemplateRecord[] = [
+        ...extra,
+        {
+          lineage: doc.lineage,
+          templateId: doc.id,
+          templateVersion: doc.version,
+          templateDigestSha256: digest,
+          presentationDigest: independentPresentationSha256(doc),
+          nodeTypeIds: Object.keys(doc.node_types),
+          document: doc,
+        },
+      ];
+      return { digest, pin, reg };
+    }
+
+    it("M-1: refuses breaking collection.item kind and required changes under MINOR and reports compatible: false", () => {
+      const { base } = makeValidBaseContext();
+      const parent = structuredClone(base);
+      (parent.node_types.WorkItem!.attributes as Record<string, unknown>).tags = {
+        kind: "collection",
+        minItems: 1,
+        maxItems: 5,
+        item: { kind: "string", required: false },
+      };
+      const { pin, reg } = registerInitial(parent);
+
+      const itemKindMinor = structuredClone(parent);
+      itemKindMinor.version = "1.1.0";
+      itemKindMinor.parent_pin = pin;
+      ((itemKindMinor.node_types.WorkItem!.attributes as Record<string, unknown>).tags as { item: unknown }).item = {
+        kind: "integer",
+        required: false,
+      };
+      expect(validateTemplateAgainstMetamodel({ ...structuredClone(itemKindMinor), version: "2.0.0" }, { registry: reg }).status).toBe("accepted");
+      expectSemVerRefusal(itemKindMinor, { registry: reg }, "MM_VERSION_MAJOR_REQUIRED_FOR_BREAKING", "version");
+      const itemKindMajor = { ...structuredClone(itemKindMinor), version: "2.0.0" };
+      expect(evaluateSemVerGate(freezeInput(itemKindMajor), { registry: reg })).toMatchObject({
+        status: "accepted",
+        changeClass: "major",
+        diff: { breaking: ["changed_attr_kind:WorkItem.tags.item"], additive: [] },
+      });
+      const kindCompat = checkProfileCompatibility(parent as unknown as OntologyProfile, itemKindMinor as unknown as OntologyProfile);
+      expect(kindCompat.compatible).toBe(false);
+      expect(kindCompat.breaking.map((d) => ({ code: d.code, path: d.path }))).toEqual([
+        { code: "changed_attr_kind", path: "node_types.WorkItem.attributes.tags.item" },
+      ]);
+
+      const itemReqMinor = structuredClone(parent);
+      itemReqMinor.version = "1.1.0";
+      itemReqMinor.parent_pin = pin;
+      ((itemReqMinor.node_types.WorkItem!.attributes as Record<string, unknown>).tags as { item: { required: boolean } }).item.required = true;
+      expect(validateTemplateAgainstMetamodel({ ...structuredClone(itemReqMinor), version: "2.0.0" }, { registry: reg }).status).toBe("accepted");
+      expectSemVerRefusal(itemReqMinor, { registry: reg }, "MM_VERSION_MAJOR_REQUIRED_FOR_BREAKING", "version");
+      const itemReqMajor = { ...structuredClone(itemReqMinor), version: "2.0.0" };
+      expect(evaluateSemVerGate(freezeInput(itemReqMajor), { registry: reg })).toMatchObject({
+        status: "accepted",
+        changeClass: "major",
+        diff: { breaking: ["tightened_attr_required:WorkItem.tags.item"], additive: [] },
+      });
+      const reqCompat = checkProfileCompatibility(parent as unknown as OntologyProfile, itemReqMinor as unknown as OntologyProfile);
+      expect(reqCompat.compatible).toBe(false);
+      expect(reqCompat.breaking.map((d) => ({ code: d.code, path: d.path }))).toEqual([
+        { code: "tightened_attr_required", path: "node_types.WorkItem.attributes.tags.item" },
+      ]);
+    });
+
+    it("M-2: deleting a looser admission_policy override tightens to mode and adding a looser override relaxes", () => {
+      const { base } = makeValidBaseContext();
+      const parent = structuredClone(base);
+      parent.node_types.WorkItem!.admission_policy = {
+        mode: "own-act-human",
+        by_rank: { "3": "bounded-auto" },
+        by_operation: { "item.create": "bounded-auto" },
+        by_transition: { "realization:to-do->in-progress": "bounded-auto" },
+      };
+      const { pin, reg } = registerInitial(parent);
+
+      const delRank = structuredClone(parent);
+      delRank.version = "1.1.0";
+      delRank.parent_pin = pin;
+      delete delRank.node_types.WorkItem!.admission_policy!.by_rank!["3"];
+      expect(validateTemplateAgainstMetamodel({ ...structuredClone(delRank), version: "2.0.0" }, { registry: reg }).status).toBe("accepted");
+      expectSemVerRefusal(delRank, { registry: reg }, "MM_VERSION_MAJOR_REQUIRED_FOR_BREAKING", "version");
+      const delRankCompat = checkProfileCompatibility(parent as unknown as OntologyProfile, delRank as unknown as OntologyProfile);
+      expect(delRankCompat.compatible).toBe(false);
+      expect(delRankCompat.breaking.map((d) => ({ code: d.code, path: d.path }))).toEqual([
+        { code: "tightened_admission_by_rank", path: "node_types.WorkItem.admission_policy.by_rank.3" },
+      ]);
+
+      const delOp = structuredClone(parent);
+      delOp.version = "1.1.0";
+      delOp.parent_pin = pin;
+      delete delOp.node_types.WorkItem!.admission_policy!.by_operation!["item.create"];
+      expectSemVerRefusal(delOp, { registry: reg }, "MM_VERSION_MAJOR_REQUIRED_FOR_BREAKING", "version");
+
+      const delTrans = structuredClone(parent);
+      delTrans.version = "1.1.0";
+      delTrans.parent_pin = pin;
+      delete delTrans.node_types.WorkItem!.admission_policy!.by_transition!["realization:to-do->in-progress"];
+      expectSemVerRefusal(delTrans, { registry: reg }, "MM_VERSION_MAJOR_REQUIRED_FOR_BREAKING", "version");
+
+      const addLooserPatch = structuredClone(parent);
+      addLooserPatch.version = "1.0.1";
+      addLooserPatch.parent_pin = pin;
+      addLooserPatch.node_types.WorkItem!.admission_policy!.by_rank!["2"] = "bounded-auto";
+      expectSemVerRefusal(addLooserPatch, { registry: reg }, "MM_VERSION_MINOR_REQUIRED_FOR_ADDITIVE", "version");
+      const addLooserMinor = { ...structuredClone(addLooserPatch), version: "1.1.0" };
+      expect(validateTemplateAgainstMetamodel(addLooserMinor, { registry: reg }).status).toBe("accepted");
+      expect(evaluateSemVerGate(freezeInput(addLooserMinor), { registry: reg })).toMatchObject({
+        status: "accepted",
+        changeClass: "minor",
+        diff: { breaking: [], additive: ["relaxed_admission_by_rank:WorkItem.2"] },
+      });
+      const addLooserCompat = checkProfileCompatibility(parent as unknown as OntologyProfile, addLooserMinor as unknown as OntologyProfile);
+      expect(addLooserCompat).toMatchObject({ ok: true, compatible: true, breaking: [] });
+      expect(addLooserCompat.nonBreaking.map((d) => ({ code: d.code, path: d.path }))).toEqual([
+        { code: "relaxed_admission_by_rank", path: "node_types.WorkItem.admission_policy.by_rank.2" },
+        { code: "bumped_profile_version", path: "version" },
+      ]);
+
+      const redundantParent = structuredClone(base);
+      redundantParent.node_types.WorkItem!.admission_policy = {
+        mode: "own-act-human",
+        by_rank: { "3": "own-act-human" },
+      };
+      const redInit = registerInitial(redundantParent);
+      const dropRedundant = structuredClone(redundantParent);
+      dropRedundant.version = "1.0.1";
+      dropRedundant.parent_pin = redInit.pin;
+      delete dropRedundant.node_types.WorkItem!.admission_policy!.by_rank!["3"];
+      expect(evaluateSemVerGate(freezeInput(dropRedundant), { registry: redInit.reg })).toMatchObject({
+        status: "accepted",
+        changeClass: "patch",
+        diff: { breaking: [], additive: [] },
+      });
+
+      const autoParent = structuredClone(base);
+      autoParent.node_types.WorkItem!.admission_policy = {
+        mode: "bounded-auto",
+        by_rank: { "3": "own-act-human" },
+      };
+      const autoInit = registerInitial(autoParent);
+      const addStricter = structuredClone(autoParent);
+      addStricter.version = "1.1.0";
+      addStricter.parent_pin = autoInit.pin;
+      addStricter.node_types.WorkItem!.admission_policy!.by_rank!["2"] = "mandated-act";
+      expectSemVerRefusal(addStricter, { registry: autoInit.reg }, "MM_VERSION_MAJOR_REQUIRED_FOR_BREAKING", "version");
+
+      const removeStricterPatch = structuredClone(autoParent);
+      removeStricterPatch.version = "1.0.1";
+      removeStricterPatch.parent_pin = autoInit.pin;
+      delete removeStricterPatch.node_types.WorkItem!.admission_policy!.by_rank!["3"];
+      expectSemVerRefusal(removeStricterPatch, { registry: autoInit.reg }, "MM_VERSION_MINOR_REQUIRED_FOR_ADDITIVE", "version");
+      expect(evaluateSemVerGate(freezeInput({ ...structuredClone(removeStricterPatch), version: "1.1.0" }), { registry: autoInit.reg })).toMatchObject({
+        status: "accepted",
+        changeClass: "minor",
+        diff: { breaking: [], additive: ["relaxed_admission_by_rank:WorkItem.3"] },
+      });
+    });
+
+    it("M-3: classifies optional nesting_matrix[].parent_modes transitions in the right direction", () => {
+      const { base } = makeValidBaseContext();
+      const parent = structuredClone(base);
+      parent.domain_policies!.nesting_matrix = [
+        { parent_level: "initiative", allowed_child_levels: ["epic"] },
+        { parent_level: "epic", parent_modes: ["build"], allowed_child_levels: ["feature"] },
+      ];
+      const { pin, reg } = registerInitial(parent);
+
+      const narrowMinor = structuredClone(parent);
+      narrowMinor.version = "1.1.0";
+      narrowMinor.parent_pin = pin;
+      narrowMinor.domain_policies!.nesting_matrix![0]!.parent_modes = ["build"];
+      expect(validateTemplateAgainstMetamodel({ ...structuredClone(narrowMinor), version: "2.0.0" }, { registry: reg }).status).toBe("accepted");
+      expectSemVerRefusal(narrowMinor, { registry: reg }, "MM_VERSION_MAJOR_REQUIRED_FOR_BREAKING", "version");
+      const narrowCompat = checkProfileCompatibility(parent as unknown as OntologyProfile, narrowMinor as unknown as OntologyProfile);
+      expect(narrowCompat.compatible).toBe(false);
+      expect(narrowCompat.breaking.map((d) => ({ code: d.code, path: d.path }))).toEqual([
+        { code: "narrowed_nesting_modes", path: "domain_policies.nesting_matrix.parent_modes" },
+      ]);
+
+      const widenPatch = structuredClone(parent);
+      widenPatch.version = "1.0.1";
+      widenPatch.parent_pin = pin;
+      delete widenPatch.domain_policies!.nesting_matrix![1]!.parent_modes;
+      expectSemVerRefusal(widenPatch, { registry: reg }, "MM_VERSION_MINOR_REQUIRED_FOR_ADDITIVE", "version");
+      const widenMinor = { ...structuredClone(widenPatch), version: "1.1.0" };
+      expect(validateTemplateAgainstMetamodel(widenMinor, { registry: reg }).status).toBe("accepted");
+      expect(evaluateSemVerGate(freezeInput(widenMinor), { registry: reg })).toMatchObject({
+        status: "accepted",
+        changeClass: "minor",
+        diff: { breaking: [], additive: ["widened_nesting_modes:epic"] },
+      });
+    });
+
+    it("M-4 & Ruling (a): handles undefined max_autonomous_create_rank and fails closed on unmodeled domain_policies or file_projections fields", () => {
+      const { base, parentPin, registry } = makeValidBaseContext();
+      const noRankParent = structuredClone(base);
+      delete noRankParent.domain_policies!.autonomy_policy!.max_autonomous_create_rank;
+      const noRankInit = registerInitial(noRankParent);
+
+      const imposeMinor = structuredClone(noRankParent);
+      imposeMinor.version = "1.1.0";
+      imposeMinor.parent_pin = noRankInit.pin;
+      imposeMinor.domain_policies!.autonomy_policy!.max_autonomous_create_rank = 2;
+      expect(validateTemplateAgainstMetamodel({ ...structuredClone(imposeMinor), version: "2.0.0" }, { registry: noRankInit.reg }).status).toBe("accepted");
+      expectSemVerRefusal(imposeMinor, { registry: noRankInit.reg }, "MM_VERSION_MAJOR_REQUIRED_FOR_BREAKING", "version");
+      expect(evaluateSemVerGate(freezeInput({ ...structuredClone(imposeMinor), version: "2.0.0" }), { registry: noRankInit.reg })).toMatchObject({
+        status: "accepted",
+        changeClass: "major",
+        diff: { breaking: ["tightened_max_autonomous_create_rank"], additive: [] },
+      });
+
+      const removePatch = structuredClone(base);
+      removePatch.version = "1.0.1";
+      removePatch.parent_pin = parentPin;
+      delete removePatch.domain_policies!.autonomy_policy!.max_autonomous_create_rank;
+      expectSemVerRefusal(removePatch, { registry }, "MM_VERSION_MINOR_REQUIRED_FOR_ADDITIVE", "version");
+      const removeMinor = { ...structuredClone(removePatch), version: "1.1.0" };
+      expect(validateTemplateAgainstMetamodel(removeMinor, { registry }).status).toBe("accepted");
+      expect(evaluateSemVerGate(freezeInput(removeMinor), { registry })).toMatchObject({
+        status: "accepted",
+        changeClass: "minor",
+        diff: { breaking: [], additive: ["widened_max_autonomous_create_rank"] },
+      });
+
+      for (const ver of ["1.0.1", "1.1.0"] as const) {
+        const unknownTop = structuredClone(base);
+        unknownTop.version = ver;
+        unknownTop.parent_pin = parentPin;
+        (unknownTop.domain_policies as Record<string, unknown>).future_ceiling = { strict: true };
+        expectSemVerRefusal(unknownTop, { registry }, "MM_VERSION_MAJOR_REQUIRED_FOR_BREAKING", "version");
+        if (ver === "1.1.0") {
+          expect(evaluateSemVerGate(freezeInput({ ...structuredClone(unknownTop), version: "2.0.0" }), { registry })).toMatchObject({
+            status: "accepted",
+            changeClass: "major",
+            diff: { breaking: ["changed_domain_policies_unmodeled"], additive: [] },
+          });
+          const unkCompat = checkProfileCompatibility(base as unknown as OntologyProfile, unknownTop as unknown as OntologyProfile);
+          expect(unkCompat.compatible).toBe(false);
+          expect(unkCompat.breaking.map((d) => ({ code: d.code, path: d.path }))).toEqual([
+            { code: "changed_domain_policies_unmodeled", path: "domain_policies" },
+          ]);
+          expect(unkCompat.nonBreaking.map((d) => ({ code: d.code, path: d.path }))).toEqual([
+            { code: "bumped_profile_version", path: "version" },
+          ]);
+        }
+
+        const unknownNested = structuredClone(base);
+        unknownNested.version = ver;
+        unknownNested.parent_pin = parentPin;
+        (unknownNested.domain_policies!.autonomy_policy as Record<string, unknown>).future_guard = true;
+        expectSemVerRefusal(unknownNested, { registry }, "MM_VERSION_MAJOR_REQUIRED_FOR_BREAKING", "version");
+
+        const unknownProj = structuredClone(base);
+        unknownProj.version = ver;
+        unknownProj.parent_pin = parentPin;
+        (unknownProj.file_projections!.default_pr_slice as unknown as Record<string, unknown>).future_contract = "v2";
+        expectSemVerRefusal(unknownProj, { registry }, "MM_VERSION_MAJOR_REQUIRED_FOR_BREAKING", "version");
+        if (ver === "1.1.0") {
+          const projUnkCompat = checkProfileCompatibility(base as unknown as OntologyProfile, unknownProj as unknown as OntologyProfile);
+          expect(projUnkCompat.compatible).toBe(false);
+          expect(projUnkCompat.breaking.map((d) => ({ code: d.code, path: d.path }))).toEqual([
+            { code: "changed_file_projection_unmodeled", path: "file_projections" },
+          ]);
+        }
+      }
+    });
+
+    it("M-5: classifies top-level registries removal/binding change as breaking and addition as additive", () => {
+      const { base, parentPin, registry } = makeValidBaseContext();
+      const parent = structuredClone(base);
+      parent.registries = {
+        work_items: { source: "work_items", id_column: "id", label_column: "title", node_type: "WorkItem" },
+        risk_items: { source: "risk_items", id_column: "id", label_column: "likelihood", node_type: "RiskEntry" },
+      };
+      const { pin, reg } = registerInitial(parent);
+
+      const removedMinor = structuredClone(parent);
+      removedMinor.version = "1.1.0";
+      removedMinor.parent_pin = pin;
+      delete removedMinor.registries!.risk_items;
+      expect(validateTemplateAgainstMetamodel({ ...structuredClone(removedMinor), version: "2.0.0" }, { registry: reg }).status).toBe("accepted");
+      expectSemVerRefusal(removedMinor, { registry: reg }, "MM_VERSION_MAJOR_REQUIRED_FOR_BREAKING", "version");
+      expect(evaluateSemVerGate(freezeInput({ ...structuredClone(removedMinor), version: "2.0.0" }), { registry: reg })).toMatchObject({
+        status: "accepted",
+        changeClass: "major",
+        diff: { breaking: ["removed_registry:risk_items"], additive: [] },
+      });
+
+      const changedBindingMinor = structuredClone(parent);
+      changedBindingMinor.version = "1.1.0";
+      changedBindingMinor.parent_pin = pin;
+      changedBindingMinor.registries!.work_items!.label_column = "rank";
+      expect(validateTemplateAgainstMetamodel({ ...structuredClone(changedBindingMinor), version: "2.0.0" }, { registry: reg }).status).toBe("accepted");
+      expectSemVerRefusal(changedBindingMinor, { registry: reg }, "MM_VERSION_MAJOR_REQUIRED_FOR_BREAKING", "version");
+      expect(evaluateSemVerGate(freezeInput({ ...structuredClone(changedBindingMinor), version: "2.0.0" }), { registry: reg })).toMatchObject({
+        status: "accepted",
+        changeClass: "major",
+        diff: { breaking: ["changed_registry_binding:work_items"], additive: [] },
+      });
+
+      const addedPatch = structuredClone(base);
+      addedPatch.version = "1.0.1";
+      addedPatch.parent_pin = parentPin;
+      addedPatch.registries = {
+        risk_items: { source: "risk_items", id_column: "id", label_column: "likelihood", node_type: "RiskEntry" },
+      };
+      expectSemVerRefusal(addedPatch, { registry }, "MM_VERSION_MINOR_REQUIRED_FOR_ADDITIVE", "version");
+      const addedMinor = { ...structuredClone(addedPatch), version: "1.1.0" };
+      expect(validateTemplateAgainstMetamodel(addedMinor, { registry }).status).toBe("accepted");
+      expect(evaluateSemVerGate(freezeInput(addedMinor), { registry })).toMatchObject({
+        status: "accepted",
+        changeClass: "minor",
+        diff: { breaking: [], additive: ["added_registry:risk_items"] },
+      });
+    });
+
+    it("M-6 & Ruling (b): refuses malformed mapping_pin on upgrades even without renames and avoids duplicate diagnostics", () => {
+      const { base, parentPin, registry } = makeValidBaseContext();
+      const malformedNoRename = {
+        ...structuredClone(base),
+        version: "1.1.0",
+        parent_pin: parentPin,
+        mapping_pin: { bad: true },
+      };
+      expectSemVerRefusal(malformedNoRename, { registry }, "MM_VERSION_UNMAPPED_BREAKING_RENAME", "mapping_pin");
+
+      const malformedWithRename = structuredClone(base);
+      malformedWithRename.version = "2.0.0";
+      malformedWithRename.parent_pin = parentPin;
+      const oldRisk = malformedWithRename.node_types.RiskEntry!;
+      delete malformedWithRename.node_types.RiskEntry;
+      malformedWithRename.node_types.HazardEntry = { ...oldRisk, aliases: ["RiskEntry"] };
+      malformedWithRename.relation_types!.governs_risk!.target_types = ["HazardEntry"];
+      (malformedWithRename as unknown as Record<string, unknown>).mapping_pin = { bad: true };
+      expectSemVerRefusal(malformedWithRename, { registry }, "MM_VERSION_UNMAPPED_BREAKING_RENAME", "mapping_pin");
+    });
+
     it("M-7: exercises mapping_pin, state_machine, admission_policy, and relation hierarchy in profile-bundle (kills M33/M35/M36/M38)", () => {
       const { base } = makeValidBaseContext();
 
@@ -1525,6 +1871,202 @@ describe("metamodel versioning and composition (Lot 0.3)", () => {
       expect(hierCompat.breaking.map((d) => ({ code: d.code, path: d.path }))).toEqual([
         { code: "changed_relation_hierarchy", path: "relation_types.governs_risk.hierarchy" },
       ]);
+    });
+
+    it("m-1: emits exact path hardening.status_transitions without duplicate breaking deltas in checkProfileCompatibility", () => {
+      const { base } = makeValidBaseContext();
+      const hardParent = structuredClone(base);
+      hardParent.hardening = {
+        statuses: ["draft", "reviewed", "enforced"],
+        default_status: "draft",
+        promotion_requires: ["peer-review"],
+        status_transitions: [{ from_statuses: ["draft"], to_statuses: ["reviewed"], authority: "author" }],
+      };
+      const { pin, reg } = registerInitial(hardParent);
+
+      const reqTight = structuredClone(hardParent);
+      reqTight.version = "1.1.0";
+      reqTight.parent_pin = pin;
+      reqTight.hardening!.status_transitions = [
+        { from_statuses: ["draft"], to_statuses: ["reviewed"], authority: "author", requires: ["ci-pass"] },
+      ];
+      expectSemVerRefusal(reqTight, { registry: reg }, "MM_VERSION_MAJOR_REQUIRED_FOR_BREAKING", "version");
+      const reqCompat = checkProfileCompatibility(hardParent as unknown as OntologyProfile, reqTight as unknown as OntologyProfile);
+      expect(reqCompat.compatible).toBe(false);
+      expect(reqCompat.breaking.map((d) => ({ code: d.code, path: d.path }))).toEqual([
+        { code: "narrowed_status_transition", path: "hardening.status_transitions" },
+      ]);
+
+      const authTight = structuredClone(hardParent);
+      authTight.version = "1.1.0";
+      authTight.parent_pin = pin;
+      authTight.hardening!.status_transitions = [
+        { from_statuses: ["draft"], to_statuses: ["reviewed"], authority: "mandated-act" },
+      ];
+      expectSemVerRefusal(authTight, { registry: reg }, "MM_VERSION_MAJOR_REQUIRED_FOR_BREAKING", "version");
+      const authCompat = checkProfileCompatibility(hardParent as unknown as OntologyProfile, authTight as unknown as OntologyProfile);
+      expect(authCompat.compatible).toBe(false);
+      expect(authCompat.breaking.map((d) => ({ code: d.code, path: d.path }))).toEqual([
+        { code: "tightened_transition_authority", path: "hardening.status_transitions" },
+      ]);
+    });
+
+    it("m-2: classifies adding a new severity: error domain invariant as breaking and warning as additive", () => {
+      const { base, parentPin, registry } = makeValidBaseContext();
+      const errMinor = structuredClone(base);
+      errMinor.version = "1.1.0";
+      errMinor.parent_pin = parentPin;
+      errMinor.domain_policies!.invariants!.push({
+        id: "inv-hard-rule",
+        summary: "Hard constraint.",
+        scope: "risk_policy",
+        severity: "error",
+      });
+      expect(validateTemplateAgainstMetamodel({ ...structuredClone(errMinor), version: "2.0.0" }, { registry }).status).toBe("accepted");
+      expectSemVerRefusal(errMinor, { registry }, "MM_VERSION_MAJOR_REQUIRED_FOR_BREAKING", "version");
+      expect(evaluateSemVerGate(freezeInput({ ...structuredClone(errMinor), version: "2.0.0" }), { registry })).toMatchObject({
+        status: "accepted",
+        changeClass: "major",
+        diff: { breaking: ["added_error_domain_invariant:inv-hard-rule"], additive: [] },
+      });
+      const errCompat = checkProfileCompatibility(base as unknown as OntologyProfile, errMinor as unknown as OntologyProfile);
+      expect(errCompat.compatible).toBe(false);
+      expect(errCompat.breaking.map((d) => ({ code: d.code, path: d.path }))).toEqual([
+        { code: "added_error_domain_invariant", path: "domain_policies.invariants.inv-hard-rule" },
+      ]);
+
+      const warnPatch = structuredClone(base);
+      warnPatch.version = "1.0.1";
+      warnPatch.parent_pin = parentPin;
+      warnPatch.domain_policies!.invariants!.push({
+        id: "inv-soft-note",
+        summary: "Advisory note.",
+        scope: "risk_policy",
+        severity: "warning",
+      });
+      expectSemVerRefusal(warnPatch, { registry }, "MM_VERSION_MINOR_REQUIRED_FOR_ADDITIVE", "version");
+      const warnMinor = { ...structuredClone(warnPatch), version: "1.1.0" };
+      expect(validateTemplateAgainstMetamodel(warnMinor, { registry }).status).toBe("accepted");
+      expect(evaluateSemVerGate(freezeInput(warnMinor), { registry })).toMatchObject({
+        status: "accepted",
+        changeClass: "minor",
+        diff: { breaking: [], additive: ["added_domain_invariant:inv-soft-note"] },
+      });
+    });
+
+    it("m-3 & Ruling (c): validates richParent and h2a-harness-overlay fixtures against Lot 0.2", () => {
+      const { base, baseDigest, archiReg, trackReg } = makeValidBaseContext();
+      const h2aOverlayParent: MetamodelTemplateDocument = {
+        ...structuredClone(makeH2aTemplate(baseDigest)),
+        file_projections: {
+          overlay_view: {
+            kind: "h2a-harness-overlay",
+            root_dir: ".h2a",
+            relative_path_template: ".h2a/overlays/repo/view.json",
+            format: "json",
+            include_node_types: ["HarnessSkill"],
+            order_by: ["entity_id"],
+            projected_fields: ["skill_id"],
+          },
+        },
+      };
+      const { pin: h2aPin, reg: h2aReg } = registerInitial(h2aOverlayParent, [archiReg, trackReg]);
+      const h2aProjMinor = structuredClone(h2aOverlayParent);
+      h2aProjMinor.version = "1.1.0";
+      h2aProjMinor.parent_pin = h2aPin;
+      (h2aProjMinor.file_projections!.overlay_view as { relative_path_template: string }).relative_path_template = ".h2a/overlays/repo/view-v2.json";
+      expect(validateTemplateAgainstMetamodel({ ...structuredClone(h2aProjMinor), version: "2.0.0" }, { registry: h2aReg }).status).toBe("accepted");
+      expectSemVerRefusal(h2aProjMinor, { registry: h2aReg }, "MM_VERSION_MAJOR_REQUIRED_FOR_BREAKING", "version");
+      expect(validateTemplateAgainstMetamodel({ ...structuredClone(base), id: "sentropic.rich-probe" }, { registry: [archiReg] }).status).toBe("accepted");
+    });
+
+    it("m-4 & Ruling (d): enforces explicit total order in AUTHORITY_RANK across every adjacent pair and fails closed on omitted/unknown authority", () => {
+      expect(AUTHORITY_ORDER).toEqual([
+        "author",
+        "third-party-reviewer",
+        "track-control",
+        "h2a-mandate",
+        "mandated-act",
+        "own-act-human",
+      ]);
+      expect(AUTHORITY_RANK).toEqual({
+        author: 0,
+        "third-party-reviewer": 1,
+        "track-control": 2,
+        "h2a-mandate": 3,
+        "mandated-act": 4,
+        "own-act-human": 5,
+      });
+
+      const { base } = makeValidBaseContext();
+      for (let i = 0; i < AUTHORITY_ORDER.length - 1; i += 1) {
+        const lowerAuth = AUTHORITY_ORDER[i]!;
+        const higherAuth = AUTHORITY_ORDER[i + 1]!;
+
+        const upParent = structuredClone(base);
+        upParent.node_types.WorkItem!.state_machines!.specification!.transitions![0]!.authority = lowerAuth;
+        const upInit = registerInitial(upParent);
+        const upMinor = structuredClone(upParent);
+        upMinor.version = "1.1.0";
+        upMinor.parent_pin = upInit.pin;
+        upMinor.node_types.WorkItem!.state_machines!.specification!.transitions![0]!.authority = higherAuth;
+        expectSemVerRefusal(upMinor, { registry: upInit.reg }, "MM_VERSION_MAJOR_REQUIRED_FOR_BREAKING", "version");
+        expect(evaluateSemVerGate(freezeInput({ ...structuredClone(upMinor), version: "2.0.0" }), { registry: upInit.reg })).toMatchObject({
+          status: "accepted",
+          changeClass: "major",
+          diff: {
+            breaking: ["tightened_transition_authority:WorkItem.specification:request-recorded->scoped"],
+            additive: [],
+          },
+        });
+        const upCompat = checkProfileCompatibility(upParent as unknown as OntologyProfile, upMinor as unknown as OntologyProfile);
+        expect(upCompat.compatible).toBe(false);
+        expect(upCompat.breaking.map((d) => ({ code: d.code, path: d.path }))).toEqual([
+          { code: "tightened_transition_authority", path: "node_types.WorkItem.state_machines.specification.transitions" },
+        ]);
+
+        const downParent = structuredClone(base);
+        downParent.node_types.WorkItem!.state_machines!.specification!.transitions![0]!.authority = higherAuth;
+        const downInit = registerInitial(downParent);
+        const downPatch = structuredClone(downParent);
+        downPatch.version = "1.0.1";
+        downPatch.parent_pin = downInit.pin;
+        downPatch.node_types.WorkItem!.state_machines!.specification!.transitions![0]!.authority = lowerAuth;
+        expectSemVerRefusal(downPatch, { registry: downInit.reg }, "MM_VERSION_MINOR_REQUIRED_FOR_ADDITIVE", "version");
+        const downMinor = { ...structuredClone(downPatch), version: "1.1.0" };
+        expect(evaluateSemVerGate(freezeInput(downMinor), { registry: downInit.reg })).toMatchObject({
+          status: "accepted",
+          changeClass: "minor",
+          diff: {
+            breaking: [],
+            additive: ["relaxed_transition_authority:WorkItem.specification:request-recorded->scoped"],
+          },
+        });
+        const downCompat = checkProfileCompatibility(downParent as unknown as OntologyProfile, downMinor as unknown as OntologyProfile);
+        expect(downCompat).toMatchObject({ ok: true, compatible: true, breaking: [] });
+        expect(downCompat.nonBreaking.map((d) => ({ code: d.code, path: d.path }))).toEqual([
+          { code: "relaxed_transition_authority", path: "node_types.WorkItem.state_machines.specification.transitions" },
+          { code: "bumped_profile_version", path: "version" },
+        ]);
+      }
+
+      // Omitted authority fails closed as breaking in both directions (Ruling a)
+      const omittedParent = structuredClone(base);
+      delete omittedParent.node_types.WorkItem!.state_machines!.specification!.transitions![0]!.authority;
+      const omittedInit = registerInitial(omittedParent);
+      const setAuthor = structuredClone(omittedParent);
+      setAuthor.version = "1.1.0";
+      setAuthor.parent_pin = omittedInit.pin;
+      setAuthor.node_types.WorkItem!.state_machines!.specification!.transitions![0]!.authority = "author";
+      expectSemVerRefusal(setAuthor, { registry: omittedInit.reg }, "MM_VERSION_MAJOR_REQUIRED_FOR_BREAKING", "version");
+
+      const clearAuth = structuredClone(base);
+      const clearInit = registerInitial(clearAuth);
+      const cleared = structuredClone(clearAuth);
+      cleared.version = "1.1.0";
+      cleared.parent_pin = clearInit.pin;
+      delete cleared.node_types.WorkItem!.state_machines!.specification!.transitions![0]!.authority;
+      expectSemVerRefusal(cleared, { registry: clearInit.reg }, "MM_VERSION_MAJOR_REQUIRED_FOR_BREAKING", "version");
     });
   });
 
