@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
-  BenchInvariantError, wilson95,
+  BenchInvariantError, compatibleMissionFieldShape, wilson95,
   type BenchInvariantCode,
 } from "../src/bench-dossier/invariants.js";
 import {
   BenchResultsValidationError, type BenchResultsErrorCode,
 } from "../src/bench-dossier/results-guards.js";
+import type { Mission } from "../src/scrap/extract.js";
+
+const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
 function refuse(
   runCheck: () => void,
@@ -66,6 +69,102 @@ describe("wilson95 and BenchInvariantError", () => {
       [Number.MAX_SAFE_INTEGER + 1, Number.MAX_SAFE_INTEGER + 2],
     ] as const) {
       refuse(() => wilson95(k, n), "WILSON_INTERVAL", "$", "BAD_INTERVAL");
+    }
+  });
+});
+
+function makeMission(): Mission {
+  return {
+    instruction: "Extract Canadian offices.", tokenCap: 120000,
+    reasoning_budget_tokens: 16384, calls_window_minutes: 60,
+    price_table: {
+      source: "openai", as_of: "2026-11-20", currency: "USD", status: "primary",
+      per_million: { input: 1, output: 4, reasoning: 8 },
+    },
+    fields: [
+      "headline",
+      {
+        name: "office", kind: "record", max_values: 3,
+        fields: [{ name: "city", instruction: "City name" }, { name: "postal_code" }],
+      },
+      { name: "overflow_canadian_offices", kind: "scalar", max_values: 1 },
+    ],
+  };
+}
+
+describe("compatibleMissionFieldShape via specsOf", () => {
+  it("accepts identical golden and candidate missions with nested record fields", () => {
+    const golden = makeMission();
+    expect(compatibleMissionFieldShape(golden, clone(golden))).toEqual({
+      maxValuesChanged: false,
+      goldenSpecs: [
+        { name: "headline", kind: "scalar", maxValues: 1 },
+        {
+          name: "office", kind: "record", maxValues: 3,
+          subFields: [{ name: "city", instruction: "City name" }, { name: "postal_code" }],
+        },
+        { name: "overflow_canadian_offices", kind: "scalar", maxValues: 1 },
+      ],
+      candidateSpecs: [
+        { name: "headline", kind: "scalar", maxValues: 1 },
+        {
+          name: "office", kind: "record", maxValues: 3,
+          subFields: [{ name: "city", instruction: "City name" }, { name: "postal_code" }],
+        },
+        { name: "overflow_canadian_offices", kind: "scalar", maxValues: 1 },
+      ],
+    });
+  });
+
+  it("refuses invalid specs, dotted/duplicate names and every shape mismatch", () => {
+    const base = makeMission();
+    const goldenErr = refuse(
+      () => compatibleMissionFieldShape({ fields: null } as any, base),
+      "MISSION_FIELD_SHAPE", "$.golden.fields",
+    );
+    expect(goldenErr.cause).toBeInstanceOf(Error);
+    const candErr = refuse(
+      () => compatibleMissionFieldShape(base, { fields: null } as any),
+      "MISSION_FIELD_SHAPE", "$.cand.fields",
+    );
+    expect(candErr.cause).toBeInstanceOf(Error);
+    const badCases: [(golden: any, candidate: any) => void, BenchInvariantCode, string][] = [
+      [(golden) => { golden.fields = []; }, "MISSION_FIELD_SHAPE", "$.golden.fields"],
+      [(_, candidate) => { candidate.fields = []; }, "MISSION_FIELD_SHAPE", "$.cand.fields"],
+      [(golden) => { golden.fields[0] = "a.b"; }, "FIELD_NAME_DOT", "$.golden.fields[0].name"],
+      [(_, candidate) => { candidate.fields[0] = "a.b"; }, "FIELD_NAME_DOT", "$.cand.fields[0].name"],
+      [(golden) => { golden.fields[1].fields[0].name = "c.d"; }, "FIELD_NAME_DOT", "$.golden.fields[1].fields[0].name"],
+      [
+        (_, candidate) => { candidate.fields[1].fields[1].name = "p.c"; },
+        "FIELD_NAME_DOT", "$.cand.fields[1].fields[1].name",
+      ],
+      [(golden) => { golden.fields.push("headline"); }, "DUPLICATE_FIELD", "$.golden.fields[3].name"],
+      [
+        (golden) => { golden.fields[1].fields.push({ name: "city" }); },
+        "DUPLICATE_FIELD", "$.golden.fields[1].fields[2].name",
+      ],
+      [(_, candidate) => { candidate.fields.pop(); }, "MISSION_FIELD_SHAPE", "$.cand.fields"],
+      [(_, candidate) => { candidate.fields[0] = "title"; }, "MISSION_FIELD_SHAPE", "$.cand.fields[0].name"],
+      [
+        (_, candidate) => { candidate.fields[0] = { name: "headline", kind: "record", fields: [{ name: "v" }] }; },
+        "MISSION_FIELD_SHAPE", "$.cand.fields[0].kind",
+      ],
+      [
+        (_, candidate) => { candidate.fields[0] = { name: "headline", max_values: 2 }; },
+        "MISSION_FIELD_SHAPE", "$.cand.fields[0].max_values",
+      ],
+      [(_, candidate) => { candidate.fields[1].max_values = 1; }, "MISSION_FIELD_SHAPE", "$.cand.fields[1].max_values"],
+      [(_, candidate) => { candidate.fields[1].fields.pop(); }, "MISSION_FIELD_SHAPE", "$.cand.fields[1].fields"],
+      [
+        (_, candidate) => { candidate.fields[1].fields[1].name = "province"; },
+        "MISSION_FIELD_SHAPE", "$.cand.fields[1].fields[1].name",
+      ],
+    ];
+    for (const [mutate, invariant, path] of badCases) {
+      const golden = clone(base);
+      const candidate = clone(base);
+      mutate(golden, candidate);
+      refuse(() => compatibleMissionFieldShape(golden, candidate), invariant, path);
     }
   });
 });
