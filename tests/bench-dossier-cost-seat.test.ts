@@ -662,3 +662,66 @@ describe("BD-4 tree-09: resolveSeat measured and unknown seat math", () => {
       "CURRENCY_MISMATCH", "$.seat.planCurrency");
   });
 });
+
+describe("BD-4 tree-10: resolveSeat estimated math, non-identity scale, and unknown projections", () => {
+  const fxUsdToCad = { from: "USD" as const, to: "CAD" as const, rate: 1.385, source: "boc", asOf: "2026-11-22" };
+  const apiValid = { costUnknownReason: null, apiEquivalentTotal: 4.5705, apiEquivalentPerItem: 0.0026806451612903224 };
+  const estimatedBase = {
+    status: "estimated" as const, method: "api_cost_proportional" as const, windowMinutes: 10080 as const,
+    isolatedSeat: false, observedApiEquivalent: 10, quotaDeltaFraction: 0.25, basePlanMultiplier: 2,
+    targetPlanMultiplier: 5, plan: "Max", planMonthlyPrice: 100, planSource: "card", planAsOf: "2026-11-20",
+  };
+
+  it("computes estimated api_cost_proportional with exact rational literals and unknown seat blocks", () => {
+    // scale = 5/2 = 2.5; DAYS_PER_MONTH = 487/16; WEEKS_PER_MONTH = 487/112;
+    // estUsd exact = (4.5705/1705) * (112/487) = 0.000616493343048287739... (IEEE: 0.0006164933430482877).
+    expect(resolveSeat({
+      ...estimatedBase, planCurrency: "USD", observedCurrency: "USD",
+    }, apiValid, makeArm({ fx: fxUsdToCad }), "CAD")).toEqual({
+      seatStatus: "estimated", seatMethod: "api_cost_proportional", seatUnknownReason: null,
+      seatSharePerItem: "unknown", seatCostPerItem: 0.0006164933430482877,
+      seatPlan: "Max", seatMonthlyPrice: 138.5, seatLimitScale: 2.5, seatPlanSource: "card", seatPlanAsOf: "2026-11-20",
+    });
+    // Omitted planCurrency & observedCurrency default to targetCur ("CAD"); IEEE: 0.0006164933430482878.
+    expect(resolveSeat(estimatedBase, apiValid, makeArm({ fx: fxUsdToCad }), "CAD")).toEqual({
+      seatStatus: "estimated", seatMethod: "api_cost_proportional", seatUnknownReason: null,
+      seatSharePerItem: "unknown", seatCostPerItem: 0.0006164933430482878,
+      seatPlan: "Max", seatMonthlyPrice: 100, seatLimitScale: 2.5, seatPlanSource: "card", seatPlanAsOf: "2026-11-20",
+    });
+    // Mixed: planCurrency CAD (190), observedCurrency USD (10*1.385=13.85);
+    // exact = (4.5705/1705) * (190 / ((13.85/0.25)*(487/112)*2.5)) = 0.0008457309399218387759...
+    expect(resolveSeat({
+      ...estimatedBase, planMonthlyPrice: 190, observedCurrency: "USD",
+      planSource: "mix-card", planAsOf: "2026-11-23",
+    }, apiValid, makeArm({ fx: fxUsdToCad }), "CAD")).toEqual({
+      seatStatus: "estimated", seatMethod: "api_cost_proportional", seatUnknownReason: null,
+      seatSharePerItem: "unknown", seatCostPerItem: 0.0008457309399218388,
+      seatPlan: "Max", seatMonthlyPrice: 190, seatLimitScale: 2.5,
+      seatPlanSource: "mix-card", seatPlanAsOf: "2026-11-23",
+    });
+    refuse(() => resolveSeat({ ...estimatedBase, observedCurrency: "USD" }, apiValid, makeArm(), "CAD"),
+      "CURRENCY_MISMATCH", "$.seat.observedCurrency");
+    const unknownReasonFor = (costReason: "missing-usage" | "incomplete-invocation-summary"
+      | "unpriced-mission" | "reasoning-rate-missing") => resolveSeat(estimatedBase, {
+      costUnknownReason: costReason, apiEquivalentTotal: "unknown", apiEquivalentPerItem: "unknown",
+    }, makeArm(), "USD");
+    expect(unknownReasonFor("missing-usage")).toEqual({
+      seatStatus: "unknown", seatMethod: "unknown", seatUnknownReason: "missing-usage",
+      seatSharePerItem: "unknown", seatCostPerItem: "unknown",
+      seatPlan: null, seatMonthlyPrice: null, seatLimitScale: null, seatPlanSource: null, seatPlanAsOf: null,
+    });
+    expect(unknownReasonFor("incomplete-invocation-summary").seatUnknownReason).toBe("missing-usage");
+    expect(unknownReasonFor("unpriced-mission").seatUnknownReason).toBe("api-equivalent-source-gap");
+    expect(unknownReasonFor("reasoning-rate-missing").seatUnknownReason).toBe("api-equivalent-source-gap");
+    expect(resolveSeat(undefined, apiValid, makeArm(), "USD")).toEqual({
+      seatStatus: "unknown", seatMethod: "unknown", seatUnknownReason: "missing-observation",
+      seatSharePerItem: "unknown", seatCostPerItem: "unknown",
+      seatPlan: null, seatMonthlyPrice: null, seatLimitScale: null, seatPlanSource: null, seatPlanAsOf: null,
+    });
+    expect(resolveSeat({ status: "unknown", reason: "shared-seat-concurrent" }, apiValid, makeArm(), "USD")).toEqual({
+      seatStatus: "unknown", seatMethod: "unknown", seatUnknownReason: "shared-seat-concurrent",
+      seatSharePerItem: "unknown", seatCostPerItem: "unknown",
+      seatPlan: null, seatMonthlyPrice: null, seatLimitScale: null, seatPlanSource: null, seatPlanAsOf: null,
+    });
+  });
+});
