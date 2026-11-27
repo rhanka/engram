@@ -432,4 +432,51 @@ describe("BD-3 golden record parser, real converge shapes & majority gate", () =
       estimator: "unweighted", method: "none", clustering: "independent_site", valid: false, low: null, high: null,
     });
   });
+
+  it("refuses malformed scoreUnweightedRecord inputs, dotted/whitespace fields & duplicate ids", () => {
+    const absRow = { id: "g1", fields: { o: { verdict: "absent" } } };
+    for (const bad of [null, [], new Date()]) refuse(() => scoreUnweightedRecord(bad as any), "NOT_OBJECT");
+    for (const field of ["", "city", "a.b.c", ".city", "o.", " o.city", "o .city", "o. city", "o.city ", 123]) {
+      refuse(() => scoreUnweightedRecord({ field: field as any, goldenRows: [], candidateRows: [] }), "BAD_FIELD");
+    }
+    for (const maxValues of [0, -1, 1.5, null, "2", Number.MAX_SAFE_INTEGER + 1]) {
+      refuse(() => scoreUnweightedRecord({
+        field: "o.city", maxValues: maxValues as any, goldenRows: [], candidateRows: [],
+      }), "BAD_MAX_VALUES", RangeError);
+    }
+    refuse(() => scoreUnweightedRecord({ field: "o.city", goldenRows: "bad" as any, candidateRows: [] }), "NOT_ARRAY");
+    refuse(() => scoreUnweightedRecord({ field: "o.city", goldenRows: [], candidateRows: "bad" as any }), "NOT_ARRAY");
+    refuse(() => scoreUnweightedRecord({
+      field: "o.city", goldenRows: [absRow, absRow], candidateRows: [],
+    }), "DUPLICATE_ID");
+    refuse(() => scoreUnweightedRecord({
+      field: "o.city", goldenRows: [absRow], candidateRows: [{ id: "g1", fields: { o: "bad" } }],
+    }), "NOT_OBJECT");
+  });
+
+  it("scores maxValues=1 Wilson intervals and broad split metrics for record fields", () => {
+    const mv1 = scoreUnweightedRecord({
+      field: "overflow.city", maxValues: 1,
+      goldenRows: [
+        { id: "m1", fields: { overflow: { verdict: "unanimous", n_answered: 2, aligned: [{ fields: {
+          postal_code: { verdict: "unanimous", value: "M5X 1A9" }, city: { verdict: "unanimous", value: "Toronto" },
+        } }] } } },
+        { id: "m2", fields: { overflow: { verdict: "split", n_answered: 4, aligned: [{ fields: {
+          postal_code: { verdict: "majority", value: "H2Y 1S1", n_answered: 4,
+            runs: { r1: fv("H2Y 1S1"), r2: fv("H2Y 1S1"), r3: fv("H2Y 1S1"), r4: fv(null) } },
+          city: { verdict: "split", value: null, n_answered: 4,
+            runs: { r1: fv("Montréal"), r2: fv("Laval"), r3: fv(null), r4: fv(null) } },
+        } }] } } },
+      ],
+      candidateRows: [
+        { id: "m1", fields: { overflow: { values: [{ postal_code: fv("M5X 1A9"), city: fv("Toronto") }] } } },
+        { id: "m2", fields: { overflow: { values: [{ postal_code: fv("H2Y 1S1"), city: fv("Ottawa") }] } } },
+      ],
+    });
+    expect(mv1.unweighted.precisionInterval).toEqual({
+      estimator: "unweighted", method: "wilson_95_unweighted", clustering: "independent_site", valid: true,
+      low: expect.closeTo(0.20654931437723742, 12), high: 1,
+    });
+    expect(mv1.diagnostics.broad).toEqual({ tp: 1, fp: 1, fn: 1, precision: 0.5, recall: 0.5, f1: 0.5 });
+  });
 });
