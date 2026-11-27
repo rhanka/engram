@@ -653,13 +653,16 @@ describe("BD-4 tree-09: resolveSeat measured and unknown seat math", () => {
     });
     const zeroDelta = resolveSeat({ ...measuredBase, remainingBefore: 0.72 }, apiValid, makeArm(), "USD");
     const negativeDelta = resolveSeat({ ...measuredBase, remainingBefore: 0.6 }, apiValid, makeArm(), "USD");
-    const fullUnknownNoDelta = {
+    expect(zeroDelta).toEqual({
       seatStatus: "unknown", seatMethod: "unknown", seatUnknownReason: "no-quota-delta",
       seatSharePerItem: "unknown", seatCostPerItem: "unknown",
       seatPlan: null, seatMonthlyPrice: null, seatLimitScale: null, seatPlanSource: null, seatPlanAsOf: null,
-    };
-    expect(zeroDelta).toEqual(fullUnknownNoDelta);
-    expect(negativeDelta).toEqual(fullUnknownNoDelta);
+    });
+    expect(negativeDelta).toEqual({
+      seatStatus: "unknown", seatMethod: "unknown", seatUnknownReason: "no-quota-delta",
+      seatSharePerItem: "unknown", seatCostPerItem: "unknown",
+      seatPlan: null, seatMonthlyPrice: null, seatLimitScale: null, seatPlanSource: null, seatPlanAsOf: null,
+    });
     refuse(() => resolveSeat({ ...measuredBase, planCurrency: "USD" }, apiValid, makeArm(), "CAD"),
       "CURRENCY_MISMATCH", "$.seat.planCurrency");
   });
@@ -1105,7 +1108,9 @@ describe("BD-4 tree-15: independent seat currency, fxApplied copy, and Check 8 f
       currency: "CAD",
       seatObservation: undefined,
     });
-    expect(fallbackOut.cost.fxApplied).toEqual(fxUsdToCad);
+    expect(fallbackOut.cost.fxApplied).toEqual({
+      from: "USD", to: "CAD", rate: 1.385, source: "boc", asOf: "2026-11-22",
+    });
     expect(fallbackOut.cost.fxApplied).not.toBe(fxUsdToCad);
     expect(fallbackOut.cost.seatUnknownReason).toBe("shared-seat-concurrent");
   });
@@ -1190,6 +1195,102 @@ describe("BD-4 tree-15: independent seat currency, fxApplied copy, and Check 8 f
       "BAD_ENUM", "$.currency");
     refuse(() => computeArmCostAndSeat({ resultRows: simpleUsage, arm: makeArm(), seatObservation: "unknown" }),
       "NOT_OBJECT", "$");
+  });
+});
+
+describe("BD-4 tree-16: required row.id undefined, guard order, summary CAD fallback, and arm tariffStatus", () => {
+  const fxUsdToCad = { from: "USD" as const, to: "CAD" as const, rate: 1.385, source: "boc", asOf: "2026-11-22" };
+  const apiValid = {
+    costUnknownReason: null, apiEquivalentTotal: 4.5705, apiEquivalentPerItem: 0.0026806451612903224,
+  };
+  const apiUnknown = {
+    costUnknownReason: "missing-usage" as const,
+    apiEquivalentTotal: "unknown" as const,
+    apiEquivalentPerItem: "unknown" as const,
+  };
+  const measuredBase = {
+    status: "measured" as const, method: "weekly_burn_delta" as const, windowMinutes: 10080 as const,
+    isolatedSeat: true as const, remainingBefore: 0.92, remainingAfter: 0.72, observedItems: 40,
+    plan: "Pro", planMonthlyPrice: 280, planSource: "inv", planAsOf: "2026-11-20",
+  };
+  const estimatedBase = {
+    status: "estimated" as const, method: "api_cost_proportional" as const, windowMinutes: 10080 as const,
+    isolatedSeat: false, observedApiEquivalent: 10, quotaDeltaFraction: 0.25, basePlanMultiplier: 2,
+    targetPlanMultiplier: 5, plan: "Max", planMonthlyPrice: 100, planSource: "card", planAsOf: "2026-11-20",
+  };
+
+  it("enforces fail-closed row.id and currency guard order before early unknown returns", () => {
+    refuse(() => summarizeInvocationUsage([{ id: undefined }]), "WRONG_TYPE", "$.resultRows[0].id");
+    const interruptedNoSummary = summarizeInvocationUsage([{ id: "a1" }]);
+    const interruptedMixedCurrencies = summarizeInvocationUsage([
+      { id: "a1" },
+      { type: "summary", ok: 1, failed: 0, cost: { currency: "USD", api_equivalent: 1 } },
+      { type: "summary", ok: 1, failed: 0, cost: { currency: "CAD", api_equivalent: 1 } },
+    ]);
+    const interruptedSumUsd = summarizeInvocationUsage([
+      { id: "a1" }, { id: "a2" }, { type: "summary", ok: 1, failed: 0, cost: { currency: "USD", api_equivalent: 1 } },
+    ]);
+    const priceTableCad = parseValidatedPriceTable({
+      source: "op", as_of: "2026-11-22", currency: "CAD", per_million: { input: 1, output: 2 },
+    });
+    const guardOrderVectors: [ReturnType<typeof summarizeInvocationUsage>, ArmManifestFile,
+      typeof priceTableCad, "USD" | "CAD", string][] = [
+      [interruptedNoSummary, makeArm({ fx: fxUsdToCad }), null, "USD", "$.arm.fx.to"],
+      [interruptedNoSummary, makeArm({
+        fx: { from: "USD", to: "USD", rate: 1.2, source: "id", asOf: "2026-11-22" },
+      }), null, "USD", "$.arm.fx.rate"],
+      [interruptedNoSummary, makeArm({
+        tariffOverride: { status: "primary", currency: "USD", source: "s", asOf: "d" },
+      }), null, "CAD", "$.arm.tariffOverride.currency"],
+      [interruptedMixedCurrencies, makeArm(), null, "USD", "$.resultRows"],
+      [interruptedSumUsd, makeArm({ fx: fxUsdToCad }), priceTableCad, "CAD", "$.priceTable.currency"],
+      [interruptedSumUsd, makeArm({
+        fx: fxUsdToCad, tariffOverride: { status: "primary", currency: "CAD", source: "ov", asOf: "2026-11-22" },
+      }), null, "CAD", "$.arm.tariffOverride.currency"],
+    ];
+    for (const [usage, arm, priceTable, targetCurrency, errorPath] of guardOrderVectors) {
+      refuse(() => resolveApiCost(usage, arm, priceTable, targetCurrency), "CURRENCY_MISMATCH", errorPath);
+    }
+    refuse(() => resolveSeat({ ...measuredBase, remainingBefore: 0.72, planCurrency: "USD" }, apiValid,
+      makeArm(), "CAD"), "CURRENCY_MISMATCH", "$.seat.planCurrency");
+    refuse(() => resolveSeat({ ...estimatedBase, planCurrency: "USD" }, apiUnknown, makeArm(), "CAD"),
+      "CURRENCY_MISMATCH", "$.seat.planCurrency");
+  });
+
+  it("verifies summary CAD fallback, priceTable.currency precedence, and arm.tariffStatus precedence", () => {
+    const summaryNoCurrency = summarizeInvocationUsage([
+      { id: "a1" }, { type: "summary", ok: 1, failed: 0, cost: { api_equivalent: 2 } },
+    ]);
+    const priceTableCad = parseValidatedPriceTable({
+      source: "op", as_of: "2026-11-22", currency: "CAD", per_million: { input: 1, output: 2 },
+    });
+    expect(resolveApiCost(summaryNoCurrency, makeArm(), null, "CAD")).toEqual({
+      costUnknownReason: null, apiEquivalentTotal: 2, apiEquivalentPerItem: 2,
+    });
+    expect(resolveApiCost(summaryNoCurrency, makeArm({ fx: fxUsdToCad }), priceTableCad, "CAD")).toEqual({
+      costUnknownReason: null, apiEquivalentTotal: 2, apiEquivalentPerItem: 2,
+    });
+    const simpleRows = [{ id: "a1" }, { type: "summary", ok: 1, failed: 0, cost: { api_equivalent: 1 } }];
+    expect(computeArmCostAndSeat({
+      resultRows: simpleRows, arm: makeArm({ tariffStatus: "primary" }),
+    }).cost).toEqual({
+      currency: "USD", costBasisItems: 1, costUnknownReason: null, apiEquivalentTotal: 1, apiEquivalentPerItem: 1,
+      tariffStatus: "primary", tariffSource: null, tariffAsOf: null, fxApplied: null,
+      seatStatus: "unknown", seatMethod: "unknown", seatUnknownReason: "missing-observation",
+      seatSharePerItem: "unknown", seatCostPerItem: "unknown",
+      seatPlan: null, seatMonthlyPrice: null, seatLimitScale: null, seatPlanSource: null, seatPlanAsOf: null,
+    });
+    expect(computeArmCostAndSeat({
+      resultRows: simpleRows,
+      arm: makeArm({ tariffStatus: "secondary_unverified" }),
+      priceTable: { source: "pt", as_of: "2026-11-22", status: "primary", per_million: { input: 1, output: 2 } },
+    }).cost).toEqual({
+      currency: "USD", costBasisItems: 1, costUnknownReason: null, apiEquivalentTotal: 1, apiEquivalentPerItem: 1,
+      tariffStatus: "secondary_unverified", tariffSource: "pt", tariffAsOf: "2026-11-22", fxApplied: null,
+      seatStatus: "unknown", seatMethod: "unknown", seatUnknownReason: "missing-observation",
+      seatSharePerItem: "unknown", seatCostPerItem: "unknown",
+      seatPlan: null, seatMonthlyPrice: null, seatLimitScale: null, seatPlanSource: null, seatPlanAsOf: null,
+    });
   });
 });
 
