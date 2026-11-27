@@ -248,4 +248,67 @@ describe("BD-3 golden record parser, real converge shapes & majority gate", () =
         rmSync(root, { recursive: true, force: true });
       }
     });
+
+  it("handles cross-subfield support, failed/missing runs, first-run fallback & null-prototype rows", () => {
+    const crossSub = parseGoldenRecordUnit({
+      id: "cross",
+      fields: {
+        o: {
+          verdict: "majority", n_answered: 4,
+          aligned: [{
+            fields: {
+              city: { verdict: "split", value: null, n_answered: 4, runs: {
+                r1: fv("Toronto"), r2: fv(null), r3: fv("Montreal"), r4: fv(null), r5: { status: "failed", error: "e" },
+              } },
+              postal_code: { verdict: "majority", value: null, n_answered: 4, runs: {
+                r1: fv(null), r2: fv("M5X 1A9"), r3: fv(null), r4: fv(null), r5: { status: "missing" },
+              } },
+            },
+          }],
+        },
+      },
+    }, "o", "city").unit;
+    expect(crossSub).toEqual({
+      kind: "resolved", recordSplit: false, nonMajClusters: [], unmatched: [],
+      majClusters: [{ pc: null, st: null, ci: null, goldVal: null, splitVariants: new Set(["toronto", "montreal"]) }],
+    });
+    const staleFailed = parseGoldenRecordUnit({
+      id: "sf",
+      fields: { o: { verdict: "split", n_answered: 4, aligned: [{ fields: {
+        city: { verdict: "split", value: null, n_answered: 4, runs: {
+          r1: fv("Toronto"), r2: fv("Toronto"), r3: { status: "failed", error: "e", value: "Toronto" }, r4: fv(null),
+        } },
+      } }] } },
+    }, "o", "city").unit;
+    expect(staleFailed.kind === "resolved" && staleFailed.nonMajClusters).toHaveLength(1);
+    const missingStale = parseGoldenRecordUnit({
+      id: "ms",
+      fields: { o: { verdict: "majority", n_answered: 4, aligned: [{ fields: {
+        city: { verdict: "majority", value: null, n_answered: 4, runs: {
+          r1: fv("Toronto"), r2: fv("Montreal"), r3: { status: "missing", value: "Ottawa" }, r4: fv(null),
+        } },
+      } }] } },
+    }, "o", "city").unit;
+    expect(missingStale).toEqual({
+      kind: "resolved", recordSplit: false, majClusters: [], unmatched: [],
+      nonMajClusters: [{ pc: null, st: null, ci: "toronto" }],
+    });
+    const nullProto = Object.assign(Object.create(null), {
+      id: "np",
+      fields: Object.assign(Object.create(null), {
+        o: Object.assign(Object.create(null), {
+          verdict: "unanimous",
+          aligned: [Object.assign(Object.create(null), {
+            fields: Object.assign(Object.create(null), {
+              city: Object.assign(Object.create(null), { verdict: "unanimous", value: "Ottawa", n_answered: 2 }),
+            }),
+          })],
+        }),
+      }),
+    });
+    expect(parseGoldenRecordUnit(nullProto, "o", "city").unit).toEqual({
+      kind: "resolved", recordSplit: false, nonMajClusters: [], unmatched: [],
+      majClusters: [{ pc: null, st: null, ci: "ottawa", goldVal: "ottawa", splitVariants: null }],
+    });
+  });
 });
