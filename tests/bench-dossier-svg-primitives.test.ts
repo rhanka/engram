@@ -22,6 +22,12 @@ import {
   buildChartA11yIds,
   resolveGlyphStyle,
   toFieldSlug,
+  EFFORT_PROGRESSION_ORDER,
+  GLYPH_SHAPES,
+  MODEL_RELEASE_ALIASES,
+  NON_STAR_SHAPES,
+  effortProgressionRank,
+  normalizeModelFamilyKey,
 } from "../src/bench-dossier/svg-primitives.js";
 
 function parseLeafSvg(xml: string): { tag: string; attrs: Record<string, string>; text?: string } {
@@ -239,5 +245,82 @@ describe("BD-6 DS-token SVG primitives, normalization & 7x5 glyph registry", () 
     refuse(() => resolveGlyphStyle(null as never, blue, "g.s"), "BAD_ENUM", "g.s");
     refuse(() => resolveGlyphStyle("api_filled", ""), "EMPTY_STRING", "color");
     refuse(() => resolveGlyphStyle("api_filled", null as never, "s", "g.c"), "EMPTY_STRING", "g.c");
+  });
+
+  it("normalises all 14 verbatim v12 IDs, Lot B and OWNER-REQUESTS aliases and effort ranks", () => {
+    expect(NON_STAR_SHAPES).toEqual(["circle", "square", "triangle", "diamond", "pentagon", "cross"]);
+    expect(GLYPH_SHAPES).toEqual(["circle", "square", "triangle", "diamond", "pentagon", "cross", "star"]);
+    expect(EFFORT_PROGRESSION_ORDER).toEqual(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
+    expect(EFFORT_PROGRESSION_ORDER.map((effort) => effortProgressionRank(effort))).toEqual([0, 1, 2, 3, 4, 5, 6]);
+    expect(effortProgressionRank("cascade")).toBe(-1);
+    refuse(() => effortProgressionRank("turbo" as never), "BAD_ENUM", "effort");
+    refuse(() => effortProgressionRank(null as never), "BAD_ENUM", "effort");
+    refuse(() => effortProgressionRank(undefined as never, "p.e"), "BAD_ENUM", "p.e");
+    expect(Object.isFrozen(MODEL_RELEASE_ALIASES)).toBe(true);
+    expect(MODEL_RELEASE_ALIASES).toEqual({
+      "mistral-small-2603": "mistral-small-4",
+      "muse-1.3": "muse-spark-1.3",
+      "muse-wonder-full-1.0": "muse-wonder-1.0",
+    });
+    const normCases: readonly [string, string][] = [
+      ["gpt-6-astra", "gpt-6-astra"],
+      ["gpt-5.6-sol", "gpt-5.6-sol"],
+      ["gpt-5.6-luna", "gpt-5.6-luna"],
+      ["gpt-4.1", "gpt-4.1"],
+      ["gemini-3.8-flash", "gemini-3.8-flash"],
+      ["gemini-4-argon-low", "gemini-4-argon"],
+      ["claude-opus-5", "claude-opus-5"],
+      ["claude-sonnet-5", "claude-sonnet-5"],
+      ["claude-sonnet-4.6", "claude-sonnet-4.6"],
+      ["claude-opus-5-5", "claude-opus-5.5"],
+      ["muse-spark-1.3", "muse-spark-1.3"],
+      ["muse-wonder-1.0", "muse-wonder-1.0"],
+      ["muse-ember-1.0", "muse-ember-1.0"],
+      ["mistral-small-2603", "mistral-small-4"],
+      ["gpt-6-astra-low", "gpt-6-astra"],
+      ["openai:gpt-5.6-sol-high", "gpt-5.6-sol"],
+      ["gpt-5-6-luna-low", "gpt-5.6-luna"],
+      ["gpt-4-1-off", "gpt-4.1"],
+      ["gpt-4-1", "gpt-4.1"],
+      ["claude-sonnet-5-medium", "claude-sonnet-5"],
+      ["claude-sonnet-4-6-high", "claude-sonnet-4.6"],
+      ["claude-opus-5-5-max", "claude-opus-5.5"],
+      ["gemini-3-8-flash-minimal", "gemini-3.8-flash"],
+      ["gemini-4-argon", "gemini-4-argon"],
+      ["muse-1.3", "muse-spark-1.3"],
+      ["muse-1-3-low", "muse-spark-1.3"],
+      ["mesh:muse-wonder-1.0-max", "muse-wonder-1.0"],
+      ["muse-wonder-full-1-0-max", "muse-wonder-1.0"],
+      ["muse-ember-1-0-xhigh", "muse-ember-1.0"],
+      ["mistral:mistral-small-2603-low", "mistral-small-4"],
+      ["gpt-6-luna-low", "gpt-6-luna"],
+      ["mesh:gpt-6.2-astra-max", "gpt-6.2-astra"],
+      ["gpt-6-2-sol-xhigh", "gpt-6.2-sol"],
+      ["gemini-4-hydrogen-low", "gemini-4-hydrogen"],
+      ["mesh:gemini-4-carbon-max", "gemini-4-carbon"],
+      ["mesh:gemini-4-neon-max", "gemini-4-neon"],
+      ["anthropic:claude-fable-5-2-max", "claude-fable-5.2"],
+      ["mesh:anthropic:claude-haiku-5-5-low", "claude-haiku-5.5"],
+      ["anthropic:claude-sonnet-5-5-low", "claude-sonnet-5.5"],
+      ["mistral-large-4-low", "mistral-large-4"],
+      ["z.ai:zai-glm-5-3-low", "zai-glm-5.3"],
+      ["MESH:Anthropic:Claude-Opus-5-5-MAX", "claude-opus-5.5"],
+      ["gpt-5-6-7-low", "gpt-5.6.7"],
+      ["gpt-low-1", "gpt-low-1"],
+      ["a:b:c", "b:c"],
+      ["foo bar:baz", "foo bar:baz"],
+      ["toString", "tostring"],
+      ["constructor", "constructor"],
+    ];
+    for (const [raw, expected] of normCases) {
+      expect(normalizeModelFamilyKey(raw)).toBe(expected);
+    }
+    const badModels = [
+      "", "  ", "mesh:", "openai:", "-low", "mesh:openai:-max", "mesh:  -low", "openai:  ", null as never,
+    ];
+    for (const bad of badModels) {
+      refuse(() => normalizeModelFamilyKey(bad, "m"), "EMPTY_STRING", "m");
+    }
+    refuse(() => normalizeModelFamilyKey(""), "EMPTY_STRING", "model");
   });
 });
