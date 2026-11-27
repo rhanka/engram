@@ -150,6 +150,26 @@ describe("BD-3 readRecFields & 1-to-1 postal_code / street+city alignment", () =
       refuse(() => extractCandidateRecords({ unverified_subfields: bad }, "city"), "BAD_COUNT", RangeError);
     }
   });
+
+  it("enforces alignment pass priorities (2>3, 3>4), \\0 street+city delimiters & null street keys", () => {
+    expect(alignRecordsOneToOne([mkKey(null, "ab", "c")], [mkKey(null, "a", "bc")]))
+      .toEqual({ matched: [], unalignedGold: [0], unalignedCand: [0] });
+    expect(alignRecordsOneToOne([mkKey("M5X 1A9", "999 z st", "other")],
+      [mkKey("M5X 1A9", "ab", "c"), mkKey("M5X 1A9", "a", "bc")]))
+      .toEqual({ matched: [], unalignedGold: [0], unalignedCand: [0, 1] });
+    expect(alignRecordsOneToOne([mkKey("M5X 1A9", "100 king st", "toronto")],
+      [mkKey(null, "100 king st", "toronto"), mkKey("M5X 1A9", "100 king st", "ottawa")]))
+      .toEqual({ matched: [[0, 1]], unalignedGold: [], unalignedCand: [0] });
+    expect(alignRecordsOneToOne([mkKey("M5X 1A9", "100 king st", "toronto")],
+      [mkKey(null, "100 king st", "toronto"), mkKey("M5X 1A9", "200 bay st", "ottawa")]))
+      .toEqual({ matched: [[0, 0]], unalignedGold: [], unalignedCand: [1] });
+    expect(alignRecordsOneToOne([mkKey("M5X 1A9", "100 king st", "ottawa")],
+      [mkKey("M5X 1A9", null, "toronto"), mkKey("M5X 1A9", "X", "toronto")]))
+      .toEqual({ matched: [], unalignedGold: [0], unalignedCand: [0, 1] });
+    expect(alignRecordsOneToOne([mkKey("M5X 1A9", "100 king st", "ottawa")],
+      [mkKey("M5X 1A9", null, "toronto"), mkKey("M5X 1A9", "", "toronto")]))
+      .toEqual({ matched: [[0, 0]], unalignedGold: [], unalignedCand: [1] });
+  });
 });
 
 describe("BD-3 golden record parser, real converge shapes & majority gate", () => {
@@ -785,6 +805,45 @@ describe("BD-3 golden record parser, real converge shapes & majority gate", () =
     });
     expect(groupRes.indeterminate).toEqual({ precision: true, recall: true, f1: true });
   });
+
+  it("refuses Date+value split runs, keeps maxValues=2 clustered & counts proto/ctor/toString failByCode",
+    () => {
+      refuse(() => parseGoldenRecordUnit({
+        id: "g", fields: { o: { verdict: "majority", n_answered: 4, aligned: [{ fields: {
+          city: { verdict: "unanimous", value: "T", n_answered: 4,
+            runs: { r1: Object.assign(new Date(), { value: "T" }) } },
+        } }] } },
+      }, "o", "city"), "BAD_SPLIT_RUN");
+      const mv2 = scoreUnweightedRecord({
+        field: "o.city", maxValues: 2,
+        goldenRows: [{ id: "g1", fields: { o: { verdict: "unanimous", n_answered: 2, aligned: [{ fields: {
+          city: { verdict: "unanimous", value: "Toronto" },
+        } }] } } }],
+        candidateRows: [{ id: "g1", fields: { o: { values: [{ city: fv("Toronto") }] } } }],
+      });
+      expect(mv2.unweighted.precisionInterval).toEqual({
+        estimator: "unweighted", method: "none", clustering: "clustered_record_invalid", valid: false,
+        low: null, high: null,
+      });
+      expect(mv2.unweighted.recallInterval).toEqual({
+        estimator: "unweighted", method: "none", clustering: "clustered_record_invalid", valid: false,
+        low: null, high: null,
+      });
+      const protoFails = scoreUnweightedRecord({
+        field: "o.city",
+        goldenRows: ["g1", "g2", "g3", "g4"].map((id) => ({ id, fields: { o: { verdict: "absent" } } })),
+        candidateRows: [
+          { id: "g1", error: "__proto__", fields: null },
+          { id: "g2", error: "constructor", fields: null },
+          { id: "g3", error: "toString", fields: null },
+          { id: "g4", error: "__proto__", fields: null },
+        ],
+      });
+      expect(Object.entries(protoFails.failuresByCode))
+        .toEqual([["__proto__", 2], ["constructor", 1], ["toString", 1]]);
+      expect([Object.getOwnPropertyDescriptor(protoFails.failuresByCode, "__proto__")?.value,
+        protoFails.failuresByCode.constructor, protoFails.failuresByCode.toString]).toEqual([2, 1, 1]);
+    });
 });
 
 describe("BD-3 metrics.json to BenchResultsFile lossless importer", () => {
@@ -1459,4 +1518,74 @@ describe("BD-3 metrics.json to BenchResultsFile lossless importer", () => {
     delete noOvFx.arms["arm-a"].tariffOverride;
     expect(mapMetricsImportToBenchResults(noOvFx).records[0]?.cost.tariffStatus).toBe("unknown");
   });
+
+  it("enforces scalar specs, tn-only abstention, records[1] pairing path & proto/ctor/toString arm keys",
+    () => {
+      const fx = makeImportFixture() as any;
+      const estIdx1 = cloneJson(fx);
+      estIdx1.metrics.records[1].weighted = null;
+      const estErr = refuse(() => mapMetricsImportToBenchResults(estIdx1),
+        "BAD_SHAPE", BenchInvariantError) as BenchInvariantError;
+      expect([estErr.invariant, estErr.path]).toEqual(["ESTIMATOR_PAIRING", "$.records[1].weighted"]);
+
+      const scalarOut = mapMetricsImportToBenchResults({
+        ...fx, missionSpecs: [
+          { name: "office", kind: "record", maxValues: 3, subFields: [{ name: "city" }] },
+          { name: "summary", kind: "scalar", maxValues: 1 },
+        ],
+      });
+      expect(scalarOut.records).toHaveLength(2);
+
+      const tnOnlyFx = cloneJson(fx);
+      tnOnlyFx.metrics.records = [{
+        ...tnOnlyFx.metrics.records[0], fpOnPresent: 7, fpOnAbsent: 0, fpElementsOnAbsent: 0, tn: 10,
+        sitePresence: {
+          ...tnOnlyFx.metrics.records[0].sitePresence, fpOnAbsentSites: 0, tnSites: 10,
+          siteAbstentionSpecificity: 1,
+          siteAbstentionInterval: {
+            estimator: "unweighted", method: "wilson_95_unweighted", clustering: "independent_site",
+            valid: true, low: 0.7224672001371107, high: 1,
+          },
+        },
+      }];
+      expect(mapMetricsImportToBenchResults(tnOnlyFx).records[0]?.abstentionSpecificity).toBe(1);
+
+      for (const key of ["__proto__", "constructor", "toString"]) {
+        const missRec = cloneJson(fx);
+        missRec.metrics.records = [{ ...missRec.metrics.records[0], armId: key }];
+        refuse(() => mapMetricsImportToBenchResults(missRec), "MISSING_ARM");
+      }
+      const ctorAcFx = cloneJson(fx);
+      ctorAcFx.armCosts = { constructor: {
+        calls: 45, callsPerItem: 45 / 1705, tokens: cloneJson(fx.metrics.records[0].tokens),
+        cost: { currency: "CAD", costBasisItems: 1705, costUnknownReason: null, apiEquivalentTotal: 1.45,
+          apiEquivalentPerItem: 1.45 / 1705, tariffStatus: "primary", tariffSource: "s", tariffAsOf: "2026-11-22",
+          fxApplied: null, seatStatus: "unknown", seatMethod: "unknown", seatUnknownReason: "missing-observation",
+          seatSharePerItem: "unknown", seatCostPerItem: "unknown", seatPlan: null, seatMonthlyPrice: null,
+          seatLimitScale: null, seatPlanSource: null, seatPlanAsOf: null },
+      } };
+      refuse(() => mapMetricsImportToBenchResults(ctorAcFx), "BAD_MAP_KEY");
+
+      const toStrBase = cloneJson(fx);
+      toStrBase.metrics.records = [{ ...toStrBase.metrics.records[0], armId: "toString" }];
+      toStrBase.arms = { toString: { ...toStrBase.arms["arm-a"], armId: "toString" } };
+      toStrBase.armCosts = {};
+      expect(mapMetricsImportToBenchResults(toStrBase).records[0]?.calls).toBe(45);
+
+      const toStrPart = cloneJson(toStrBase);
+      delete toStrPart.metrics.records[0].calls;
+      delete toStrPart.metrics.records[0].tokens;
+      expect(mapMetricsImportToBenchResults(toStrPart).records[0]?.cost.costBasisItems).toBe(1705);
+
+      const toStrOm = cloneJson(toStrPart);
+      delete toStrOm.metrics.records[0].costBasisItems;
+      delete toStrOm.metrics.records[0].apiEquivalentTotal;
+      const toStrOmRec = mapMetricsImportToBenchResults(toStrOm).records[0];
+      expect([toStrOmRec?.calls, toStrOmRec?.cost.costUnknownReason]).toEqual(["unknown", "missing-usage"]);
+
+      const toStrOwn = cloneJson(toStrOm);
+      toStrOwn.armCosts = { toString: ctorAcFx.armCosts.constructor };
+      const toStrOwnRec = mapMetricsImportToBenchResults(toStrOwn).records[0];
+      expect([toStrOwnRec?.calls, toStrOwnRec?.cost.tariffStatus]).toEqual([45, "primary"]);
+    });
 });
