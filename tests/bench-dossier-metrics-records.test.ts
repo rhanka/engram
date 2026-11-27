@@ -4,12 +4,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { runConverge } from "../src/scrap/converge.js";
+import * as recordsBarrel from "../src/bench-dossier/metrics-records.js";
 import {
   alignRecordsOneToOne, extractCandidateRecords, readRecFields,
 } from "../src/bench-dossier/metrics-records-align.js";
 import {
   buildFallbackUsage, parseGoldenRecordUnit, projectImportedRecord,
 } from "../src/bench-dossier/metrics-records-score.js";
+import {
+  scoreClusterSite, scoreUnweightedRecord,
+} from "../src/bench-dossier/metrics-records.js";
 
 const fv = (value: string | null) => ({ value, quote: value });
 const mkKey = (pc: string | null, st: string | null, ci: string | null) => ({ pc, st, ci });
@@ -408,5 +412,24 @@ describe("BD-3 golden record parser, real converge shapes & majority gate", () =
         unmatched: [{ fields: { city: { value: ["T"] } } }] } } }, "BAD_GOLD_VALUE"],
     ];
     for (const [row, code, Err = Error] of cases) refuse(() => parseGoldenRecordUnit(row, "o", "city"), code, Err);
+  });
+
+  it("scores empty record dataset and verifies barrel re-exports", () => {
+    expect(recordsBarrel.alignRecordsOneToOne).toBe(alignRecordsOneToOne);
+    expect(recordsBarrel.extractCandidateRecords).toBe(extractCandidateRecords);
+    expect(recordsBarrel.readRecFields).toBe(readRecFields);
+    expect(recordsBarrel.parseGoldenRecordUnit).toBe(parseGoldenRecordUnit);
+    expect(recordsBarrel.buildFallbackUsage).toBe(buildFallbackUsage);
+    expect(recordsBarrel.projectImportedRecord).toBe(projectImportedRecord);
+    expect(recordsBarrel.scoreClusterSite).toBe(scoreClusterSite);
+    const empty = scoreUnweightedRecord({ field: "office.city", goldenRows: [], candidateRows: [] });
+    expect([empty.field, empty.attempted, empty.unverifiedWholeRecordsDropped]).toEqual(["office.city", 0, 0]);
+    expect(empty.unweighted.precisionInterval).toEqual({
+      estimator: "unweighted", method: "none", clustering: "clustered_record_invalid",
+      valid: false, low: null, high: null,
+    });
+    expect(empty.sitePresence.siteRecallInterval).toEqual({
+      estimator: "unweighted", method: "none", clustering: "independent_site", valid: false, low: null, high: null,
+    });
   });
 });
