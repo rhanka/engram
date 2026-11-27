@@ -327,3 +327,96 @@ describe("record uniqueness, primary comparator and proseName coherence", () => 
     ])), "PROSE_NAME_GATE", "$.records[0].proseName");
   });
 });
+
+describe("count and sitePresence matrix invariants", () => {
+  it("accepts single-field count, costBasis and scalar vs record variations", () => {
+    const intervalPooled = {
+      estimator: "unweighted", method: "none", clustering: "clustered_record_invalid", valid: false,
+      low: null, high: null,
+    } as const;
+    const positiveCases: [(doc: any) => void, any?][] = [
+      [(doc) => {
+        doc.corpus.currency = "USD";
+        doc.records[0].cost.currency = "USD";
+      }],
+      [(doc) => {
+        const cost = doc.records[0].cost;
+        cost.costBasisItems = 18;
+        cost.apiEquivalentTotal = 0.18;
+        cost.apiEquivalentPerItem = 0.01;
+      }],
+      [(doc) => {
+        const record = doc.records[0];
+        record.calls = "unknown";
+        record.callsPerItem = "unknown";
+        record.tokens = "unknown";
+        record.cost.costBasisItems = 10;
+        record.cost.costUnknownReason = "incomplete-invocation-summary";
+        record.cost.apiEquivalentTotal = "unknown";
+        record.cost.apiEquivalentPerItem = "unknown";
+      }],
+      [(doc) => {
+        doc.records[0].sitePresence.wrongValueOnPresentSites = 2;
+      }],
+      [
+        (doc) => {
+          const record = doc.records[0];
+          record.field = "tags";
+          record.fpElementsOnAbsent = 4;
+          record.fpOnPresent = 2;
+          record.unweighted.precisionInterval = { ...intervalPooled };
+          record.unweighted.recallInterval = { ...intervalPooled };
+          record.precisionInterval = { ...intervalPooled };
+          record.recallInterval = { ...intervalPooled };
+        },
+        { missionSpecs: [{ name: "tags", kind: "scalar", maxValues: 3 }] },
+      ],
+      [
+        (doc) => {
+          const record = doc.records[0];
+          record.field = "office.city";
+          record.goldAbsent = 99;
+          record.unweighted.precisionInterval = { ...intervalPooled };
+          record.unweighted.recallInterval = { ...intervalPooled };
+          record.precisionInterval = { ...intervalPooled };
+          record.recallInterval = { ...intervalPooled };
+        },
+        { missionSpecs: [{ name: "office", kind: "record", maxValues: 3, subFields: [{ name: "city" }] }] },
+      ],
+    ];
+    for (const [mutate, opts] of positiveCases) {
+      const doc = clone(makeResultsFile());
+      mutate(doc);
+      expect(validateBenchResultsInvariants(doc, opts).records).toHaveLength(1);
+    }
+    expect(validateBenchResultsInvariants(makeResultsFile(), {}).records).toHaveLength(1);
+    expect(validateBenchResultsInvariants(makeResultsFile(), {
+      missionSpecs: [{ name: "headline", kind: "scalar", maxValues: 1 }],
+    }).records).toHaveLength(1);
+  });
+
+  it("refuses core currency, attempted, count and sitePresence matrix mismatches", () => {
+    const coreCases: [(doc: any) => void, BenchInvariantCode, string][] = [
+      [(doc) => { doc.records[0].cost.currency = "USD"; }, "CURRENCY_MISMATCH", "$.records[0].cost.currency"],
+      [(doc) => { doc.records[0].attempted = 19; }, "ATTEMPTED_MISMATCH", "$.records[0].attempted"],
+      [(doc) => { doc.records[0].accepted = 17; }, "COUNT_IDENTITY", "$.records[0].accepted"],
+      [(doc) => { doc.records[0].cost.costBasisItems = 17; }, "COST_BASIS", "$.records[0].cost.costBasisItems"],
+      [(doc) => { doc.records[0].fp = 7; }, "COUNT_IDENTITY", "$.records[0].fp"],
+      [(doc) => { doc.records[0].tp = 7; }, "COUNT_IDENTITY", "$.records[0].tp"],
+      [(doc) => { doc.records[0].tn = 5; }, "COUNT_IDENTITY", "$.records[0].tn"],
+      [(doc) => { doc.records[0].abstentionSpecificity = 0.7; },
+        "COUNT_IDENTITY", "$.records[0].abstentionSpecificity"],
+      [(doc) => { doc.records[0].sitePresence.tpSites = 5; },
+        "SITE_MATRIX_IDENTITY", "$.records[0].sitePresence.tpSites"],
+      [(doc) => { doc.records[0].sitePresence.tnSites = 5; },
+        "SITE_MATRIX_IDENTITY", "$.records[0].sitePresence.tnSites"],
+      [(doc) => { doc.records[0].sitePresence.siteRecall = 0.5; },
+        "SITE_MATRIX_IDENTITY", "$.records[0].sitePresence.siteRecall"],
+    ];
+    for (const [mutate, invariant, path] of coreCases) {
+      const doc = clone(makeResultsFile());
+      mutate(doc);
+      refuse(() => validateBenchResultsInvariants(doc), invariant, path);
+    }
+  });
+});

@@ -1,7 +1,8 @@
 import { specsOf, type FieldSpec, type Mission } from "../scrap/extract.js";
 import { nonEmptyString } from "./results-guards.js";
 import type { BenchResultsFile } from "./results-types.js";
-import { BenchInvariantError, failInv, wilson95, type BenchInvariantCode } from "./invariants-checks.js";
+import { BenchInvariantError, failInv, validateCountsAndSites, wilson95,
+  type BenchInvariantCode } from "./invariants-checks.js";
 export { BenchInvariantError, wilson95, type BenchInvariantCode };
 
 export type MissionShapeCompatibility = ReturnType<typeof compatibleMissionFieldShape>;
@@ -59,8 +60,11 @@ export function validateProseName(proseName: string, path = "$"): void {
     token.replace(/^[.,!?:;"'`]+|[.,!?:;"'`]+$/g, "").replace(/^utf-8$/i, "") !== ""))
     failInv("PROSE_NAME_GATE", path);
 }
-/** Validate cross-field, uniqueness, prose-name and record coherence invariants. */
-export function validateBenchResultsInvariants(file: BenchResultsFile): BenchResultsFile {
+/** Validate cross-field, uniqueness, prose-name, estimator, count, site-matrix and cost invariants. */
+export function validateBenchResultsInvariants(file: BenchResultsFile,
+  opts?: { readonly missionSpecs?: readonly FieldSpec[] }): BenchResultsFile {
+  const specs = new Map((opts?.missionSpecs ?? []).flatMap((spec) => spec.kind === "record"
+    ? spec.subFields!.map((sub) => [`${spec.name}.${sub.name}`, spec] as const) : [[spec.name, spec] as const]));
   const armToProse = new Map<string, string>();
   const proseToArm = new Map<string, string>();
   const primaries = new Map<string, { firstIdx: number; count: number; comparators: Set<string> }>();
@@ -79,6 +83,8 @@ export function validateBenchResultsInvariants(file: BenchResultsFile): BenchRes
     if ((proseToArm.get(prose) ?? record.armId) !== record.armId) failInv("PROSE_NAME_DUPLICATE", prosePath);
     armToProse.set(record.armId, prose);
     proseToArm.set(prose, record.armId);
+    const spec = specs.get(record.field);
+    validateCountsAndSites(record, base, file.corpus.goldenIds, file.corpus.currency, spec);
   });
   for (const primary of primaries.values())
     if (primary.count !== 1) failInv("PRIMARY_COMPARATOR", `$.records[${primary.firstIdx}].isPrimaryComparator`);
