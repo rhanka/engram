@@ -198,3 +198,72 @@ describe("BD-4 tree-03: interrupted summaries, multi-summary degradation, and ze
     expect(multiMissingTokens.tokens).toBe("unknown");
   });
 });
+
+describe("BD-4 tree-04: nested usage row guards, Date rejections, and undefined-valued fields", () => {
+  it("refuses one defect per vector on every nested usage field including Date instances", () => {
+    const okTokens = { input: 1, output: 2, reasoning: 3, cached: 4, total: 10 };
+    const okSummary = {
+      type: "summary", ok: 1, failed: 0, calls_total: 1, tokens: okTokens, cost: { api_equivalent: 0.1 },
+    };
+    const negativeCases: [unknown, string, string][] = [
+      ["bad", "NOT_ARRAY", "$.resultRows"],
+      [[null], "NOT_OBJECT", "$.resultRows[0]"],
+      [[Object.assign(new Date(), { id: "a1" })], "NOT_OBJECT", "$.resultRows[0]"],
+      [[{ id: "a1", type: "item" }], "BAD_ENUM", "$.resultRows[0].type"],
+      [[{ id: "a1", type: null }], "WRONG_TYPE", "$.resultRows[0].type"],
+      [[{ id: "a1", type: 123 }], "WRONG_TYPE", "$.resultRows[0].type"],
+      [[{}], "MISSING_KEY", "$.resultRows[0].id"],
+      [[{ id: 123 }], "WRONG_TYPE", "$.resultRows[0].id"],
+      [[{ id: "  " }], "EMPTY_STRING", "$.resultRows[0].id"],
+      [[{ id: "a1" }, { type: "summary", failed: 0 }], "MISSING_KEY", "$.resultRows[1].ok"],
+      [[{ id: "a1" }, { ...okSummary, ok: undefined }], "WRONG_TYPE", "$.resultRows[1].ok"],
+      [[{ id: "a1" }, { ...okSummary, ok: -1 }], "BAD_COUNT", "$.resultRows[1].ok"],
+      [[{ id: "a1" }, { type: "summary", ok: 1 }], "MISSING_KEY", "$.resultRows[1].failed"],
+      [[{ id: "a1" }, { ...okSummary, failed: 1.5 }], "BAD_COUNT", "$.resultRows[1].failed"],
+      [[{ id: "a1" }, { ...okSummary, mission_digest: 42 }], "WRONG_TYPE", "$.resultRows[1].mission_digest"],
+      [[{ id: "a1" }, { ...okSummary, mission_digest: " " }], "EMPTY_STRING", "$.resultRows[1].mission_digest"],
+      [[{ id: "a1" }, { ...okSummary, calls_total: -1 }], "BAD_COUNT", "$.resultRows[1].calls_total"],
+      [[{ id: "a1" }, { ...okSummary, calls_total: "bad" }], "WRONG_TYPE", "$.resultRows[1].calls_total"],
+      [[{ id: "a1" }, { ...okSummary, tokens: null }], "NOT_OBJECT", "$.resultRows[1].tokens"],
+      [[{ id: "a1" }, { ...okSummary, tokens: Object.assign(new Date(), okTokens) }],
+        "NOT_OBJECT", "$.resultRows[1].tokens"],
+      [[{ id: "a1" }, { ...okSummary, tokens: { output: 2, reasoning: 3, total: 5 } }],
+        "MISSING_KEY", "$.resultRows[1].tokens.input"],
+      [[{ id: "a1" }, { ...okSummary, tokens: { ...okTokens, input: -1 } }],
+        "BAD_COUNT", "$.resultRows[1].tokens.input"],
+      [[{ id: "a1" }, { ...okSummary, tokens: { ...okTokens, output: 1.2 } }],
+        "BAD_COUNT", "$.resultRows[1].tokens.output"],
+      [[{ id: "a1" }, { ...okSummary, tokens: { ...okTokens, reasoning: -1 } }],
+        "BAD_COUNT", "$.resultRows[1].tokens.reasoning"],
+      [[{ id: "a1" }, { ...okSummary, tokens: { ...okTokens, total: -1 } }],
+        "BAD_COUNT", "$.resultRows[1].tokens.total"],
+      [[{ id: "a1" }, { ...okSummary, tokens: { ...okTokens, cached: -1 } }],
+        "BAD_COUNT", "$.resultRows[1].tokens.cached"],
+      [[{ id: "a1" }, { ...okSummary, tokens: { ...okTokens, cached: null } }],
+        "WRONG_TYPE", "$.resultRows[1].tokens.cached"],
+      [[{ id: "a1" }, { ...okSummary, cost: null }], "NOT_OBJECT", "$.resultRows[1].cost"],
+      [[{ id: "a1" }, { ...okSummary, cost: Object.assign(new Date(), { api_equivalent: 0.1 }) }],
+        "NOT_OBJECT", "$.resultRows[1].cost"],
+      [[{ id: "a1" }, { ...okSummary, cost: { currency: 99 } }], "WRONG_TYPE", "$.resultRows[1].cost.currency"],
+      [[{ id: "a1" }, { ...okSummary, cost: { currency: "EUR" } }], "BAD_ENUM", "$.resultRows[1].cost.currency"],
+      [[{ id: "a1" }, { ...okSummary, cost: { api_equivalent: -0.01 } }],
+        "NEGATIVE", "$.resultRows[1].cost.api_equivalent"],
+      [[{ id: "a1" }, { ...okSummary, cost: { api_equivalent: "bad" } }],
+        "WRONG_TYPE", "$.resultRows[1].cost.api_equivalent"],
+    ];
+    for (const [rows, code, path] of negativeCases) {
+      refuse(() => summarizeInvocationUsage(rows as unknown[]), code, path);
+    }
+    const undefinedUsage = summarizeInvocationUsage([
+      { id: "a1", type: undefined },
+      {
+        type: "summary", ok: 1, failed: 0, mission_digest: null, calls_total: undefined,
+        tokens: undefined, cost: { currency: undefined, api_equivalent: undefined },
+      },
+    ]);
+    expect([
+      undefinedUsage.hasMissingDigest, undefinedUsage.calls,
+      undefinedUsage.tokens, undefinedUsage.summaryApiTotal, undefinedUsage.summaryCurrencies,
+    ]).toEqual([true, "unknown", "unknown", "unknown", []]);
+  });
+});
