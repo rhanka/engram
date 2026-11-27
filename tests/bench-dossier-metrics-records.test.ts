@@ -1,4 +1,9 @@
+import { createHash } from "node:crypto";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { runConverge } from "../src/scrap/converge.js";
 import {
   alignRecordsOneToOne, extractCandidateRecords, readRecFields,
 } from "../src/bench-dossier/metrics-records-align.js";
@@ -131,4 +136,116 @@ describe("BD-3 golden record parser, real converge shapes & majority gate", () =
     expect(parseGoldenRecordUnit({ id: "i1", fields: { o: { verdict: "insufficient", n_answered: 1 } } }, "o", "city")
       .unit).toEqual({ kind: "insufficient" });
   });
+
+  it("enforces clusterSupport > n_answered / 2 at K = 3, 4, 5 (including K=5 majority:null) & real converge",
+    async () => {
+      const mkCluster = (n: number, sup: number) => ({
+        fields: {
+          city: {
+            verdict: sup > n / 2 || n - sup > n / 2 ? "majority" : "split",
+            value: sup > n / 2 ? "Toronto" : null, n_answered: n,
+            runs: Object.fromEntries(Array.from({ length: n },
+              (_, i) => [`r${i + 1}`, fv(i < sup ? "Toronto" : null)])),
+          },
+          postal_code: {
+            verdict: sup > n / 2 || n - sup > n / 2 ? "majority" : "split",
+            value: sup > n / 2 ? "M5X 1A9" : null, n_answered: n,
+            runs: Object.fromEntries(Array.from({ length: n },
+              (_, i) => [`r${i + 1}`, fv(i < sup ? "M5X 1A9" : null)])),
+          },
+        },
+      });
+      expect(parseGoldenRecordUnit({ id: "g3", fields: { o: { verdict: "majority", n_answered: 3,
+        aligned: [mkCluster(3, 2)] } } }, "o", "city").unit).toEqual({
+        kind: "resolved", recordSplit: false, nonMajClusters: [], unmatched: [],
+        majClusters: [{ pc: "M5X 1A9", st: null, ci: "toronto", goldVal: "toronto", splitVariants: null }],
+      });
+      expect(parseGoldenRecordUnit({ id: "g4e", fields: { o: { verdict: "split", n_answered: 4,
+        aligned: [mkCluster(4, 2)] } } }, "o", "city").unit).toEqual({
+        kind: "resolved", recordSplit: true, majClusters: [], unmatched: [],
+        nonMajClusters: [{ pc: "M5X 1A9", st: null, ci: "toronto" }],
+      });
+      expect(parseGoldenRecordUnit({ id: "g4m", fields: { o: { verdict: "majority", n_answered: 4,
+        aligned: [mkCluster(4, 3)] } } }, "o", "city").unit).toEqual({
+        kind: "resolved", recordSplit: false, nonMajClusters: [], unmatched: [],
+        majClusters: [{ pc: "M5X 1A9", st: null, ci: "toronto", goldVal: "toronto", splitVariants: null }],
+      });
+      expect(parseGoldenRecordUnit({ id: "g5e", fields: { o: { verdict: "majority", n_answered: 5,
+        aligned: [mkCluster(5, 2)] } } }, "o", "city").unit).toEqual({
+        kind: "resolved", recordSplit: false, majClusters: [], unmatched: [],
+        nonMajClusters: [{ pc: "M5X 1A9", st: null, ci: "toronto" }],
+      });
+      expect(parseGoldenRecordUnit({ id: "g5m", fields: { o: { verdict: "majority", n_answered: 5,
+        aligned: [mkCluster(5, 3)] } } }, "o", "city").unit).toEqual({
+        kind: "resolved", recordSplit: false, nonMajClusters: [], unmatched: [],
+        majClusters: [{ pc: "M5X 1A9", st: null, ci: "toronto", goldVal: "toronto", splitVariants: null }],
+      });
+      expect(parseGoldenRecordUnit({ id: "i", fields: { o: { verdict: "insufficient", aligned: [] } } }, "o", "city")
+        .unit).toEqual({ kind: "insufficient" });
+      expect(parseGoldenRecordUnit({
+        id: "k3noRuns",
+        fields: { o: { verdict: "unanimous", aligned: [{ fields: { city: { verdict: "unanimous", value: "Ottawa",
+          n_answered: 3 } } }] } },
+      }, "o", "city").unit).toEqual({
+        kind: "resolved", recordSplit: false, nonMajClusters: [], unmatched: [],
+        majClusters: [{ pc: null, st: null, ci: "ottawa", goldVal: "ottawa", splitVariants: null }],
+      });
+      expect(parseGoldenRecordUnit({
+        id: "recNAnsOnly",
+        fields: { o: { verdict: "unanimous", n_answered: 2,
+          aligned: [{ fields: { city: { verdict: "unanimous", value: "Ottawa" } } }] } },
+      }, "o", "city").unit).toEqual({
+        kind: "resolved", recordSplit: false, nonMajClusters: [], unmatched: [],
+        majClusters: [{ pc: null, st: null, ci: "ottawa", goldVal: "ottawa", splitVariants: null }],
+      });
+      expect(parseGoldenRecordUnit({
+        id: "unmOnly",
+        fields: { o: { verdict: "split", n_answered: 2, unmatched: [{ fields: { city: fv("Halifax") } }] } },
+      }, "o", "city").unit).toEqual({
+        kind: "resolved", recordSplit: true, majClusters: [], nonMajClusters: [],
+        unmatched: [{ pc: null, st: null, ci: "halifax" }],
+      });
+
+      const root = mkdtempSync(join(tmpdir(), "bd3-conv-"));
+      try {
+        const missionText = JSON.stringify({
+          instruction: "extract",
+          fields: [{ name: "office", kind: "record", max_values: 3,
+            fields: [{ name: "postal_code" }, { name: "city" }] }],
+        });
+        const missionPath = join(root, "mission.json");
+        const digest = createHash("sha256").update(missionText).digest("hex");
+        writeFileSync(missionPath, missionText);
+        const mkRow = (id: string, hit: boolean) => ({
+          id,
+          fields: { office: { values: hit ? [{ postal_code: fv("M5X 1A9"), city: fv("Toronto") }] : [] } },
+        });
+        const runDirs: string[] = [];
+        for (let rIdx = 0; rIdx < 5; rIdx++) {
+          const dir = join(root, `r${rIdx + 1}`);
+          mkdirSync(dir, { recursive: true });
+          const lines = [
+            mkRow("k5_2of5", rIdx < 2),
+            mkRow("k5_3of5", rIdx < 3),
+            { type: "summary", mission_digest: digest },
+          ];
+          writeFileSync(join(dir, "results.ndjson"), `${lines.map((l) => JSON.stringify(l)).join("\n")}\n`);
+          runDirs.push(dir);
+        }
+        const conv = await runConverge({ runs: runDirs, mission: missionPath, out: join(root, "out") });
+        const conv2of5 = conv.rows[0] as { fields: { office: { aligned: Array<{ fields: Record<string, any> }> } } };
+        expect(conv2of5.fields.office.aligned[0]?.fields.city.verdict).toBe("majority");
+        expect(conv2of5.fields.office.aligned[0]?.fields.city.value).toBeNull();
+        expect(parseGoldenRecordUnit(conv.rows[0], "office", "city").unit).toEqual({
+          kind: "resolved", recordSplit: false, majClusters: [], unmatched: [],
+          nonMajClusters: [{ pc: "M5X 1A9", st: null, ci: "toronto" }],
+        });
+        expect(parseGoldenRecordUnit(conv.rows[1], "office", "city").unit).toEqual({
+          kind: "resolved", recordSplit: false, nonMajClusters: [], unmatched: [],
+          majClusters: [{ pc: "M5X 1A9", st: null, ci: "toronto", goldVal: "toronto", splitVariants: null }],
+        });
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
 });
