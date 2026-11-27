@@ -850,3 +850,78 @@ describe("BD-4 tree-12: BenchResultsFile and invariant round-trip compatibility"
     expect(validateBenchResultsInvariants(benchDoc).records[0]?.cost.apiEquivalentTotal).toBe(0.01);
   });
 });
+
+describe("BD-4 tree-13: no-default-shadowing and top-level input guards", () => {
+  it("tests every defaulted and overridden field without shadowing and refuses bad top-level inputs", () => {
+    const simpleRows = [{ id: "a1" }, { type: "summary", ok: 1, failed: 0, cost: { api_equivalent: 1 } }];
+    const defaultPriceTable = { source: "pt", as_of: "2026-11-22", per_million: { input: 1, output: 2 } };
+    expect(computeArmCostAndSeat({
+      resultRows: simpleRows, arm: makeArm(), priceTable: defaultPriceTable,
+      currency: undefined, seatObservation: undefined,
+    }).cost).toEqual({
+      currency: "USD", costBasisItems: 1, costUnknownReason: null, apiEquivalentTotal: 1, apiEquivalentPerItem: 1,
+      tariffStatus: "secondary_unverified", tariffSource: "pt", tariffAsOf: "2026-11-22", fxApplied: null,
+      seatStatus: "unknown", seatMethod: "unknown", seatUnknownReason: "missing-observation",
+      seatSharePerItem: "unknown", seatCostPerItem: "unknown",
+      seatPlan: null, seatMonthlyPrice: null, seatLimitScale: null, seatPlanSource: null, seatPlanAsOf: null,
+    });
+    // Non-default tariffOverride { status: "primary", source: "override-card", asOf: "2026-11-25" } (X21-X23).
+    const overridePrimaryOut = computeArmCostAndSeat({
+      resultRows: simpleRows,
+      priceTable: { ...defaultPriceTable, status: "secondary_unverified" },
+      arm: makeArm({
+        tariffStatus: "secondary_unverified",
+        tariffOverride: { status: "primary", source: "override-card", asOf: "2026-11-25" },
+      }),
+    });
+    expect([overridePrimaryOut.cost.tariffStatus, overridePrimaryOut.cost.tariffSource,
+      overridePrimaryOut.cost.tariffAsOf]).toEqual(["primary", "override-card", "2026-11-25"]);
+    const overrideNullOut = computeArmCostAndSeat({
+      resultRows: simpleRows,
+      priceTable: { ...defaultPriceTable, status: "primary" },
+      arm: makeArm({ tariffOverride: { status: "unknown", source: null, asOf: null } }),
+    });
+    expect([overrideNullOut.cost.tariffStatus, overrideNullOut.cost.tariffSource, overrideNullOut.cost.tariffAsOf])
+      .toEqual(["unknown", null, null]);
+    const armStatusOut = computeArmCostAndSeat({
+      resultRows: simpleRows,
+      arm: makeArm({ tariffStatus: "primary" }),
+      currency: "CAD",
+      priceTable: { ...defaultPriceTable, currency: "CAD", status: "secondary_unverified" },
+    });
+    expect([armStatusOut.cost.currency, armStatusOut.cost.tariffStatus,
+      armStatusOut.cost.tariffSource, armStatusOut.cost.tariffAsOf]).toEqual([
+      "CAD", "primary", "pt", "2026-11-22",
+    ]);
+    const unpricedOut = computeArmCostAndSeat({ resultRows: simpleRows, arm: makeArm() });
+    expect([unpricedOut.cost.tariffStatus, unpricedOut.cost.tariffSource, unpricedOut.cost.tariffAsOf])
+      .toEqual(["unknown", null, null]);
+    const armSeatOut = computeArmCostAndSeat({
+      resultRows: [{ id: "a1" }, { type: "summary", ok: 1, failed: 0, cost: { currency: "USD", api_equivalent: 2 } }],
+      arm: makeArm({
+        fx: { from: "USD", to: "USD", rate: 1, source: "id", asOf: "2026-11-22" },
+        seat: { status: "unknown", reason: "shared-seat-concurrent" },
+      }),
+      currency: "USD",
+    });
+    expect([armSeatOut.cost.apiEquivalentTotal, armSeatOut.cost.seatUnknownReason])
+      .toEqual([2, "shared-seat-concurrent"]);
+    const validInput = { resultRows: simpleRows, arm: makeArm() };
+    const topLevelRejections: [unknown, string, string][] = [
+      [null, "NOT_OBJECT", "$"],
+      [{ ...validInput, extra: 1 }, "UNKNOWN_KEY", "$.extra"],
+      [{ arm: makeArm() }, "MISSING_KEY", "$.resultRows"],
+      [{ resultRows: simpleRows }, "MISSING_KEY", "$.arm"],
+      [{ ...validInput, currency: "EUR" }, "BAD_ENUM", "$.currency"],
+      [{ ...validInput, currency: null }, "WRONG_TYPE", "$.currency"],
+      [{ ...validInput, arm: {} }, "MISSING_KEY", "$.schemaId"],
+      [{ ...validInput, seatObservation: { status: "bad" } }, "BAD_ENUM", "$.status"],
+      [{ ...validInput, seatObservation: null }, "NOT_OBJECT", "$"],
+      [{ ...validInput, priceTable: "bad" }, "NOT_OBJECT", "$.priceTable"],
+    ];
+    for (const [badInput, code, path] of topLevelRejections) {
+      refuse(() => computeArmCostAndSeat(badInput as never), code, path);
+    }
+  });
+});
+
