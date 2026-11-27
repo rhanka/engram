@@ -417,3 +417,89 @@ describe("BD-4 tree-06: resolveApiCost priceTable fallback, summary rounding, an
     ]), makeArm(), null, "USD"), "BAD_SHAPE", "$.cost.apiEquivalentTotal");
   });
 });
+
+describe("BD-4 tree-07: resolveApiCost tariffOverride precedence, summary currency, and unknowns", () => {
+  it("resolves tariffOverride CAD/USD precedence, summary currency fallback, and all CostUnknownReasons", () => {
+    const fxUsdToCad = { from: "USD" as const, to: "CAD" as const, rate: 1.385, source: "boc", asOf: "2026-11-22" };
+    const priceTableUsd = parseValidatedPriceTable({
+      source: "op", as_of: "2026-11-22", currency: "USD", per_million: { input: 2, output: 8, reasoning: 10 },
+    });
+    const priceTableNoReas = parseValidatedPriceTable({
+      source: "op", as_of: "2026-11-22", currency: "USD", per_million: { input: 2, output: 8 },
+    });
+    const priceTableCad = parseValidatedPriceTable({
+      source: "op", as_of: "2026-11-22", currency: "CAD", per_million: { input: 2, output: 8 },
+    });
+    const usageUnknownApi = summarizeInvocationUsage([{ id: "a1" }, { id: "a2" }, {
+      type: "summary", ok: 2, failed: 0, calls_total: 2,
+      tokens: { input: 500_000, output: 100_000, reasoning: 20_000, total: 620_000 },
+      cost: { currency: "USD", api_equivalent: "unknown" },
+    }]);
+    const overrideRates = {
+      status: "primary" as const, source: "card", asOf: "2026-11-22",
+      perMillion: { input: 4, output: 10, reasoning: 10 },
+    };
+    // Override USD = (5e5*4 + 1e5*10 + 2e4*10)/1e6 = 3.2; CAD = 3.2 * 1.385 = 4.432; perItem = 2.216.
+    expect(resolveApiCost(usageUnknownApi, makeArm({ fx: fxUsdToCad, tariffOverride: overrideRates }), null, "CAD"))
+      .toEqual({ costUnknownReason: null, apiEquivalentTotal: 4.432, apiEquivalentPerItem: 2.216 });
+    // Probe P1: CAD tariffOverride.currency === targetCur ("CAD") succeeds even when arm.fx USD->CAD is set.
+    expect(resolveApiCost(usageUnknownApi, makeArm({
+      fx: fxUsdToCad, tariffOverride: { ...overrideRates, currency: "CAD" },
+    }), priceTableNoReas, "CAD")).toEqual({
+      costUnknownReason: null, apiEquivalentTotal: 3.2, apiEquivalentPerItem: 1.6,
+    });
+    // Override without currency inherits priceTable.currency ("CAD") even with USD->CAD arm.fx.
+    expect(resolveApiCost(summarizeInvocationUsage([
+      { id: "a1" }, {
+        type: "summary", ok: 1, failed: 0,
+        tokens: { input: 500_000, output: 100_000, reasoning: 0, total: 600_000 },
+      },
+    ]), makeArm({ fx: fxUsdToCad, tariffOverride: overrideRates }), priceTableCad, "CAD")).toEqual({
+      costUnknownReason: null, apiEquivalentTotal: 3, apiEquivalentPerItem: 3,
+    });
+    // sumCur ("CAD") takes precedence over arm.fx.from ("USD") when pt is null (M36).
+    expect(resolveApiCost(summarizeInvocationUsage([
+      { id: "a1" }, { type: "summary", ok: 1, failed: 0, cost: { currency: "CAD", api_equivalent: 2 } },
+    ]), makeArm({ fx: fxUsdToCad }), null, "CAD")).toEqual({
+      costUnknownReason: null, apiEquivalentTotal: 2, apiEquivalentPerItem: 2,
+    });
+    // Missing sumCur and null pt: uses metadata override.currency ("CAD") over arm.fx.from ("USD"), else arm.fx.from.
+    expect(resolveApiCost(summarizeInvocationUsage([
+      { id: "a1" }, { type: "summary", ok: 1, failed: 0, cost: { api_equivalent: 2 } },
+    ]), makeArm({
+      fx: fxUsdToCad, tariffOverride: { status: "primary", currency: "CAD", source: "s", asOf: "d" },
+    }), null, "CAD")).toEqual({ costUnknownReason: null, apiEquivalentTotal: 2, apiEquivalentPerItem: 2 });
+    expect(resolveApiCost(summarizeInvocationUsage([
+      { id: "a1" }, { type: "summary", ok: 1, failed: 0, cost: { api_equivalent: 2 } },
+    ]), makeArm({ fx: fxUsdToCad }), null, "CAD")).toEqual({
+      costUnknownReason: null, apiEquivalentTotal: 2.77, apiEquivalentPerItem: 2.77,
+    });
+    const usageNumericReas = summarizeInvocationUsage([{ id: "a1" }, {
+      type: "summary", ok: 1, failed: 0,
+      tokens: { input: 10, output: 10, reasoning: 5, total: 25 },
+      cost: { currency: "USD", api_equivalent: 0.01 },
+    }]);
+    const usageNoTokens = summarizeInvocationUsage([{ id: "a1" }, { type: "summary", ok: 1, failed: 0 }]);
+    expect(resolveApiCost(usageNumericReas, makeArm(), priceTableNoReas, "USD")).toEqual({
+      costUnknownReason: "reasoning-rate-missing", apiEquivalentTotal: "unknown", apiEquivalentPerItem: "unknown",
+    });
+    expect(resolveApiCost(summarizeInvocationUsage([{ id: "a1" }]), makeArm(), priceTableUsd, "USD")).toEqual({
+      costUnknownReason: "incomplete-invocation-summary",
+      apiEquivalentTotal: "unknown", apiEquivalentPerItem: "unknown",
+    });
+    expect(resolveApiCost(usageNoTokens, makeArm({ tariffOverride: overrideRates }), null, "USD")).toEqual({
+      costUnknownReason: "missing-usage", apiEquivalentTotal: "unknown", apiEquivalentPerItem: "unknown",
+    });
+    expect(resolveApiCost(usageNoTokens, makeArm(), priceTableUsd, "USD")).toEqual({
+      costUnknownReason: "missing-usage", apiEquivalentTotal: "unknown", apiEquivalentPerItem: "unknown",
+    });
+    expect(resolveApiCost(usageNoTokens, makeArm(), null, "USD")).toEqual({
+      costUnknownReason: "missing-usage", apiEquivalentTotal: "unknown", apiEquivalentPerItem: "unknown",
+    });
+    expect(resolveApiCost(summarizeInvocationUsage([
+      { id: "a1" }, { type: "summary", ok: 1, failed: 0, tokens: { input: 1, output: 1, reasoning: 0, total: 2 } },
+    ]), makeArm(), null, "USD")).toEqual({
+      costUnknownReason: "unpriced-mission", apiEquivalentTotal: "unknown", apiEquivalentPerItem: "unknown",
+    });
+  });
+});
