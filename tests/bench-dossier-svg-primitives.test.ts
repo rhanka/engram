@@ -28,6 +28,10 @@ import {
   NON_STAR_SHAPES,
   effortProgressionRank,
   normalizeModelFamilyKey,
+  PROVIDER_FIXED_SHAPES,
+  buildShapeRegistry,
+  resolveModelShape,
+  type ModelShapeInput,
 } from "../src/bench-dossier/svg-primitives.js";
 
 function parseLeafSvg(xml: string): { tag: string; attrs: Record<string, string>; text?: string } {
@@ -322,5 +326,36 @@ describe("BD-6 DS-token SVG primitives, normalization & 7x5 glyph registry", () 
       refuse(() => normalizeModelFamilyKey(bad, "m"), "EMPTY_STRING", "m");
     }
     refuse(() => normalizeModelFamilyKey(""), "EMPTY_STRING", "model");
+  });
+
+  it("pins every exact benchmark-v12 model ID to its exact v12 shape and freezes PROVIDER_FIXED_SHAPES", () => {
+    expect(Object.isFrozen(PROVIDER_FIXED_SHAPES)).toBe(true);
+    expect(Object.keys(PROVIDER_FIXED_SHAPES)).toEqual([
+      "openai", "google", "anthropic", "meta", "mistral", "zhipu",
+    ]);
+    for (const map of Object.values(PROVIDER_FIXED_SHAPES)) {
+      expect(Object.isFrozen(map)).toBe(true);
+    }
+    const v12Cases: readonly [string, string, string][] = [
+      ["OpenAI", "gpt-6-astra", "circle"],
+      ["OpenAI", "gpt-5.6-sol", "square"],
+      ["OpenAI", "gpt-5.6-luna", "triangle"],
+      ["OpenAI", "gpt-4.1", "cross"],
+      ["Google", "gemini-3.8-flash", "circle"],
+      ["Google", "gemini-4-argon-low", "square"],
+      ["Anthropic", "claude-opus-5", "circle"],
+      ["Anthropic", "claude-sonnet-5", "square"],
+      ["Anthropic", "claude-sonnet-4.6", "triangle"],
+      ["Anthropic", "claude-opus-5-5", "cross"],
+      ["Meta", "muse-spark-1.3", "circle"],
+      ["Meta", "muse-wonder-1.0", "square"],
+      ["Meta", "muse-ember-1.0", "triangle"],
+      ["Mistral", "mistral-small-2603", "circle"],
+    ];
+    const v12Arms: ModelShapeInput[] = v12Cases.map(([provider, model]) => ({
+      provider, model, isCascade: false,
+    }));
+    const v12Reg = buildShapeRegistry(v12Arms);
+    expect(v12Arms.map((arm) => v12Reg.shapeFor(arm))).toEqual(v12Cases.map(([, , shape]) => shape));
   });
 });
