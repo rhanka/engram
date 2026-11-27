@@ -552,4 +552,90 @@ describe("zero-denominator, count and sitePresence failure matrix", () => {
       expect(validateBenchResultsInvariants(doc).records).toHaveLength(1);
     }
   });
+
+  it("refuses remaining single-defect count identity violations", () => {
+    const cases: [(doc: any) => void, BenchInvariantCode, string, any?][] = [
+      [(doc) => { doc.corpus.goldenIds = 21; }, "ATTEMPTED_MISMATCH", "$.records[0].attempted"],
+      [(doc) => { doc.records[0].failed = 3; }, "COUNT_IDENTITY", "$.records[0].accepted"],
+      [(doc) => { doc.records[0].fpOnPresent = 5; }, "COUNT_IDENTITY", "$.records[0].fp"],
+      [(doc) => { doc.records[0].fpElementsOnAbsent = 3; }, "COUNT_IDENTITY", "$.records[0].fp"],
+      [
+        (doc) => {
+          doc.records[0].fp = 5;
+          doc.records[0].fpElementsOnAbsent = 1;
+        },
+        "COUNT_IDENTITY",
+        "$.records[0].fpElementsOnAbsent",
+      ],
+      [
+        (doc) => {
+          doc.records[0].fp = 7;
+          doc.records[0].fpElementsOnAbsent = 3;
+        },
+        "COUNT_IDENTITY",
+        "$.records[0].fpElementsOnAbsent",
+        { missionSpecs: [{ name: "headline", kind: "scalar", maxValues: 1 }] },
+      ],
+      [
+        (doc) => {
+          doc.records[0].fp = 4;
+          doc.records[0].fpOnAbsent = 0;
+          doc.records[0].fpElementsOnAbsent = 1;
+          doc.records[0].fpOnPresent = 3;
+        },
+        "COUNT_IDENTITY",
+        "$.records[0].fpElementsOnAbsent",
+      ],
+      [(doc) => { doc.records[0].fn = 3; }, "COUNT_IDENTITY", "$.records[0].tp"],
+      [(doc) => { doc.records[0].goldPositive = 9; }, "COUNT_IDENTITY", "$.records[0].tp"],
+      [
+        (doc) => {
+          doc.records[0].fpOnAbsent = 3;
+          doc.records[0].fpElementsOnAbsent = 3;
+          doc.records[0].fp = 7;
+        },
+        "COUNT_IDENTITY",
+        "$.records[0].tn",
+      ],
+      [(doc) => { doc.records[0].failedOnAbsent = 1; }, "COUNT_IDENTITY", "$.records[0].tn"],
+      [(doc) => { doc.records[0].goldAbsent = 11; }, "COUNT_IDENTITY", "$.records[0].tn"],
+      [
+        (doc) => {
+          const record = doc.records[0];
+          record.tn = 0;
+          record.fp = 4;
+          record.fpOnPresent = 4;
+          record.fpOnAbsent = 0;
+          record.fpElementsOnAbsent = 0;
+          record.failedOnAbsent = 10;
+          record.abstentionSpecificity = 0;
+          record.unweighted.precision = 0.6;
+          record.precision = 0.6;
+          record.unweighted.f1 = 2 / 3;
+          record.f1 = 2 / 3;
+          record.unweighted.precisionInterval = { ...WILSON_6_OF_10 };
+          record.precisionInterval = { ...WILSON_6_OF_10 };
+        },
+        "COUNT_IDENTITY",
+        "$.records[0].abstentionSpecificity",
+      ],
+      [
+        (doc) => {
+          doc.records[0].field = "tags";
+          doc.records[0].fp = 4;
+          doc.records[0].fpOnAbsent = 0;
+          doc.records[0].fpElementsOnAbsent = 1;
+          doc.records[0].fpOnPresent = 3;
+        },
+        "COUNT_IDENTITY",
+        "$.records[0].fpElementsOnAbsent",
+        { missionSpecs: [{ name: "tags", kind: "scalar", maxValues: 3 }] },
+      ],
+    ];
+    for (const [mutate, invariant, path, opts] of cases) {
+      const doc = clone(makeResultsFile());
+      mutate(doc);
+      refuse(() => validateBenchResultsInvariants(doc, opts), invariant, path);
+    }
+  });
 });
