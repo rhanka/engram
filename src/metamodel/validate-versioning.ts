@@ -16,7 +16,7 @@ import {
   type ValidationSink,
 } from "./validate-common.js";
 
-interface SemanticDiffSummary {
+export interface SemanticDiffSummary {
   readonly breaking: string[];
   readonly additive: string[];
   readonly detectedRenames: DeclaredBreakingRename[];
@@ -488,7 +488,7 @@ function diffFileProjections(
   }
 }
 
-function diffMetamodelDocuments(
+export function diffMetamodelDocuments(
   parentDoc: Record<string, unknown>,
   candidateDoc: Record<string, unknown>,
 ): SemanticDiffSummary {
@@ -505,7 +505,7 @@ function diffMetamodelDocuments(
   return { breaking, additive, detectedRenames };
 }
 
-function isMappingFileCoveringRenames(
+export function isMappingFileCoveringRenames(
   mappingPin: unknown,
   mappingFile: MappingFile | undefined,
   renames: readonly DeclaredBreakingRename[],

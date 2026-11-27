@@ -18,6 +18,7 @@ import { DATA_MODEL_FORMAT, extraKey, isTrimmedStr } from "./model-schemas.js";
 import { hashOntologyProfile } from "./ontology-profile.js";
 import { classifyRowDomainDelta } from "./ontology-guardian/row-domain-compat.js";
 import { validateModelGovernance, type ModelGovernance, type QualifiedPin } from "./model-governance.js";
+import { classifyV1Compatibility } from "./metamodel/semver-gate.js";
 export type { Digest, Pin } from "./ontology-guardian/types.js";
 export type { Cardinality, EnumDomain, FieldPair, LogicalType, ModelAttribute, ModelEdge, ModelEndpoints, ModelHeader, ModelNode, ModelRow, Names, Reference, TextDomain } from "./model-schemas.js";
 export type { ChangeCapture, ColumnGovernance, ModelGovernance, PiiCategory, QualifiedPin, Retention, SealedModelGovernance, StorageNeeds, TenantScope } from "./model-governance.js";
@@ -120,13 +121,26 @@ const CONSUMED_KEYS = new Set([
   "hardening", "inference_policy", "evidence_policy", "hierarchies",
   "class_hierarchies", "outputs",
 ]);
+const V1_CONSUMED_KEYS = new Set([
+  "metamodel_version", "lineage", "parent_pin", "mapping_pin",
+  "composed_lineage_pins", "domain_policies", "file_projections",
+  "presentation", "presentation_hash",
+]);
 const MODELED_NODE_KEYS = new Set([
   "aliases", "registry", "source_backed", "status_policy", "linking",
   "visual_encoding", "properties", "id_prefix", "definition",
 ]);
+const V1_MODELED_NODE_KEYS = new Set([
+  ...MODELED_NODE_KEYS,
+  "attributes", "state_machine", "state_machines", "admission_policy",
+]);
 const MODELED_REL_KEYS = new Set([
   "source", "target", "source_types", "target_types", "requires_evidence",
   "assertion_basis", "derivation_method", "derivation_methods", "description",
+]);
+const V1_MODELED_REL_KEYS = new Set([
+  ...MODELED_REL_KEYS,
+  "attributes", "hierarchy",
 ]);
 const UNBOUNDED_CARDINALITY: OntologyCardinalityBound = { min: 0, max: "many" };
 const TAGGED_ROW_KEYS = ["attributes", "key", "unique", "references", "endpoints", "cardinality"];
@@ -540,7 +554,7 @@ function bundleProfileInternal(
 
   const extensions: Record<string, unknown> = {};
   for (const k of Object.keys(parsedDoc)) {
-    if (v1 && (k === "metamodel_version" || k === "presentation" || k === "presentation_hash")) continue;
+    if (v1 && V1_CONSUMED_KEYS.has(k)) continue;
     if (!CONSUMED_KEYS.has(k)) setProp(extensions, k, parsedDoc[k]);
   }
 
@@ -955,8 +969,8 @@ export function checkProfileCompatibility(
   if (oldP.default_language !== newP.default_language) pushB("changed_default_language", "default_language", "default_language", canonicalBytes(oldP.default_language), canonicalBytes(newP.default_language));
   if (oldP.version !== newP.version) pushNB("bumped_profile_version", "version", "version", canonicalBytes(oldP.version), canonicalBytes(newP.version));
   checkResidual("metamodel_version", "metamodel_version", oldP.metamodel_version, newP.metamodel_version);
-  const nodeSkip = taggedPair ? TAGGED_ROW_SKIP : MODELED_NODE_KEYS;
-  const relSkip = taggedPair ? TAGGED_ROW_SKIP : MODELED_REL_KEYS;
+  const nodeSkip = taggedPair ? TAGGED_ROW_SKIP : v1 ? V1_MODELED_NODE_KEYS : MODELED_NODE_KEYS;
+  const relSkip = taggedPair ? TAGGED_ROW_SKIP : v1 ? V1_MODELED_REL_KEYS : MODELED_REL_KEYS;
   if (!taggedPair) checkResidual("data_model", "data_model", oldP.data_model, newP.data_model);
   else for (const c of classifyRowDomainDelta(oldDoc, newDoc))
     (c.kind === "breaking" ? pushB : pushNB)(c.code, c.path, c.subject, c.before, c.after);
@@ -1012,6 +1026,7 @@ export function checkProfileCompatibility(
     }
     for (const p of Object.keys(nProps)) {
       if (!Object.prototype.hasOwnProperty.call(oProps, p)) {
+        if (v1 && isPlainObj(nProps[p]) && nProps[p].required === true) continue;
         pushNB("added_node_property", `node_types.${t}.properties.${p}`, `${t}.${p}`, null, renderCanon(nProps[p]));
       }
     }
@@ -1271,6 +1286,30 @@ export function checkProfileCompatibility(
       }
     }
     pushB("changed_unmodeled_block", path, k, before, after);
+  }
+
+  if (v1) {
+    // The gate reads each side as it was stated, not its bundle projection, so that it type-checks the five members
+    // that projection strips: presentation_hash, profile_hash, sourcePath, registries.*.bound_source_path and
+    // node_types.*.linking.normalize.fn. A string in one of the first four is no change for the gate either; a
+    // string `fn` never gets here (unsupported_linking_fn).
+    const gate = classifyV1Compatibility(oldSide.parsedDoc, newSide.parsedDoc);
+    if (gate.refusals.length > 0) {
+      return deepFreeze({
+        ok: false,
+        compatible: false,
+        oldDigest: oldB.digest,
+        newDigest: newB.digest,
+        breaking: [],
+        nonBreaking: [],
+        validationIssues: gate.refusals.map((r) => ({ severity: "error" as const, code: r.code, path: r.path, message: r.message })),
+      });
+    }
+    for (const delta of gate.deltas) {
+      const before = renderTrunc(renderCanon(delta.before));
+      const after = renderTrunc(renderCanon(delta.after));
+      (delta.kind === "breaking" ? pushB : pushNB)(delta.code, delta.path, delta.subject, before, after);
+    }
   }
 
   if (taggedPair && taggedUnhandled.length > 0) {
