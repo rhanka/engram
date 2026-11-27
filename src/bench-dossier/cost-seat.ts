@@ -3,6 +3,7 @@ import * as guards from "./results-guards.js";
 import { BenchCostSeatError } from "./cost-seat-parse.js";
 
 export * from "./cost-seat-parse.js";
+export { computeFromRates, convertCurrency, roundCostNano, type ApiResult } from "./cost-seat-math.js";
 
 /** Parse raw results.ndjson text into validated plain row objects. */
 export function parseResultsNdjson(raw: string): Record<string, unknown>[] {

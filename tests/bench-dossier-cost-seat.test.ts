@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  BenchCostSeatError, parseResultsNdjson, parseValidatedPriceTable, summarizeInvocationUsage,
+  BenchCostSeatError, computeFromRates, convertCurrency, parseResultsNdjson, parseValidatedPriceTable,
+  roundCostNano, summarizeInvocationUsage,
 } from "../src/bench-dossier/cost-seat.js";
 
 type CodedError = Error & { code?: string; path?: string };
@@ -265,5 +266,63 @@ describe("BD-4 tree-04: nested usage row guards, Date rejections, and undefined-
       undefinedUsage.hasMissingDigest, undefinedUsage.calls,
       undefinedUsage.tokens, undefinedUsage.summaryApiTotal, undefinedUsage.summaryCurrencies,
     ]).toEqual([true, "unknown", "unknown", "unknown", []]);
+  });
+});
+
+describe("BD-4 tree-05: exact-half nanodollar rounding, single-FX conversion, and rate pricing", () => {
+  it("rounds exact halves half-up at 1e-9 and applies FX once only when currencies differ", () => {
+    // 5e-10 = 0.5*1e-9 -> 1e-9; 1.5e-9 = 1.5*1e-9 -> 2e-9; 4.9e-10 -> 0; 0.001*1.0000005 -> 0.001000001.
+    expect([
+      roundCostNano(5e-10), roundCostNano(1.5e-9), roundCostNano(4.9e-10), roundCostNano(0.001 * 1.0000005),
+    ]).toEqual([1e-9, 2e-9, 0, 0.001000001]);
+    // 1 * 0.0005 / 1e6 = 5e-10 -> 1e-9; 3 * 0.0005 / 1e6 = 1.5e-9 -> 2e-9.
+    expect(computeFromRates(
+      { input: 1, output: 0, reasoning: 0, cached: "unknown", total: 1 },
+      { input: 0.0005, output: 0 }, "USD", "USD", 1, undefined,
+    )).toEqual({ costUnknownReason: null, apiEquivalentTotal: 1e-9, apiEquivalentPerItem: 1e-9 });
+    expect(computeFromRates(
+      { input: 3, output: 0, reasoning: 0, cached: "unknown", total: 3 },
+      { input: 0.0005, output: 0 }, "USD", "USD", 1, undefined,
+    )).toEqual({ costUnknownReason: null, apiEquivalentTotal: 2e-9, apiEquivalentPerItem: 2e-9 });
+    const fxUsdToCad = { from: "USD" as const, to: "CAD" as const, rate: 1.385, source: "boc", asOf: "2026-11-22" };
+    // Same currency skips FX (stays 2 even with USD->CAD fx present); USD->CAD multiplies once: 2 * 1.385 = 2.77.
+    expect([
+      convertCurrency(2, "CAD", "CAD", fxUsdToCad, "$.fx"),
+      convertCurrency(2, "USD", "CAD", fxUsdToCad, "$.fx"),
+    ]).toEqual([2, 2.77]);
+    refuse(() => convertCurrency(2, "USD", "CAD", undefined, "$.fx"), "CURRENCY_MISMATCH", "$.fx");
+    refuse(() => convertCurrency(2, "CAD", "USD", fxUsdToCad, "$.fx"), "CURRENCY_MISMATCH", "$.fx");
+    refuse(() => convertCurrency(2, "USD", "CAD", { ...fxUsdToCad, from: "CAD" }, "$.fx"),
+      "CURRENCY_MISMATCH", "$.fx");
+    refuse(() => convertCurrency(2, "USD", "CAD", { ...fxUsdToCad, to: "USD" }, "$.fx"),
+      "CURRENCY_MISMATCH", "$.fx");
+  });
+
+  it("computes rate pricing with reasoning check, 1,705-ID divisor, and zero-basis guard", () => {
+    const fxUsdToCad = { from: "USD" as const, to: "CAD" as const, rate: 1.385, source: "boc", asOf: "2026-11-22" };
+    const tokens = {
+      input: 1_000_000, output: 200_000, reasoning: 50_000, cached: "unknown" as const, total: 1_250_000,
+    };
+    // USD = (1e6*1.5 + 2e5*6 + 5e4*12)/1e6 = 3.3 USD; CAD = 3.3*1.385 = 4.5705;
+    // perItem = 4.5705/1705 = 0.00268064516129032258... (IEEE-754: 0.0026806451612903224).
+    expect(computeFromRates(tokens, { input: 1.5, output: 6.0, reasoning: 12.0 }, "USD", "CAD", 1705, fxUsdToCad))
+      .toEqual({
+        costUnknownReason: null,
+        apiEquivalentTotal: 4.5705,
+        apiEquivalentPerItem: 0.0026806451612903224,
+      });
+    expect(computeFromRates(tokens, { input: 1.5, output: 6.0 }, "USD", "USD", 10, undefined)).toEqual({
+      costUnknownReason: "reasoning-rate-missing", apiEquivalentTotal: "unknown", apiEquivalentPerItem: "unknown",
+    });
+    expect(computeFromRates(
+      { input: 1_000_000, output: 0, reasoning: 0, cached: "unknown", total: 1_000_000 },
+      { input: 2, output: 5 }, "USD", "USD", 10, undefined,
+    )).toEqual({ costUnknownReason: null, apiEquivalentTotal: 2, apiEquivalentPerItem: 0.2 });
+    expect(computeFromRates(
+      { input: 0, output: 0, reasoning: 0, cached: "unknown", total: 0 },
+      { input: 2, output: 5 }, "USD", "USD", 0, undefined,
+    )).toEqual({ costUnknownReason: null, apiEquivalentTotal: 0, apiEquivalentPerItem: 0 });
+    refuse(() => computeFromRates(tokens, { input: 1, output: 1, reasoning: 1 }, "USD", "USD", 0, undefined),
+      "BAD_SHAPE", "$.cost.apiEquivalentTotal");
   });
 });
