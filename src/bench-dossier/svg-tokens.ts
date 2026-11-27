@@ -90,3 +90,42 @@ export function resolveArmColor(provider: string, isCascade: boolean): string {
   if (key === "cascades") failSvg("CASCADE_CONFLICT", "isCascade");
   return colorForProviderKey(key);
 }
+
+export const CHART_KINDS = ["pr", "cost", "recall", "acceptance", "overview"] as const;
+export type ChartKind = (typeof CHART_KINDS)[number];
+const CHART_SET = new Set<string>(CHART_KINDS);
+const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+export const toFieldSlug = (field: string): string =>
+  requireNonEmptyText(field, "field").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")
+  || failSvg("BAD_SLUG", "field");
+export function buildChartA11yIds(slug: string, chartKind: ChartKind, slugPath = "slug", kindPath = "chartKind") {
+  if (typeof slug !== "string" || !slug.trim()) failSvg("EMPTY_STRING", slugPath);
+  if (!SLUG_RE.test(slug)) failSvg("BAD_SLUG", slugPath);
+  const kind = requireEnum<ChartKind>(chartKind, CHART_SET, kindPath);
+  return { titleId: `fig-${slug}-${kind}-title`, descId: `fig-${slug}-${kind}-desc` } as const;
+}
+
+export const GLYPH_STATES = ["api_filled", "seat_measured_hollow",
+  "seat_estimated_hollow_dotted", "incomplete_hollow_dashed", "highlighted"] as const;
+export type GlyphState = (typeof GLYPH_STATES)[number];
+const STATE_SET = new Set<string>(GLYPH_STATES);
+const STATE_SPEC: Readonly<Record<GlyphState, readonly [boolean, string, string?]>> = {
+  api_filled: [true, "1"], seat_measured_hollow: [false, "1.9"],
+  seat_estimated_hollow_dotted: [false, "1.9", "2 2"],
+  incomplete_hollow_dashed: [false, "1.9", "3.5 2"], highlighted: [true, "2.4"],
+};
+export interface GlyphStyle {
+  readonly fill: string;
+  readonly stroke: string;
+  readonly strokeWidth: string;
+  readonly strokeDasharray?: string;
+}
+/** Resolve exact DS-token fill/stroke/dash style for one of the 5 closed glyph states. */
+export function resolveGlyphStyle(
+  state: GlyphState, color: string, statePath = "state", colorPath = "color",
+): GlyphStyle {
+  const [filled, strokeWidth, dash] = STATE_SPEC[requireEnum<GlyphState>(state, STATE_SET, statePath)];
+  const resolved = requireNonEmptyText(color, colorPath);
+  return { fill: filled ? resolved : DS_VARS.surfaceDefault, stroke: filled ? DS_VARS.textPrimary : resolved,
+    strokeWidth, ...(dash ? { strokeDasharray: dash } : {}) };
+}

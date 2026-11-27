@@ -17,6 +17,11 @@ import {
   requirePositiveNum,
   resolveArmColor,
   resolveProviderColor,
+  CHART_KINDS,
+  GLYPH_STATES,
+  buildChartA11yIds,
+  resolveGlyphStyle,
+  toFieldSlug,
 } from "../src/bench-dossier/svg-primitives.js";
 
 function parseLeafSvg(xml: string): { tag: string; attrs: Record<string, string>; text?: string } {
@@ -173,5 +178,66 @@ describe("BD-6 DS-token SVG primitives, normalization & 7x5 glyph registry", () 
     refuse(() => resolveProviderColor(""), "EMPTY_STRING", "provider");
     refuse(() => resolveProviderColor(null as unknown as string), "EMPTY_STRING", "provider");
     refuse(() => resolveArmColor("", true), "EMPTY_STRING", "provider");
+  });
+
+  it("converts field keys to slugs and generates unique fig-<slug>-<chartKind> a11y IDs", () => {
+    expect(toFieldSlug("office.full_address")).toBe("office-full-address");
+    expect(toFieldSlug("__Office..Full__Address__")).toBe("office-full-address");
+    expect(toFieldSlug("_a")).toBe("a");
+    expect(toFieldSlug("a_")).toBe("a");
+    expect(toFieldSlug("city")).toBe("city");
+    refuse(() => toFieldSlug(""), "EMPTY_STRING", "field");
+    refuse(() => toFieldSlug("..."), "BAD_SLUG", "field");
+    expect(CHART_KINDS).toEqual(["pr", "cost", "recall", "acceptance", "overview"]);
+    expect(CHART_KINDS.map((kind) => buildChartA11yIds("office-city", kind))).toEqual([
+      { titleId: "fig-office-city-pr-title", descId: "fig-office-city-pr-desc" },
+      { titleId: "fig-office-city-cost-title", descId: "fig-office-city-cost-desc" },
+      { titleId: "fig-office-city-recall-title", descId: "fig-office-city-recall-desc" },
+      { titleId: "fig-office-city-acceptance-title", descId: "fig-office-city-acceptance-desc" },
+      { titleId: "fig-office-city-overview-title", descId: "fig-office-city-overview-desc" },
+    ]);
+    for (const bad of ["", "  ", null as never]) {
+      refuse(() => buildChartA11yIds(bad, "pr"), "EMPTY_STRING", "slug");
+    }
+    for (const bad of [" city ", "City", "office_city", "a--b", "-a"]) {
+      refuse(() => buildChartA11yIds(bad, "pr"), "BAD_SLUG", "slug");
+    }
+    for (const bad of ["bar" as never, null as never, undefined as never]) {
+      refuse(() => buildChartA11yIds("city", bad), "BAD_ENUM", "chartKind");
+    }
+    refuse(() => buildChartA11yIds("bad_slug", "pr", "svg.slug", "svg.chartKind"), "BAD_SLUG", "svg.slug");
+    refuse(() => buildChartA11yIds("city", "bar" as never, "svg.slug", "svg.chartKind"), "BAD_ENUM", "svg.chartKind");
+  });
+
+  it("resolves all 5 glyph states with literal DS-token styles", () => {
+    expect(GLYPH_STATES).toEqual([
+      "api_filled",
+      "seat_measured_hollow",
+      "seat_estimated_hollow_dotted",
+      "incomplete_hollow_dashed",
+      "highlighted",
+    ]);
+    const blue = "var(--st-semantic-data-category1, #4E79A7)";
+    expect(GLYPH_STATES.map((state) => resolveGlyphStyle(state, blue))).toEqual([
+      { fill: blue, stroke: "var(--st-semantic-text-primary, #0f172a)", strokeWidth: "1" },
+      { fill: "var(--st-semantic-surface-default, #ffffff)", stroke: blue, strokeWidth: "1.9" },
+      {
+        fill: "var(--st-semantic-surface-default, #ffffff)",
+        stroke: blue,
+        strokeWidth: "1.9",
+        strokeDasharray: "2 2",
+      },
+      {
+        fill: "var(--st-semantic-surface-default, #ffffff)",
+        stroke: blue,
+        strokeWidth: "1.9",
+        strokeDasharray: "3.5 2",
+      },
+      { fill: blue, stroke: "var(--st-semantic-text-primary, #0f172a)", strokeWidth: "2.4" },
+    ]);
+    refuse(() => resolveGlyphStyle("bad" as never, blue), "BAD_ENUM", "state");
+    refuse(() => resolveGlyphStyle(null as never, blue, "g.s"), "BAD_ENUM", "g.s");
+    refuse(() => resolveGlyphStyle("api_filled", ""), "EMPTY_STRING", "color");
+    refuse(() => resolveGlyphStyle("api_filled", null as never, "s", "g.c"), "EMPTY_STRING", "g.c");
   });
 });
