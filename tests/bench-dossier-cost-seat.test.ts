@@ -503,3 +503,97 @@ describe("BD-4 tree-07: resolveApiCost tariffOverride precedence, summary curren
     });
   });
 });
+
+describe("BD-4 tree-08: resolveApiCost symmetric currency guard matrix (both sides)", () => {
+  it("refuses every currency conflict and allows every symmetric valid counterpart", () => {
+    const fxUsdToCad = { from: "USD" as const, to: "CAD" as const, rate: 1.385, source: "boc", asOf: "2026-11-22" };
+    const fxCadToUsd = { from: "CAD" as const, to: "USD" as const, rate: 0.72, source: "boc", asOf: "2026-11-22" };
+    const fxUnitUsd = { from: "USD" as const, to: "USD" as const, rate: 1, source: "id", asOf: "2026-11-22" };
+    const fxUnitCad = { from: "CAD" as const, to: "CAD" as const, rate: 1, source: "id", asOf: "2026-11-22" };
+    const priceTableUsd = parseValidatedPriceTable({
+      source: "op", as_of: "2026-11-22", currency: "USD", per_million: { input: 2, output: 4 },
+    });
+    const priceTableCad = parseValidatedPriceTable({
+      source: "op", as_of: "2026-11-22", currency: "CAD", per_million: { input: 1, output: 2 },
+    });
+    const makeSummaryRows = (currency: "USD" | "CAD", id = "a1") => [
+      { id }, { type: "summary", ok: 1, failed: 0, cost: { currency, api_equivalent: 1 } },
+    ];
+    const usageUsd = summarizeInvocationUsage(makeSummaryRows("USD"));
+    const usageCad = summarizeInvocationUsage(makeSummaryRows("CAD"));
+    const usageMixed = summarizeInvocationUsage([...makeSummaryRows("USD", "a1"), ...makeSummaryRows("CAD", "a2")]);
+    const usageNoSumCur = summarizeInvocationUsage([
+      { id: "a1" },
+      {
+        type: "summary", ok: 1, failed: 0,
+        tokens: { input: 1_000_000, output: 0, reasoning: 0, total: 1_000_000 },
+        cost: { api_equivalent: 10 },
+      },
+    ]);
+    const usageNoSumCurUnk = summarizeInvocationUsage([
+      { id: "a1" },
+      {
+        type: "summary", ok: 1, failed: 0,
+        tokens: { input: 1_000_000, output: 0, reasoning: 0, total: 1_000_000 },
+        cost: { api_equivalent: "unknown" },
+      },
+    ]);
+    const usageCadWithTokens = summarizeInvocationUsage([{ id: "a1" }, {
+      type: "summary", ok: 1, failed: 0,
+      tokens: { input: 1000, output: 0, reasoning: 0, total: 1000 },
+      cost: { currency: "CAD", api_equivalent: 1 },
+    }]);
+    const overrideRates = { input: 5, output: 1 };
+    const mismatchVectors: [ReturnType<typeof summarizeInvocationUsage>, ArmManifestFile,
+      typeof priceTableUsd, "USD" | "CAD", string][] = [
+      [usageUsd, makeArm({ fx: fxUsdToCad }), null, "USD", "$.arm.fx.to"],
+      [usageUsd, makeArm({ fx: { ...fxUnitUsd, rate: 1.2 } }), null, "USD", "$.arm.fx.rate"],
+      [usageCad, makeArm({ fx: { ...fxUnitUsd, rate: 0.9 } }), null, "USD", "$.arm.fx.rate"],
+      [usageCad, makeArm({ tariffOverride: {
+        status: "primary", currency: "USD", source: "s", asOf: "d", perMillion: overrideRates,
+      } }), null, "CAD", "$.arm.tariffOverride.currency"],
+      [usageCad, makeArm({ fx: fxUnitCad, tariffOverride: {
+        status: "primary", currency: "USD", source: "s", asOf: "d", perMillion: overrideRates,
+      } }), null, "CAD", "$.arm.tariffOverride.currency"],
+      [usageCad, makeArm({ tariffOverride: { status: "primary", currency: "USD", source: "s", asOf: "d" } }),
+        null, "CAD", "$.arm.tariffOverride.currency"],
+      [usageCad, makeArm({ fx: fxUsdToCad, tariffOverride: {
+        status: "primary", currency: "USD", source: "s", asOf: "d",
+      } }), null, "CAD", "$.arm.tariffOverride.currency"],
+      // Probe P2 & P2b: metadata-only tariffOverride.currency !== priceTable.currency without sumCur.
+      [usageNoSumCur, makeArm({ fx: fxCadToUsd, tariffOverride: {
+        status: "primary", currency: "CAD", source: "ov", asOf: "2026-11-22",
+      } }), priceTableUsd, "USD", "$.arm.tariffOverride.currency"],
+      [usageNoSumCurUnk, makeArm({ fx: fxCadToUsd, tariffOverride: {
+        status: "primary", currency: "CAD", source: "ov", asOf: "2026-11-22",
+      } }), priceTableUsd, "USD", "$.arm.tariffOverride.currency"],
+      [usageMixed, makeArm(), null, "USD", "$.resultRows"],
+      [usageUsd, makeArm({ fx: fxUsdToCad }), priceTableCad, "CAD", "$.priceTable.currency"],
+      [usageUsd, makeArm(), null, "CAD", "$.arm.fx"],
+      [usageNoSumCur, makeArm(), priceTableUsd, "CAD", "$.arm.fx"],
+      [usageCadWithTokens, makeArm({ tariffOverride: {
+        status: "primary", source: "s", asOf: "d", perMillion: overrideRates,
+      } }), priceTableUsd, "CAD", "$.arm.fx"],
+    ];
+    for (const [usage, arm, priceTable, targetCurrency, errorPath] of mismatchVectors) {
+      refuse(() => resolveApiCost(usage, arm, priceTable, targetCurrency), "CURRENCY_MISMATCH", errorPath);
+    }
+    // Positive counterparts: matching metadata-only ov.currency and ov.perMillion overriding pt/sumCur.
+    expect(resolveApiCost(usageNoSumCur, makeArm({
+      fx: fxCadToUsd, tariffOverride: { status: "primary", currency: "USD", source: "ov", asOf: "2026-11-22" },
+    }), priceTableUsd, "USD")).toEqual({ costUnknownReason: null, apiEquivalentTotal: 10, apiEquivalentPerItem: 10 });
+    expect(resolveApiCost(usageCadWithTokens, makeArm({
+      tariffOverride: { status: "primary", currency: "CAD", source: "s", asOf: "d", perMillion: overrideRates },
+    }), priceTableUsd, "CAD")).toEqual({
+      costUnknownReason: null, apiEquivalentTotal: 0.005, apiEquivalentPerItem: 0.005,
+    });
+    const usageUsdWithTokens = summarizeInvocationUsage([{ id: "a1" }, {
+      type: "summary", ok: 1, failed: 0,
+      tokens: { input: 1000, output: 0, reasoning: 0, total: 1000 },
+      cost: { currency: "USD", api_equivalent: 1 },
+    }]);
+    expect(resolveApiCost(usageUsdWithTokens, makeArm({
+      tariffOverride: { status: "primary", source: "s", asOf: "d", perMillion: { input: 5, output: 0 } },
+    }), null, "CAD")).toEqual({ costUnknownReason: null, apiEquivalentTotal: 0.005, apiEquivalentPerItem: 0.005 });
+  });
+});
