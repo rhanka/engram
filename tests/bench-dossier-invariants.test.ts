@@ -420,3 +420,136 @@ describe("count and sitePresence matrix invariants", () => {
     }
   });
 });
+
+const WILSON_6_OF_10 = {
+  estimator: "unweighted", method: "wilson_95_unweighted", clustering: "independent_site", valid: true,
+  low: 0.31267376973365824, high: 0.8318196702937638,
+} as const;
+
+const WILSON_0_OF_2 = {
+  estimator: "unweighted", method: "wilson_95_unweighted", clustering: "independent_site", valid: true,
+  low: 0, high: 0.6576197724933469,
+} as const;
+
+const WILSON_8_OF_8 = {
+  estimator: "unweighted", method: "wilson_95_unweighted", clustering: "independent_site", valid: true,
+  low: 0.6755924351161198, high: 1,
+} as const;
+
+describe("zero-denominator, count and sitePresence failure matrix", () => {
+  it("accepts isolated zero-denominator null metrics across precision, recall and abstention", () => {
+    const intervalOff = {
+      estimator: "unweighted", method: "none", clustering: "independent_site", valid: false, low: null, high: null,
+    } as const;
+    const positiveCases: ((doc: any) => void)[] = [
+      (doc) => {
+        const record = doc.records[0];
+        record.tp = 0;
+        record.fn = 2;
+        record.goldPositive = 2;
+        record.fp = 0;
+        record.fpOnPresent = 0;
+        record.fpOnAbsent = 0;
+        record.fpElementsOnAbsent = 0;
+        record.tn = 8;
+        record.failedOnAbsent = 2;
+        record.abstentionSpecificity = 1;
+        record.precision = null;
+        record.recall = 0;
+        record.f1 = 0;
+        record.precisionInterval = { ...intervalOff };
+        record.recallInterval = { ...WILSON_0_OF_2 };
+        record.unweighted = {
+          precision: null, recall: 0, f1: 0,
+          precisionInterval: { ...intervalOff }, recallInterval: { ...WILSON_0_OF_2 },
+        };
+        record.sitePresence = {
+          ...record.sitePresence, goldPresentSites: 2, unresolvedSites: 4, insufficientSites: 4,
+          tpSites: 0, fnSites: 2, wrongValueOnPresentSites: 0, fpOnAbsentSites: 0, tnSites: 8,
+          siteRecall: 0, siteRecallInterval: { ...WILSON_0_OF_2 },
+          siteAbstentionSpecificity: 1, siteAbstentionInterval: { ...WILSON_8_OF_8 },
+        };
+      },
+      (doc) => {
+        const record = doc.records[0];
+        record.tp = 0;
+        record.fn = 0;
+        record.goldPositive = 0;
+        record.fp = 2;
+        record.fpOnPresent = 0;
+        record.fpOnAbsent = 2;
+        record.fpElementsOnAbsent = 2;
+        record.precision = 0;
+        record.recall = null;
+        record.f1 = 0;
+        record.precisionInterval = { ...WILSON_0_OF_2 };
+        record.recallInterval = { ...intervalOff };
+        record.unweighted = {
+          precision: 0, recall: null, f1: 0,
+          precisionInterval: { ...WILSON_0_OF_2 }, recallInterval: { ...intervalOff },
+        };
+        record.sitePresence = {
+          ...record.sitePresence, goldPresentSites: 0, unresolvedSites: 5, insufficientSites: 5,
+          tpSites: 0, fnSites: 0, wrongValueOnPresentSites: 0,
+          siteRecall: null, siteRecallInterval: { ...intervalOff },
+        };
+      },
+      (doc) => {
+        const record = doc.records[0];
+        record.tn = 0;
+        record.fp = 4;
+        record.fpOnPresent = 4;
+        record.fpOnAbsent = 0;
+        record.fpElementsOnAbsent = 0;
+        record.failedOnAbsent = 10;
+        record.abstentionSpecificity = null;
+        record.precision = 0.6;
+        record.recall = 0.75;
+        record.f1 = 2 / 3;
+        record.precisionInterval = { ...WILSON_6_OF_10 };
+        record.recallInterval = { ...WILSON_6_OF_8 };
+        record.unweighted = {
+          precision: 0.6, recall: 0.75, f1: 2 / 3,
+          precisionInterval: { ...WILSON_6_OF_10 }, recallInterval: { ...WILSON_6_OF_8 },
+        };
+        record.sitePresence = {
+          ...record.sitePresence, tnSites: 0, fpOnAbsentSites: 0, failedOnAbsentSites: 10,
+          siteAbstentionSpecificity: null, siteAbstentionInterval: { ...intervalOff },
+        };
+      },
+      (doc) => {
+        const record = doc.records[0];
+        record.tp = 0;
+        record.fp = 0;
+        record.fpOnPresent = 0;
+        record.fpOnAbsent = 0;
+        record.fpElementsOnAbsent = 0;
+        record.fn = 0;
+        record.goldPositive = 0;
+        record.tn = 8;
+        record.failedOnAbsent = 2;
+        record.abstentionSpecificity = 1;
+        record.precision = null;
+        record.recall = null;
+        record.f1 = null;
+        record.precisionInterval = { ...intervalOff };
+        record.recallInterval = { ...intervalOff };
+        record.unweighted = {
+          precision: null, recall: null, f1: null,
+          precisionInterval: { ...intervalOff }, recallInterval: { ...intervalOff },
+        };
+        record.sitePresence = {
+          ...record.sitePresence, goldPresentSites: 0, unresolvedSites: 5, insufficientSites: 5,
+          tpSites: 0, fnSites: 0, wrongValueOnPresentSites: 0, fpOnAbsentSites: 0, tnSites: 8,
+          siteRecall: null, siteRecallInterval: { ...intervalOff },
+          siteAbstentionSpecificity: 1, siteAbstentionInterval: { ...WILSON_8_OF_8 },
+        };
+      },
+    ];
+    for (const mutate of positiveCases) {
+      const doc = clone(makeResultsFile());
+      mutate(doc);
+      expect(validateBenchResultsInvariants(doc).records).toHaveLength(1);
+    }
+  });
+});
