@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import {
+  validateCrossLineageComposition,
+  type CompositionValidationResult,
+} from "../src/metamodel/composition.js";
 import type { MetamodelDiagnosticCode } from "../src/metamodel/diagnostics.js";
 import {
   evaluateSemVerGate,
@@ -13,6 +17,7 @@ import type {
 import { validateTemplateAgainstMetamodel } from "../src/metamodel/validate.js";
 import type { Sha256Digest } from "../src/metamodel-contracts.js";
 import { ARCHI_V1, ARCHI_V1_PIN } from "../src/ontology-guardian/archi-profile.js";
+import { composeApplicability, deriveApplicability } from "../src/ontology-guardian/diagnostics.js";
 import type { MappingFile } from "../src/ontology-guardian/types.js";
 import { bundleProfile, checkProfileCompatibility } from "../src/profile-bundle.js";
 import type { OntologyProfile } from "../src/types.js";
@@ -97,9 +102,25 @@ function expectSemVerRefusal(
   }
 }
 
+function expectCompositionRefusal(
+  candidate: unknown,
+  context: MetamodelValidationContext | undefined,
+  expectedCode: MetamodelDiagnosticCode,
+  expectedPath: string,
+): void {
+  const res: CompositionValidationResult = validateCrossLineageComposition(freezeInput(candidate), context);
+  expect(res.status).toBe("refused-metamodel-invalid");
+  if (res.status === "refused-metamodel-invalid") {
+    expect(res.diagnostics.map((d) => ({ code: d.code, path: d.path }))).toEqual([
+      { code: expectedCode, path: expectedPath },
+    ]);
+  }
+}
+
 const ARCHI_V1_SHA256: Sha256Digest = `sha256:${ARCHI_V1_PIN.contentDigest}`;
 const ARCHI_V1_ENTITY_IDS = ARCHI_V1.declaration.entityTypes.map((entity) => entity.id);
 const ARCHI_V2_SHA256: Sha256Digest = `sha256:${"2".repeat(64)}`;
+const ARCHI_V2_ENTITY_IDS = [...ARCHI_V1_ENTITY_IDS, "capability", "process", "session", "businessObject", "controlPolicy"];
 
 function makeTrackTemplate(): MetamodelTemplateDocument {
   return {
@@ -305,6 +326,54 @@ function makeTrackTemplate(): MetamodelTemplateDocument {
           schema: "engram.track-pr-link-fingerprint/v1",
           hash_algorithm: "sha256-rfc8785",
         },
+      },
+    },
+  };
+}
+
+function makeH2aTemplate(trackDigest: Sha256Digest): MetamodelTemplateDocument {
+  return {
+    metamodel_version: "engram.metamodel/v1",
+    lineage: "h2a",
+    id: "sentropic.h2a-harness-and-skills",
+    version: "1.0.0",
+    default_language: "en",
+    composed_lineage_pins: [
+      {
+        importAlias: "archi_v1",
+        lineage: "archi",
+        templateId: "archi",
+        templateVersion: "1.0.0",
+        templateDigestSha256: ARCHI_V1_SHA256,
+      },
+      {
+        importAlias: "track_agile",
+        lineage: "track",
+        templateId: "sentropic.agile-product",
+        templateVersion: "1.0.0",
+        templateDigestSha256: trackDigest,
+      },
+    ],
+    node_types: {
+      HarnessSkill: {
+        definition: "Declared skill runnable inside an agent harness scope.",
+        id_prefix: "SKL",
+        attributes: {
+          skill_id: { kind: "string", required: true },
+          target_work_item: { kind: "ref", targetTypes: ["track_agile:WorkItem"] },
+        },
+      },
+    },
+    relation_types: {
+      runs_in_runtime: {
+        source_types: ["HarnessSkill"],
+        target_types: ["archi_v1:runtime"],
+        cardinality: { out: { min: 1, max: "many" }, in: { min: 0, max: "many" } },
+      },
+      tracks_work_item: {
+        source_types: ["HarnessSkill"],
+        target_types: ["track_agile:WorkItem"],
+        cardinality: { out: { min: 0, max: "many" }, in: { min: 0, max: "many" } },
       },
     },
   };
@@ -1002,6 +1071,241 @@ describe("metamodel versioning and composition (Lot 0.3)", () => {
       mutate(m);
       expectSemVerRefusal(m, { registry: richReg }, "MM_VERSION_MAJOR_REQUIRED_FOR_BREAKING", "version");
     }
+  });
+
+  it("a cross-lineage composition accepts exact pinned versions and refuses a floating version, a wrong digest, a redefined external type and a cycle", () => {
+    // 0. Public Lot 0.3 entry point exists
+    expect(existsSync(new URL("../src/metamodel/composition.ts", import.meta.url))).toBe(true);
+    expectCompositionRefusal(42, undefined, "MM_SYNTAX_NON_PLAIN_OBJECT", "template");
+
+    // G0 D-B7 preserved: inheritance stacking remains non-applicable for TRK, H2A, MEM
+    expect(composeApplicability("TRK")[0]?.code).toBe("operation-not-applicable");
+    expect(composeApplicability("H2A")[0]?.code).toBe("operation-not-applicable");
+    expect(composeApplicability("MEM")[0]?.code).toBe("operation-not-applicable");
+    expect(composeApplicability("DIA")).toEqual([]);
+    expect(deriveApplicability("TRK")[0]?.code).toBe("operation-not-applicable");
+
+    const track = makeTrackTemplate();
+    const trackDigest = independentTemplateSha256(track);
+    const registry: RegisteredTemplateRecord[] = [
+      {
+        lineage: "archi",
+        templateId: "archi",
+        templateVersion: "1.0.0",
+        templateDigestSha256: ARCHI_V1_SHA256,
+        nodeTypeIds: ARCHI_V1_ENTITY_IDS,
+      },
+      {
+        lineage: "archi",
+        templateId: "archi",
+        templateVersion: "2.0.0",
+        templateDigestSha256: ARCHI_V2_SHA256,
+        nodeTypeIds: ARCHI_V2_ENTITY_IDS,
+      },
+      {
+        lineage: "track",
+        templateId: track.id,
+        templateVersion: "1.0.0",
+        templateDigestSha256: trackDigest,
+        nodeTypeIds: Object.keys(track.node_types),
+        document: track,
+      },
+    ];
+
+    // 1. Autonomous track template (composed_lineage_pins: [] with inert ArchiAssetRef) succeeds
+    const trackComp = validateCrossLineageComposition(freezeInput(track), { registry });
+    expect(trackComp).toMatchObject({ status: "accepted", pins: [], externalEndpoints: [] });
+    expect(validateTemplateAgainstMetamodel(track, { registry }).status).toBe("accepted");
+
+    // 3. h2a skills template pinning archi@1 and track succeeds
+    const h2a = makeH2aTemplate(trackDigest);
+    const h2aComp = validateCrossLineageComposition(freezeInput(h2a), { registry });
+    expect(h2aComp.status).toBe("accepted");
+    if (h2aComp.status === "accepted") {
+      expect(h2aComp.externalEndpoints).toEqual([
+        "archi_v1:runtime",
+        "track_agile:WorkItem",
+      ]);
+    }
+    expect(validateTemplateAgainstMetamodel(h2a, { registry }).status).toBe("accepted");
+
+    // 4. Floating versions ("^1.0.0" and "latest") -> MM_COMPOSE_FLOATING_VERSION
+    const pinOnlyH2a: MetamodelTemplateDocument = {
+      ...structuredClone(h2a),
+      node_types: {
+        HarnessSkill: {
+          definition: "Declared skill runnable inside an agent harness scope.",
+          id_prefix: "SKL",
+          attributes: { skill_id: { kind: "string", required: true } },
+        },
+      },
+      relation_types: {},
+    };
+    for (const floating of ["^1.0.0", "latest"]) {
+      const badVersion = structuredClone(pinOnlyH2a);
+      badVersion.composed_lineage_pins = [
+        { ...badVersion.composed_lineage_pins![0]!, templateVersion: floating },
+        badVersion.composed_lineage_pins![1]!,
+      ];
+      expectCompositionRefusal(
+        badVersion,
+        { registry },
+        "MM_COMPOSE_FLOATING_VERSION",
+        "composed_lineage_pins[0].templateVersion",
+      );
+    }
+
+    // 5. Malformed Sha256Digest -> MM_COMPOSE_INVALID_DIGEST; missing target -> MM_COMPOSE_TARGET_NOT_REGISTERED; wrong digest -> MM_COMPOSE_DIGEST_MISMATCH
+    const malformedDigest = structuredClone(pinOnlyH2a);
+    malformedDigest.composed_lineage_pins = [
+      { ...malformedDigest.composed_lineage_pins![0]!, templateDigestSha256: "not-a-sha256" as Sha256Digest },
+      malformedDigest.composed_lineage_pins![1]!,
+    ];
+    expectCompositionRefusal(
+      malformedDigest,
+      { registry },
+      "MM_COMPOSE_INVALID_DIGEST",
+      "composed_lineage_pins[0].templateDigestSha256",
+    );
+
+    const unregisteredTarget = structuredClone(pinOnlyH2a);
+    unregisteredTarget.composed_lineage_pins = [
+      { ...unregisteredTarget.composed_lineage_pins![0]!, templateVersion: "9.9.9" },
+      unregisteredTarget.composed_lineage_pins![1]!,
+    ];
+    expectCompositionRefusal(
+      unregisteredTarget,
+      { registry },
+      "MM_COMPOSE_TARGET_NOT_REGISTERED",
+      "composed_lineage_pins[0]",
+    );
+
+    const wrongDigest = structuredClone(h2a);
+    wrongDigest.composed_lineage_pins = [
+      { ...wrongDigest.composed_lineage_pins![0]!, templateDigestSha256: `sha256:${"e".repeat(64)}` },
+      wrongDigest.composed_lineage_pins![1]!,
+    ];
+    expectCompositionRefusal(
+      wrongDigest,
+      { registry },
+      "MM_COMPOSE_DIGEST_MISMATCH",
+      "composed_lineage_pins[0].templateDigestSha256",
+    );
+
+    // 7. Redefining, inheriting, or projecting an external type -> MM_COMPOSE_EXTERNAL_TYPE_REDEFINITION
+    const redef = structuredClone(h2a);
+    redef.node_types["track_agile:WorkItem"] = { definition: "Illegal redefinition." };
+    expectCompositionRefusal(
+      redef,
+      { registry },
+      "MM_COMPOSE_EXTERNAL_TYPE_REDEFINITION",
+      "node_types.track_agile:WorkItem",
+    );
+
+    const nodeInheritsOverride = structuredClone(h2a);
+    (nodeInheritsOverride.node_types.HarnessSkill as unknown as Record<string, unknown>).inherits = ["track_agile:WorkItem"];
+    expectCompositionRefusal(
+      nodeInheritsOverride,
+      { registry },
+      "MM_COMPOSE_EXTERNAL_TYPE_REDEFINITION",
+      "node_types.HarnessSkill.inherits",
+    );
+
+    const nodeExtRegistry = structuredClone(h2a);
+    nodeExtRegistry.node_types.HarnessSkill!.registry = "archi_v1:runtime";
+    expectCompositionRefusal(
+      nodeExtRegistry,
+      { registry },
+      "MM_COMPOSE_EXTERNAL_TYPE_REDEFINITION",
+      "node_types.HarnessSkill.registry",
+    );
+
+    const regExtTarget = structuredClone(h2a);
+    regExtTarget.registries = { ext_reg: { kind: "vocabulary", node_type: "track_agile:WorkItem" } };
+    expectCompositionRefusal(
+      regExtTarget,
+      { registry },
+      "MM_COMPOSE_EXTERNAL_TYPE_REDEFINITION",
+      "registries.ext_reg.node_type",
+    );
+
+    const inheritsOverride = {
+      ...structuredClone(h2a),
+      extends: ["track_agile:WorkItem"],
+    };
+    expectCompositionRefusal(inheritsOverride, { registry }, "MM_COMPOSE_EXTERNAL_TYPE_REDEFINITION", "extends");
+
+    const projectedExternal = structuredClone(h2a);
+    projectedExternal.file_projections = {
+      harness_overlay: {
+        kind: "h2a-harness-overlay",
+        root_dir: ".h2a",
+        relative_path_template: ".h2a/overlays/repo/harness-overlay.json",
+        format: "json",
+        include_node_types: ["track_agile:WorkItem"],
+        order_by: ["entity_id"],
+        projected_fields: ["skill_id"],
+      },
+    };
+    expectCompositionRefusal(
+      projectedExternal,
+      { registry },
+      "MM_COMPOSE_EXTERNAL_TYPE_REDEFINITION",
+      "file_projections.harness_overlay.include_node_types[0]",
+    );
+
+    // 8. Cyclic composition (self-cycle and 2-hop cycle) -> MM_COMPOSE_CYCLE_DETECTED
+    const selfCycleTrack = structuredClone(track);
+    selfCycleTrack.composed_lineage_pins = [
+      {
+        importAlias: "self_track",
+        lineage: "track",
+        templateId: track.id,
+        templateVersion: "1.0.0",
+        templateDigestSha256: trackDigest,
+      },
+    ];
+    expectCompositionRefusal(selfCycleTrack, { registry }, "MM_COMPOSE_CYCLE_DETECTED", "composed_lineage_pins[0]");
+
+    const cyclePeerDigest: Sha256Digest = `sha256:${"b".repeat(64)}`;
+    const cyclicRegistry: RegisteredTemplateRecord[] = [
+      ...registry,
+      {
+        lineage: "engram",
+        templateId: "sentropic.cycle-peer",
+        templateVersion: "1.0.0",
+        templateDigestSha256: cyclePeerDigest,
+        nodeTypeIds: ["PeerNode"],
+        composedLineagePins: [
+          {
+            importAlias: "back_to_h2a",
+            lineage: "h2a",
+            templateId: h2a.id,
+            templateVersion: "1.0.0",
+            templateDigestSha256: independentTemplateSha256(h2a),
+          },
+        ],
+      },
+    ];
+    const cyclicH2a: MetamodelTemplateDocument = {
+      ...structuredClone(h2a),
+      composed_lineage_pins: [
+        ...h2a.composed_lineage_pins!,
+        {
+          importAlias: "peer",
+          lineage: "engram",
+          templateId: "sentropic.cycle-peer",
+          templateVersion: "1.0.0",
+          templateDigestSha256: cyclePeerDigest,
+        },
+      ],
+    };
+    expectCompositionRefusal(
+      cyclicH2a,
+      { registry: cyclicRegistry },
+      "MM_COMPOSE_CYCLE_DETECTED",
+      "composed_lineage_pins[2]",
+    );
   });
 
   describe("round-2 regressions per review finding (M-1..M-7, m-1..m-4)", () => {
