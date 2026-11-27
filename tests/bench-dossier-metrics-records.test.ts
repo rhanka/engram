@@ -107,6 +107,24 @@ describe("BD-3 readRecFields & 1-to-1 postal_code / street+city alignment", () =
       [mkKey("M5X 1A9", "100 king st", "toronto")],
       [mkKey("M5X 1A9", "100 king st", null), mkKey("M5X 1A9", "100 king st", "toronto")],
     )).toEqual({ matched: [[0, 1]], unalignedGold: [], unalignedCand: [0] });
+    expect(alignRecordsOneToOne([mkKey(null, null, "toronto")], [mkKey(null, null, "toronto")]))
+      .toEqual({ matched: [], unalignedGold: [0], unalignedCand: [0] });
+    expect(alignRecordsOneToOne([mkKey(null, "100 king st", null)], [mkKey(null, "100 king st", null)]))
+      .toEqual({ matched: [], unalignedGold: [0], unalignedCand: [0] });
+    expect(alignRecordsOneToOne([mkKey("M5X 1A9", null, "toronto"), mkKey("M5X 1A9", "200 bay st", "toronto")],
+      [mkKey("M5X 1A9", null, "ottawa")])).toEqual({ matched: [], unalignedGold: [0, 1], unalignedCand: [0] });
+    expect(alignRecordsOneToOne([mkKey(null, "100 king st", "toronto")], [mkKey(null, "200 bay st", "ottawa")]))
+      .toEqual({ matched: [], unalignedGold: [0], unalignedCand: [0] });
+    expect(alignRecordsOneToOne([mkKey(null, "100 king st", "toronto")],
+      [mkKey("M5X 1A9", "100 king st", "toronto"), mkKey(null, "100 king st", "toronto")]))
+      .toEqual({ matched: [[0, 0]], unalignedGold: [], unalignedCand: [1] });
+    expect(alignRecordsOneToOne([mkKey(null, "100 king st", "toronto")], [mkKey(null, "100 king st", "ottawa")]))
+      .toEqual({ matched: [], unalignedGold: [0], unalignedCand: [0] });
+    expect(alignRecordsOneToOne([mkKey("M5X 1A9", null, null)], [mkKey(null, null, null)]))
+      .toEqual({ matched: [], unalignedGold: [0], unalignedCand: [0] });
+    expect(alignRecordsOneToOne([mkKey("M5X 1A9", "100 king st", "ottawa")],
+      [mkKey("M5X 1A9", null, "toronto"), mkKey("M5X 1A9", null, "montreal")]))
+      .toEqual({ matched: [], unalignedGold: [0], unalignedCand: [0, 1] });
   });
 
   it("extracts candidate records across optionality/nullability and refuses invalid counts/shapes", () => {
@@ -287,7 +305,10 @@ describe("BD-3 golden record parser, real converge shapes & majority gate", () =
         } },
       } }] } },
     }, "o", "city").unit;
-    expect(staleFailed.kind === "resolved" && staleFailed.nonMajClusters).toHaveLength(1);
+    expect(staleFailed).toEqual({
+      kind: "resolved", recordSplit: true, majClusters: [], unmatched: [],
+      nonMajClusters: [{ pc: null, st: null, ci: "toronto" }],
+    });
     const missingStale = parseGoldenRecordUnit({
       id: "ms",
       fields: { o: { verdict: "majority", n_answered: 4, aligned: [{ fields: {
@@ -316,6 +337,17 @@ describe("BD-3 golden record parser, real converge shapes & majority gate", () =
     expect(parseGoldenRecordUnit(nullProto, "o", "city").unit).toEqual({
       kind: "resolved", recordSplit: false, nonMajClusters: [], unmatched: [],
       majClusters: [{ pc: null, st: null, ci: "ottawa", goldVal: "ottawa", splitVariants: null }],
+    });
+    expect(parseGoldenRecordUnit({
+      id: "oss", fields: { o: { verdict: "split", n_answered: 4, aligned: [{ fields: {
+        city: { verdict: "unanimous", value: "Toronto", n_answered: 4,
+          runs: { r1: fv("Toronto"), r2: fv("Toronto"), r3: fv("Toronto"), r4: fv("Toronto") } },
+        postal_code: { verdict: "split", value: null, n_answered: 4,
+          runs: { r1: fv("M5X 1A9"), r2: fv("H2Y 1S1"), r3: fv(null), r4: fv(null) } },
+      } }] } },
+    }, "o", "city").unit).toEqual({
+      kind: "resolved", recordSplit: true, nonMajClusters: [], unmatched: [],
+      majClusters: [{ pc: null, st: null, ci: "toronto", goldVal: "toronto", splitVariants: null }],
     });
   });
 
@@ -354,6 +386,9 @@ describe("BD-3 golden record parser, real converge shapes & majority gate", () =
       [{ id: "g", fields: { o: { verdict: "split", aligned: [], unmatched: [] } } }, "SPLIT_NO_RUN"],
       [{ id: "g", fields: { o: { verdict: "unanimous", aligned: [null] } } }, "NOT_OBJECT"],
       [{ id: "g", fields: { o: { verdict: "unanimous", aligned: [new Date()] } } }, "NOT_OBJECT"],
+      [{ id: "g", fields: { o: { verdict: "unanimous",
+        aligned: [Object.assign(new Date(), { fields: { city: { verdict: "unanimous", value: "T", n_answered: 2 } } })],
+      } } }, "NOT_OBJECT"],
       [{ id: "g", fields: { o: { verdict: "unanimous", aligned: [{ fields: [] }] } } }, "NOT_OBJECT"],
       [{ id: "g", fields: { o: { verdict: "unanimous", aligned: [{ fields: new Date() }] } } }, "NOT_OBJECT"],
       [{ id: "g", fields: { o: { verdict: "unanimous", aligned: [{ fields: {} }] } } }, "MISSING_VOTE"],
@@ -402,6 +437,8 @@ describe("BD-3 golden record parser, real converge shapes & majority gate", () =
         "BAD_GOLD_VALUE"],
       [{ id: "g", fields: { o: { verdict: "split", n_answered: 2, unmatched: [null] } } }, "NOT_OBJECT"],
       [{ id: "g", fields: { o: { verdict: "split", n_answered: 2, unmatched: [new Date()] } } }, "NOT_OBJECT"],
+      [{ id: "g", fields: { o: { verdict: "split", n_answered: 2,
+        unmatched: [Object.assign(new Date(), { fields: { city: { value: "T" } } })] } } }, "NOT_OBJECT"],
       [{ id: "g", fields: { o: { verdict: "split", n_answered: 2, unmatched: [{ fields: [] }] } } }, "NOT_OBJECT"],
       [{ id: "g", fields: { o: { verdict: "split", n_answered: 2, unmatched: [{ fields: new Date() }] } } },
         "NOT_OBJECT"],
@@ -934,6 +971,10 @@ describe("BD-3 metrics.json to BenchResultsFile lossless importer", () => {
     });
     expect([res.records[1]?.cost.costUnknownReason, res.records[1]?.cost.seatUnknownReason,
       res.records[1]?.armMissionSha256]).toEqual(["missing-usage", "shared-seat-concurrent", "e".repeat(64)]);
+    expect([res.records[1]?.calls, res.records[1]?.callsPerItem, res.records[1]?.tokens,
+      res.records[1]?.cost.costBasisItems, res.records[1]?.cost.apiEquivalentTotal,
+      res.records[1]?.cost.apiEquivalentPerItem])
+      .toEqual(["unknown", "unknown", "unknown", 0, "unknown", "unknown"]);
     expect([res.corpus.costBasisLabel, res.corpus.goldenLabel, res.corpus.maxValuesChanged,
       res.corpus.captureSuppliedIds, res.corpus.captureAttemptedIds, res.corpus.captureOkIds,
       res.corpus.missingDigestRuns]).toEqual(["attempted_id", "pass1", false, 50, 48, 45, ["r1"]]);
@@ -986,6 +1027,8 @@ describe("BD-3 metrics.json to BenchResultsFile lossless importer", () => {
     const noApi = cloneJson(fx) as any;
     delete noApi.metrics.records[0].apiEquivalentTotal;
     expect(mapMetricsImportToBenchResults(noApi).records[0]?.cost.costUnknownReason).toBe("unpriced-mission");
+    expect([mapMetricsImportToBenchResults(noApi).records[0]?.cost.apiEquivalentTotal,
+      mapMetricsImportToBenchResults(noApi).records[0]?.cost.apiEquivalentPerItem]).toEqual(["unknown", "unknown"]);
 
     const noArmSha = cloneJson(fx) as any;
     delete noArmSha.arms["arm-a"].missionSha256;
@@ -1008,7 +1051,9 @@ describe("BD-3 metrics.json to BenchResultsFile lossless importer", () => {
       const fxNoOv = cloneJson(fx);
       delete fxNoOv.arms["arm-a"].tariffOverride;
       const fxNoOvOut = mapMetricsImportToBenchResults(fxNoOv);
-      expect(fxNoOvOut.records[0]?.cost.fxApplied).toEqual(fx.arms["arm-a"].fx);
+      expect(fxNoOvOut.records[0]?.cost.fxApplied).toEqual({
+        from: "USD", to: "CAD", rate: 1.385, source: "boc", asOf: "2026-11-22",
+      });
 
       const ovCurNoFx = cloneJson(fx);
       delete ovCurNoFx.arms["arm-a"].fx;
@@ -1313,5 +1358,105 @@ describe("BD-3 metrics.json to BenchResultsFile lossless importer", () => {
     callsRecUnknown.metrics.records[0].calls = "unknown";
     callsRecUnknown.armCosts = { "arm-a": cloneJson(acBase) };
     refuse(() => mapMetricsImportToBenchResults(callsRecUnknown), "COST_CONFLICT");
+
+    refuse(() => mapMetricsImportToBenchResults({ ...base1, armCosts: { toString: cloneJson(acBase) } }),
+      "MISSING_ARM");
+    const protoRecFx = cloneJson(base1);
+    protoRecFx.metrics.records[0].armId = "toString";
+    refuse(() => mapMetricsImportToBenchResults(protoRecFx), "MISSING_ARM");
+    const { calls: _calls, tokens: _tokens, costBasisItems: _basis, apiEquivalentTotal: _api, ...omRecBase } =
+      base1.metrics.records[0];
+    const omAcFx = cloneJson(base1);
+    omAcFx.metrics.records = [cloneJson(omRecBase)];
+    omAcFx.armCosts = { "arm-a": cloneJson(acBase) };
+    const omAcOut = mapMetricsImportToBenchResults(omAcFx);
+    expect([omAcOut.records[0]?.calls, omAcOut.records[0]?.cost.costBasisItems]).toEqual([45, 1705]);
+    const callsNoBasisFx = cloneJson(base1);
+    callsNoBasisFx.metrics.records[0].calls = 0;
+    callsNoBasisFx.metrics.records[0].apiEquivalentTotal = "unknown";
+    delete callsNoBasisFx.metrics.records[0].costBasisItems;
+    refuse(() => mapMetricsImportToBenchResults(callsNoBasisFx), "COST_BASIS");
+    for (const [mutRec, mutAc] of [
+      [(r: any) => { r.apiEquivalentTotal = "unknown"; }, () => {}],
+      [() => {}, (c: any) => { c.calls = "unknown"; }],
+      [() => {}, (c: any) => Object.assign(c.cost,
+        { apiEquivalentTotal: "unknown", costUnknownReason: "missing-usage", apiEquivalentPerItem: "unknown" })],
+      [(r: any) => { r.calls = 0; }, () => {}],
+      [(r: any) => { r.apiEquivalentTotal = 0; }, () => {}],
+      [(r: any) => Object.assign(r, { calls: 0, costBasisItems: 0, apiEquivalentTotal: 0 }),
+        (c: any) => Object.assign(c, { calls: 0, cost: { ...c.cost, apiEquivalentTotal: 0 } })],
+    ] as [(r: any) => void, (c: any) => void][]) {
+      const cf = cloneJson(base1);
+      const ac = cloneJson(acBase);
+      mutRec(cf.metrics.records[0]);
+      mutAc(ac);
+      cf.armCosts = { "arm-a": ac };
+      refuse(() => mapMetricsImportToBenchResults(cf), "COST_CONFLICT");
+    }
+  });
+
+  it("enforces non-default pass-throughs, omitted defaults & raw indeterminate counts", () => {
+    const fx = makeImportFixture() as any;
+    const floorsFx = cloneJson(fx);
+    floorsFx.metrics.supportFloors = { recallMinPositives: 12, precisionMinPredictions: 15, failureCeiling: 0.25 };
+    delete floorsFx.supportFloors;
+    expect(mapMetricsImportToBenchResults(floorsFx).supportFloors)
+      .toEqual({ recallMinPositives: 12, precisionMinPredictions: 15, failureCeiling: 0.25 });
+    const floorOvFx = cloneJson(floorsFx);
+    floorOvFx.supportFloors = { recallMinPositives: 29 };
+    expect(mapMetricsImportToBenchResults(floorOvFx).supportFloors)
+      .toEqual({ recallMinPositives: 29, precisionMinPredictions: 15, failureCeiling: 0.25 });
+    const inputCurFx = cloneJson(fx);
+    delete inputCurFx.metrics.currency;
+    inputCurFx.currency = "CAD";
+    const inputCurOut = mapMetricsImportToBenchResults(inputCurFx);
+    expect([inputCurOut.corpus.currency, inputCurOut.records[0]?.cost.currency]).toEqual(["CAD", "CAD"]);
+    const mBasisFx = cloneJson(fx);
+    mBasisFx.metrics.costBasisLabel = "supplied_id";
+    expect(mapMetricsImportToBenchResults(mBasisFx).corpus.costBasisLabel).toBe("supplied_id");
+    const tokUnkFx = cloneJson(fx);
+    tokUnkFx.metrics.records = [{ ...tokUnkFx.metrics.records[0], tokens: "unknown" }];
+    expect(mapMetricsImportToBenchResults(tokUnkFx).records[0]?.cost.costUnknownReason).toBeNull();
+    const inBasisFx = cloneJson(fx);
+    delete inBasisFx.metrics.costBasisLabel;
+    inBasisFx.costBasisLabel = "supplied_id";
+    expect(mapMetricsImportToBenchResults(inBasisFx).corpus.costBasisLabel).toBe("supplied_id");
+    const maxChangedFx = cloneJson(fx);
+    maxChangedFx.maxValuesChanged = true;
+    expect(mapMetricsImportToBenchResults(maxChangedFx).corpus.maxValuesChanged).toBe(true);
+    const rawSupFx = cloneJson(fx);
+    rawSupFx.metrics.records = [rawSupFx.metrics.records[0]];
+    delete rawSupFx.metrics.records[0].independentGroupSupport;
+    rawSupFx.supportFloors = { precisionMinPredictions: 28, recallMinPositives: 30 };
+    expect(mapMetricsImportToBenchResults(rawSupFx).records[0]?.indeterminate)
+      .toEqual({ precision: false, recall: false, f1: false });
+    const zeroTnFx = cloneJson(fx);
+    zeroTnFx.metrics.goldenIds = 35;
+    Object.assign(zeroTnFx.metrics.records[0], { attempted: 35, accepted: 32, goldAbsent: 2, tn: 0 });
+    Object.assign(zeroTnFx.metrics.records[0].sitePresence, { goldAbsentSites: 2, tnSites: 0,
+      siteAbstentionSpecificity: 0, siteAbstentionInterval: { estimator: "unweighted",
+        method: "wilson_95_unweighted", clustering: "independent_site", valid: true,
+        low: 0, high: 0.6576197724933469 } });
+    zeroTnFx.metrics.records = [zeroTnFx.metrics.records[0]];
+    expect(mapMetricsImportToBenchResults(zeroTnFx).records[0]?.abstentionSpecificity).toBe(0);
+    const omFx = cloneJson(fx);
+    const { calls: _calls, tokens: _tokens, costBasisItems: _basis, apiEquivalentTotal: _api, ...omRec } =
+      omFx.metrics.records[0];
+    omFx.metrics.records = [omRec];
+    const omOut = mapMetricsImportToBenchResults(omFx);
+    expect([omOut.records[0]?.calls, omOut.records[0]?.callsPerItem, omOut.records[0]?.tokens,
+      omOut.records[0]?.cost.costUnknownReason]).toEqual(["unknown", "unknown", "unknown", "missing-usage"]);
+    const recShaFx = cloneJson(fx);
+    delete recShaFx.arms["arm-a"].missionSha256;
+    expect(mapMetricsImportToBenchResults(recShaFx).records[0]?.armMissionSha256).toBe("e".repeat(64));
+    const fxNoOvCurFx = cloneJson(fx);
+    delete fxNoOvCurFx.arms["arm-a"].tariffOverride.currency;
+    expect(mapMetricsImportToBenchResults(fxNoOvCurFx).records[0]?.cost.tariffStatus).toBe("secondary_unverified");
+    const noFxFx = cloneJson(fxNoOvCurFx);
+    delete noFxFx.arms["arm-a"].fx;
+    expect(mapMetricsImportToBenchResults(noFxFx).records[0]?.cost.fxApplied).toBeNull();
+    const noOvFx = cloneJson(noFxFx);
+    delete noOvFx.arms["arm-a"].tariffOverride;
+    expect(mapMetricsImportToBenchResults(noOvFx).records[0]?.cost.tariffStatus).toBe("unknown");
   });
 });
