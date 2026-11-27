@@ -998,4 +998,101 @@ describe("BD-3 metrics.json to BenchResultsFile lossless importer", () => {
     expect(fcOut.supportFloors).toEqual({ recallMinPositives: 31, precisionMinPredictions: 28, failureCeiling: 0.12 });
     expect(fcOut.records[0]?.indeterminate).toEqual({ precision: false, recall: true, f1: true });
   });
+
+  it("covers positive matrix: matching currency/basis, fx/tariffOverride, armCosts unknown, missionSpecs & zero abst",
+    () => {
+      const fx = makeImportFixture() as any;
+      const bothSame = mapMetricsImportToBenchResults({ ...fx, currency: "CAD", costBasisLabel: "attempted_id" });
+      expect([bothSame.corpus.currency, bothSame.corpus.costBasisLabel]).toEqual(["CAD", "attempted_id"]);
+
+      const fxNoOv = cloneJson(fx);
+      delete fxNoOv.arms["arm-a"].tariffOverride;
+      const fxNoOvOut = mapMetricsImportToBenchResults(fxNoOv);
+      expect(fxNoOvOut.records[0]?.cost.fxApplied).toEqual(fx.arms["arm-a"].fx);
+
+      const ovCurNoFx = cloneJson(fx);
+      delete ovCurNoFx.arms["arm-a"].fx;
+      ovCurNoFx.arms["arm-a"].tariffOverride.currency = "CAD";
+      expect(mapMetricsImportToBenchResults(ovCurNoFx).records[0]?.cost.currency).toBe("CAD");
+
+      const armCostFx = cloneJson(fx);
+      armCostFx.arms["arm-a"].seat = { status: "measured", method: "weekly_burn_delta", windowMinutes: 10080,
+        isolatedSeat: true, remainingBefore: 0.9, remainingAfter: 0.8, observedItems: 10, plan: "Pro",
+        planMonthlyPrice: 280, planSource: "inv", planAsOf: "2026-11-22" };
+      armCostFx.metrics.records = [armCostFx.metrics.records[0]];
+      armCostFx.armCosts = { "arm-a": { calls: 45, callsPerItem: 45 / 1705,
+        tokens: armCostFx.metrics.records[0].tokens,
+        cost: { currency: "CAD", costBasisItems: 1705, costUnknownReason: null, apiEquivalentTotal: 1.45,
+          apiEquivalentPerItem: 1.45 / 1705, tariffStatus: "primary", tariffSource: "s", tariffAsOf: "2026-11-22",
+          fxApplied: null, seatStatus: "measured", seatMethod: "weekly_burn_delta", seatUnknownReason: null,
+          seatSharePerItem: 0.01, seatCostPerItem: 0.64, seatPlan: "Pro", seatMonthlyPrice: 280, seatLimitScale: 1,
+          seatPlanSource: "inv", seatPlanAsOf: "2026-11-22" } } };
+      const acOut = mapMetricsImportToBenchResults({ ...armCostFx,
+        missionSpecs: [{ name: "office", kind: "record", maxValues: 3, subFields: [{ name: "city" }] }] });
+      expect([acOut.records[0]?.cost.seatStatus, acOut.records[0]?.cost.seatCostPerItem]).toEqual(["measured", 0.64]);
+
+      const acUnknown = cloneJson(fx);
+      acUnknown.metrics.records = [{ ...acUnknown.metrics.records[1], isPrimaryComparator: true }];
+      delete acUnknown.arms["arm-a"].missionSha256;
+      acUnknown.arms["arm-a"].missionPath = "m.json";
+      acUnknown.armCosts = { "arm-a": { armMissionSha256: "f".repeat(64),
+        calls: "unknown", callsPerItem: "unknown", tokens: "unknown",
+        cost: { currency: "CAD", costBasisItems: 0, costUnknownReason: "missing-usage",
+          apiEquivalentTotal: "unknown", apiEquivalentPerItem: "unknown", tariffStatus: "unknown", tariffSource: null,
+          tariffAsOf: null, fxApplied: null, seatStatus: "unknown", seatMethod: "unknown",
+          seatUnknownReason: "missing-observation", seatSharePerItem: "unknown", seatCostPerItem: "unknown",
+          seatPlan: null, seatMonthlyPrice: null, seatLimitScale: null, seatPlanSource: null, seatPlanAsOf: null } } };
+      const acUnkOut = mapMetricsImportToBenchResults(acUnknown);
+      expect([acUnkOut.records[0]?.armMissionSha256, acUnkOut.records[0]?.calls,
+        acUnkOut.records[0]?.callsPerItem, acUnkOut.records[0]?.tokens]).toEqual([
+        "f".repeat(64), "unknown", "unknown", "unknown",
+      ]);
+
+      const zeroBasis = cloneJson(fx);
+      const zeroRec = zeroBasis.metrics.records[0];
+      zeroRec.accepted = 0;
+      zeroRec.failed = 43;
+      zeroRec.calls = 0;
+      zeroRec.costBasisItems = 0;
+      zeroRec.apiEquivalentTotal = 0;
+      zeroBasis.metrics.records = [zeroRec];
+      const zbOut = mapMetricsImportToBenchResults(zeroBasis);
+      expect([zbOut.records[0]?.callsPerItem, zbOut.records[0]?.cost.apiEquivalentPerItem]).toEqual([0, 0]);
+
+      const mv1Rec = scoreUnweightedRecord({
+        field: "overflow.city", maxValues: 1,
+        goldenRows: [{ id: "m1", fields: { overflow: { verdict: "unanimous", n_answered: 2, aligned: [{ fields: {
+          postal_code: { verdict: "unanimous", value: "M5X 1A9" }, city: { verdict: "unanimous", value: "Toronto" },
+        } }] } } }],
+        candidateRows: [{ id: "m1", fields: { overflow: { values: [
+          { postal_code: fv("M5X 1A9"), city: fv("Toronto") },
+        ] } } }],
+      });
+      const {
+        precision: _p, recall: _r, f1: _f, precisionInterval: _pi, recallInterval: _ri,
+        abstentionSpecificity: _as, indeterminate: _ind, ...mv1Base
+      } = mv1Rec;
+      const mv1Import = {
+        metrics: {
+          schemaId: "urn:engram:bench-metrics-import:1.0.0", campaignId: "mv1", partition: "eval",
+          primaryEstimator: "unweighted", goldenSha256: "a".repeat(64), goldenMissionSha256: "b".repeat(64),
+          candidateMissionSha256: "c".repeat(64), fieldShapeVerified: true, goldenIds: 1, fields: ["overflow.city"],
+          annotatorCount: 2, krippendorffAlphaByField: { "overflow.city": null },
+          records: [{ ...mv1Base, armId: "arm-a", comparator: "generic", isPrimaryComparator: true,
+            weighted: null, calls: 1, costBasisItems: 1, apiEquivalentTotal: "unknown", tokens: "unknown" }],
+        },
+        arms: { "arm-a": { ...fx.arms["arm-a"], fx: undefined, tariffOverride: undefined, seat: undefined } },
+      };
+      delete mv1Import.arms["arm-a"].fx;
+      delete mv1Import.arms["arm-a"].tariffOverride;
+      delete mv1Import.arms["arm-a"].seat;
+      const mv1Out = mapMetricsImportToBenchResults({ ...mv1Import,
+        missionSpecs: [{ name: "overflow", kind: "record", maxValues: 1,
+          subFields: [{ name: "city", instruction: "extract city" }] }] });
+      expect(mv1Out.records[0]?.abstentionSpecificity).toBeNull();
+      expect(mv1Out.records[0]?.unweighted.precisionInterval.method).toBe("wilson_95_unweighted");
+      const mv1NoSpecErr = refuse(() => mapMetricsImportToBenchResults(mv1Import as any),
+        "BAD_INTERVAL", BenchInvariantError) as BenchInvariantError;
+      expect(mv1NoSpecErr.invariant).toBe("POOLED_WILSON_FORBIDDEN");
+    });
 });
