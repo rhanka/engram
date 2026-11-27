@@ -1157,4 +1157,121 @@ describe("BD-3 metrics.json to BenchResultsFile lossless importer", () => {
         refuse(() => mapMetricsImportToBenchResults(fx as any), code);
       }
     });
+
+  it("refuses armCosts, tokens, currency, digest, cost-basis, seat & estimator pairing violations", () => {
+    const armCostOf = (d: any) => ({
+      calls: d.metrics.records[0].calls, callsPerItem: 45 / 1705, tokens: cloneJson(d.metrics.records[0].tokens),
+      cost: { currency: "CAD", costBasisItems: 1705, costUnknownReason: null, apiEquivalentTotal: 1.45,
+        apiEquivalentPerItem: 1.45 / 1705, tariffStatus: "primary", tariffSource: "s", tariffAsOf: "2026-11-22",
+        fxApplied: null, seatStatus: "unknown", seatMethod: "unknown", seatUnknownReason: "missing-observation",
+        seatSharePerItem: "unknown", seatCostPerItem: "unknown", seatPlan: null, seatMonthlyPrice: null,
+        seatLimitScale: null, seatPlanSource: null, seatPlanAsOf: null },
+    });
+    const badCostProto = Object.defineProperty({}, "__proto__", { value: armCostOf(makeImportFixture()),
+      enumerable: true });
+    const cases: [(d: any) => void, string][] = [
+      [(d) => { d.armCosts = "bad"; }, "NOT_OBJECT"],
+      [(d) => { d.armCosts = null; }, "NOT_OBJECT"],
+      [(d) => { d.armCosts = badCostProto; }, "BAD_MAP_KEY"],
+      [(d) => { d.armCosts = { "arm-a": { ...armCostOf(d), extra: 1 } }; }, "UNKNOWN_KEY"],
+      [(d) => {
+        const costObj = armCostOf(d);
+        delete (costObj as any).calls;
+        d.armCosts = { "arm-a": costObj };
+      }, "MISSING_KEY"],
+      [(d) => { d.armCosts = { "arm-a": { ...armCostOf(d), calls: -1 } }; }, "BAD_COUNT"],
+      [(d) => { d.armCosts = { "arm-a": { ...armCostOf(d), callsPerItem: -1 } }; }, "NEGATIVE"],
+      [(d) => {
+        const costObj = armCostOf(d);
+        costObj.tokens.input = -1;
+        d.armCosts = { "arm-a": costObj };
+      }, "BAD_COUNT"],
+      [(d) => {
+        const costObj = armCostOf(d);
+        costObj.tokens.output = -1;
+        d.armCosts = { "arm-a": costObj };
+      }, "BAD_COUNT"],
+      [(d) => {
+        const costObj = armCostOf(d);
+        costObj.tokens.reasoning = -1;
+        d.armCosts = { "arm-a": costObj };
+      }, "BAD_COUNT"],
+      [(d) => {
+        const costObj = armCostOf(d);
+        costObj.tokens.cached = -1;
+        d.armCosts = { "arm-a": costObj };
+      }, "BAD_COUNT"],
+      [(d) => {
+        const costObj = armCostOf(d);
+        costObj.tokens.total = -1;
+        d.armCosts = { "arm-a": costObj };
+      }, "BAD_COUNT"],
+      [(d) => { d.armCosts = { "arm-a": { ...armCostOf(d), cost: "bad" } }; }, "NOT_OBJECT"],
+      [(d) => { d.armCosts = { "arm-a": { ...armCostOf(d), armMissionSha256: " " } }; }, "EMPTY_STRING"],
+      [(d) => {
+        const costObj = armCostOf(d);
+        costObj.cost.currency = "USD";
+        d.armCosts = { "arm-a": costObj };
+      }, "CURRENCY_MISMATCH"],
+      [(d) => { d.armCosts = { "arm-a": { ...armCostOf(d), calls: 44 } }; }, "COST_CONFLICT"],
+      [(d) => {
+        const costObj = armCostOf(d);
+        costObj.cost.costBasisItems = 100;
+        d.armCosts = { "arm-a": costObj };
+      }, "COST_CONFLICT"],
+      [(d) => {
+        const costObj = armCostOf(d);
+        costObj.cost.apiEquivalentTotal = 9;
+        d.armCosts = { "arm-a": costObj };
+      }, "COST_CONFLICT"],
+      [(d) => { d.arms["arm-a"].missionSha256 = "f".repeat(64); }, "MISSION_DIGEST_MISMATCH"],
+      [(d) => { d.armCosts = { "arm-a": { ...armCostOf(d), armMissionSha256: "f".repeat(64) } }; },
+        "MISSION_DIGEST_MISMATCH"],
+      [(d) => {
+        delete d.arms["arm-a"].missionSha256;
+        delete d.metrics.records[0].armMissionSha256;
+        d.arms["arm-a"].missionPath = "m.json";
+      }, "MISSING_ARM_DIGEST"],
+      [(d) => { delete d.metrics.records[0].costBasisItems; }, "COST_BASIS"],
+      [(d) => {
+        delete d.metrics.records[0].costBasisItems;
+        d.metrics.records[0].calls = "unknown";
+      }, "COST_BASIS"],
+      [(d) => { d.metrics.records[0].costBasisItems = 0; }, "COST_BASIS"],
+      [(d) => {
+        d.metrics.records[0].costBasisItems = 0;
+        d.metrics.records[0].calls = 0;
+        d.metrics.records[0].accepted = 0;
+        d.metrics.records[0].failed = 43;
+      }, "COST_CONSISTENCY"],
+      [(d) => { d.arms["arm-a"].fx.to = "USD"; }, "CURRENCY_MISMATCH"],
+      [(d) => { d.arms["arm-a"].tariffOverride.currency = "CAD"; }, "CURRENCY_MISMATCH"],
+      [(d) => {
+        delete d.arms["arm-a"].fx;
+        d.arms["arm-a"].tariffOverride.currency = "USD";
+      }, "CURRENCY_MISMATCH"],
+      [(d) => { d.arms["arm-a"].seat = { status: "measured", method: "weekly_burn_delta", windowMinutes: 10080,
+        isolatedSeat: true, remainingBefore: 0.9, remainingAfter: 0.8, observedItems: 10, plan: "P",
+        planMonthlyPrice: 10, planSource: "s", planAsOf: "2026-11-22" }; }, "SEAT_BLOCK_REQUIRED"],
+      [(d) => { d.arms["arm-a"].seat = { status: "estimated", method: "api_cost_proportional", windowMinutes: 10080,
+        plan: "P", planMonthlyPrice: 20, planSource: "s", planAsOf: "2026-11-22", observedApiEquivalent: 1,
+        quotaDeltaFraction: 0.1, basePlanMultiplier: 1, targetPlanMultiplier: 1 }; }, "SEAT_BLOCK_REQUIRED"],
+      [(d) => { d.metrics.records[0].weighted.precisionInterval.estimator = "unweighted"; }, "BAD_INTERVAL"],
+      [(d) => { d.arms["arm-a"].proseName = "OpenAI GPT-4.1"; }, "BAD_SHAPE"],
+      [(d) => {
+        d.metrics.records[0].unweighted.precisionInterval = d.metrics.records[0].sitePresence.siteRecallInterval;
+      }, "BAD_INTERVAL"],
+    ];
+    for (const [mutate, code] of cases) {
+      const fx = cloneJson(makeImportFixture());
+      mutate(fx);
+      refuse(() => mapMetricsImportToBenchResults(fx as any), code);
+    }
+
+    const estFx = cloneJson(makeImportFixture()) as any;
+    estFx.metrics.records[0].weighted = null;
+    const estErr = refuse(() => mapMetricsImportToBenchResults(estFx),
+      "BAD_SHAPE", BenchInvariantError) as BenchInvariantError;
+    expect(estErr.invariant).toBe("ESTIMATOR_PAIRING");
+  });
 });
