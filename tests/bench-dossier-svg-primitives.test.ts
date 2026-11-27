@@ -9,6 +9,14 @@ import {
   ST_FONT_SANS,
   SVG_FONT_FAMILY,
   SVG_THEME_CSS,
+  PROVIDER_COLORS,
+  normalizeProviderKey,
+  requireBool,
+  requireEnum,
+  requirePlainObj,
+  requirePositiveNum,
+  resolveArmColor,
+  resolveProviderColor,
 } from "../src/bench-dossier/svg-primitives.js";
 
 function parseLeafSvg(xml: string): { tag: string; attrs: Record<string, string>; text?: string } {
@@ -99,5 +107,71 @@ describe("BD-6 DS-token SVG primitives, normalization & 7x5 glyph registry", () 
       + "--st-semantic-data-category7:#B07AA1;--st-semantic-data-category8:#FF9DA7}"
       + `:root[data-theme="dark"]{${darkCss}}@media (prefers-color-scheme:dark){:root{${darkCss}}}`,
     );
+  });
+
+  it("enforces positive number, boolean, enum and plain-object validation guards", () => {
+    expect(requirePositiveNum(0.5, "n")).toBe(0.5);
+    expect(requireBool(false, "b")).toBe(false);
+    expect(requireEnum("a", new Set(["a"]), "e")).toBe("a");
+    expect(requirePlainObj({}, "$")).toEqual({});
+    expect(requirePlainObj(Object.create(null), "$")).toEqual({});
+    for (const bad of [null, [], Object.setPrototypeOf([], null), "x", new Date()]) {
+      refuse(() => requirePlainObj(bad, "$"), "NOT_OBJECT", "$");
+    }
+    refuse(() => requirePositiveNum(0, "n"), "NON_POSITIVE", "n");
+    refuse(() => requirePositiveNum(-1, "n"), "NON_POSITIVE", "n");
+    refuse(() => requirePositiveNum("1", "n"), "BAD_NUMBER", "n");
+    refuse(() => requireBool(1, "b"), "WRONG_TYPE", "b");
+    refuse(() => requireEnum("b", new Set(["a"]), "e"), "BAD_ENUM", "e");
+    refuse(() => requireEnum(null, new Set(["a"]), "e"), "BAD_ENUM", "e");
+  });
+
+  it("maps literal spec hex colors for every provider, Cascades high-contrast and overflow", () => {
+    expect(Object.isFrozen(PROVIDER_COLORS)).toBe(true);
+    expect(PROVIDER_COLORS).toEqual({
+      openai: "var(--st-semantic-data-category1, #4E79A7)",
+      anthropic: "var(--st-semantic-data-category2, #F28E2B)",
+      meta: "var(--st-semantic-data-category3, #E15759)",
+      cohere: "var(--st-semantic-data-category4, #76B7B2)",
+      google: "var(--st-semantic-data-category5, #59A14F)",
+      mistral: "var(--st-semantic-data-category7, #B07AA1)",
+      cascades: "var(--st-semantic-feedback-error, #dc2626)",
+      zhipu: "var(--st-semantic-data-category8, #FF9DA7)",
+    });
+    const providerLiteralCases: readonly [string, string][] = [
+      ["OpenAI", "var(--st-semantic-data-category1, #4E79A7)"],
+      ["Anthropic", "var(--st-semantic-data-category2, #F28E2B)"],
+      ["Meta", "var(--st-semantic-data-category3, #E15759)"],
+      ["Cohere", "var(--st-semantic-data-category4, #76B7B2)"],
+      ["Google", "var(--st-semantic-data-category5, #59A14F)"],
+      ["Mistral", "var(--st-semantic-data-category7, #B07AA1)"],
+      ["Cascades", "var(--st-semantic-feedback-error, #dc2626)"],
+      ["Zhipu", "var(--st-semantic-data-category8, #FF9DA7)"],
+      ["zai", "var(--st-semantic-data-category8, #FF9DA7)"],
+      ["z.ai", "var(--st-semantic-data-category8, #FF9DA7)"],
+      ["z-ai", "var(--st-semantic-data-category8, #FF9DA7)"],
+      ["DeepSeek", "var(--st-semantic-data-category6, #EDC948)"],
+      ["unknown", "var(--st-semantic-data-category6, #EDC948)"],
+      ["toString", "var(--st-semantic-data-category6, #EDC948)"],
+      ["constructor", "var(--st-semantic-data-category6, #EDC948)"],
+    ];
+    for (const [provider, expected] of providerLiteralCases) {
+      expect(resolveProviderColor(provider)).toBe(expected);
+    }
+    expect(normalizeProviderKey(" z.ai ")).toBe("zhipu");
+    expect(normalizeProviderKey("Cascade")).toBe("cascades");
+    expect(normalizeProviderKey("constructor")).toBe("constructor");
+    expect(normalizeProviderKey("__proto__")).toBe("__proto__");
+    expect(resolveArmColor("OpenAI", false)).toBe("var(--st-semantic-data-category1, #4E79A7)");
+    expect(resolveArmColor("OpenAI", true)).toBe("var(--st-semantic-feedback-error, #dc2626)");
+    expect(resolveArmColor("Cascades", true)).toBe("var(--st-semantic-feedback-error, #dc2626)");
+    expect(resolveArmColor("DeepSeek", false)).toBe("var(--st-semantic-data-category6, #EDC948)");
+    refuse(() => normalizeProviderKey(""), "EMPTY_STRING", "provider");
+    refuse(() => resolveArmColor("Cascades", false), "CASCADE_CONFLICT", "isCascade");
+    refuse(() => resolveArmColor("Cascade", false), "CASCADE_CONFLICT", "isCascade");
+    refuse(() => resolveArmColor("OpenAI", null as unknown as boolean), "WRONG_TYPE", "isCascade");
+    refuse(() => resolveProviderColor(""), "EMPTY_STRING", "provider");
+    refuse(() => resolveProviderColor(null as unknown as string), "EMPTY_STRING", "provider");
+    refuse(() => resolveArmColor("", true), "EMPTY_STRING", "provider");
   });
 });

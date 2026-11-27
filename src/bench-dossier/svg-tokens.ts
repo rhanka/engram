@@ -17,6 +17,17 @@ export const requireNonEmptyText = (value: unknown, path: string): string =>
   typeof value === "string" && value.trim() ? value.trim() : failSvg("EMPTY_STRING", path);
 export const requireFiniteNum = (value: unknown, path: string): number =>
   typeof value === "number" && Number.isFinite(value) ? value : failSvg("BAD_NUMBER", path);
+export const requirePositiveNum = (value: unknown, path: string): number =>
+  requireFiniteNum(value, path) > 0 ? (value as number) : failSvg("NON_POSITIVE", path);
+export const requireBool = (value: unknown, path: string): boolean =>
+  typeof value === "boolean" ? value : failSvg("WRONG_TYPE", path);
+export const requireEnum = <T extends string>(value: unknown, allowed: ReadonlySet<string>, path: string): T =>
+  (allowed as ReadonlySet<unknown>).has(value) ? (value as T) : failSvg("BAD_ENUM", path);
+export function requirePlainObj(value: unknown, path: string): Record<string, unknown> {
+  const proto = value && typeof value === "object" && !Array.isArray(value) ? Object.getPrototypeOf(value) : 0;
+  return proto === Object.prototype || proto === null
+    ? (value as Record<string, unknown>) : failSvg("NOT_OBJECT", path);
+}
 export const fmtSvgNum = (value: number, path = "value"): string =>
   String(Number(requireFiniteNum(value, path).toFixed(2)));
 export const escapeXml = (text: string): string => (typeof text === "string"
@@ -56,3 +67,26 @@ const DARK_CSS = Object.values(SURFACE_SPEC)
   .filter(([, light, dark]) => light !== dark).map(([prop, , dark]) => `${prop}:${dark}`).join(";");
 export const SVG_THEME_CSS =
   `:root{${LIGHT_CSS}}:root[data-theme="dark"]{${DARK_CSS}}@media (prefers-color-scheme:dark){:root{${DARK_CSS}}}`;
+
+const PROVIDER_ALIASES: Readonly<Record<string, string>> =
+  Object.freeze({ zai: "zhipu", "z.ai": "zhipu", "z-ai": "zhipu", cascade: "cascades" });
+export const PROVIDER_COLORS: Readonly<Record<string, string>> = Object.freeze({
+  openai: DS_VARS.category1, anthropic: DS_VARS.category2, meta: DS_VARS.category3,
+  cohere: DS_VARS.category4, google: DS_VARS.category5, mistral: DS_VARS.category7,
+  cascades: DS_VARS.feedbackError, zhipu: DS_VARS.category8,
+});
+export function normalizeProviderKey(provider: string, path = "provider"): string {
+  const key = requireNonEmptyText(provider, path).toLowerCase();
+  return Object.hasOwn(PROVIDER_ALIASES, key) ? PROVIDER_ALIASES[key]! : key;
+}
+const colorForProviderKey = (key: string): string =>
+  Object.hasOwn(PROVIDER_COLORS, key) ? PROVIDER_COLORS[key]! : DS_VARS.category6;
+export const resolveProviderColor = (provider: string): string =>
+  colorForProviderKey(normalizeProviderKey(provider, "provider"));
+export function resolveArmColor(provider: string, isCascade: boolean): string {
+  requireBool(isCascade, "isCascade");
+  const key = normalizeProviderKey(provider, "provider");
+  if (isCascade) return PROVIDER_COLORS.cascades!;
+  if (key === "cascades") failSvg("CASCADE_CONFLICT", "isCascade");
+  return colorForProviderKey(key);
+}
