@@ -48,3 +48,47 @@ export function computeFromRates(
     + tokens.reasoning * (rates.reasoning ?? 0)) / 1_000_000;
   return finalizeApiCost(raw, sourceCurrency, targetCurrency, basis, fx);
 }
+
+/** Resolve population-exact API equivalent total and per-item cost with FX and tariff rules. */
+export function resolveApiCost(
+  usage: InvocationUsageSummary, arm: ArmManifestFile,
+  priceTable: NormalizedPriceTable | null, targetCurrency: CurrencyCode,
+): ApiResult {
+  const override = arm.tariffOverride;
+  const summaryCurrency = usage.summaryCurrencies[0];
+  if (arm.fx && arm.fx.to !== targetCurrency) throw new BenchCostSeatError("CURRENCY_MISMATCH", "$.arm.fx.to");
+  if (arm.fx && arm.fx.from === arm.fx.to && arm.fx.rate !== 1) {
+    throw new BenchCostSeatError("CURRENCY_MISMATCH", "$.arm.fx.rate");
+  }
+  if (override?.currency !== undefined) {
+    assertCurrencySupported(override.currency, targetCurrency, arm.fx, "$.arm.tariffOverride.currency");
+  }
+  if (usage.summaryCurrencies.length > 1) throw new BenchCostSeatError("CURRENCY_MISMATCH", "$.resultRows");
+  if (priceTable && summaryCurrency !== undefined && priceTable.currency !== summaryCurrency && !override?.perMillion) {
+    throw new BenchCostSeatError("CURRENCY_MISMATCH", "$.priceTable.currency");
+  }
+  const referenceCurrency = summaryCurrency ?? priceTable?.currency;
+  if (!override?.perMillion && override?.currency !== undefined && referenceCurrency !== undefined
+    && override.currency !== referenceCurrency) {
+    throw new BenchCostSeatError("CURRENCY_MISMATCH", "$.arm.tariffOverride.currency");
+  }
+  if (usage.interrupted) return unknownApiResult("incomplete-invocation-summary");
+  if (override?.perMillion) {
+    if (usage.tokens === "unknown") return unknownApiResult("missing-usage");
+    const sourceCurrency = override.currency ?? priceTable?.currency ?? (arm.fx ? arm.fx.from : targetCurrency);
+    return computeFromRates(usage.tokens, override.perMillion, sourceCurrency, targetCurrency,
+      usage.costBasisItems, arm.fx);
+  }
+  if (priceTable && (usage.summaryApiTotal === "unknown"
+    || (usage.tokens !== "unknown" && usage.tokens.reasoning > 0 && priceTable.per_million.reasoning === undefined))) {
+    if (usage.tokens === "unknown") return unknownApiResult("missing-usage");
+    return computeFromRates(usage.tokens, priceTable.per_million, priceTable.currency, targetCurrency,
+      usage.costBasisItems, arm.fx);
+  }
+  if (usage.summaryApiTotal !== "unknown") {
+    const sourceCurrency = summaryCurrency ?? priceTable?.currency ?? override?.currency
+      ?? (arm.fx ? arm.fx.from : targetCurrency);
+    return finalizeApiCost(usage.summaryApiTotal, sourceCurrency, targetCurrency, usage.costBasisItems, arm.fx);
+  }
+  return unknownApiResult(usage.tokens === "unknown" ? "missing-usage" : "unpriced-mission");
+}

@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   BenchCostSeatError, computeFromRates, convertCurrency, parseResultsNdjson, parseValidatedPriceTable,
-  roundCostNano, summarizeInvocationUsage,
+  resolveApiCost, roundCostNano, summarizeInvocationUsage,
 } from "../src/bench-dossier/cost-seat.js";
+import type { ArmManifestFile } from "../src/bench-dossier/companion-contracts.js";
 
 type CodedError = Error & { code?: string; path?: string };
 
@@ -17,6 +18,20 @@ function refuse(action: () => unknown, expectedCode: string, expectedPath: strin
   const typed = caught as CodedError;
   expect([typed.code, typed.path]).toEqual([expectedCode, expectedPath]);
   return typed;
+}
+
+function makeArm(patch: Partial<ArmManifestFile> = {}): ArmManifestFile {
+  return {
+    schemaId: "urn:engram:bench-arm-manifest:1.0.0",
+    armId: "arm-a",
+    provider: "OpenAI",
+    model: "gpt-6-astra-low",
+    modelLabel: "Astra low",
+    proseName: "OpenAI Astra low",
+    effort: "low",
+    isCascade: false,
+    ...patch,
+  };
 }
 
 describe("BD-4 tree-01: NDJSON parser, BenchCostSeatError, and price_table normalization", () => {
@@ -324,5 +339,81 @@ describe("BD-4 tree-05: exact-half nanodollar rounding, single-FX conversion, an
     )).toEqual({ costUnknownReason: null, apiEquivalentTotal: 0, apiEquivalentPerItem: 0 });
     refuse(() => computeFromRates(tokens, { input: 1, output: 1, reasoning: 1 }, "USD", "USD", 0, undefined),
       "BAD_SHAPE", "$.cost.apiEquivalentTotal");
+  });
+});
+
+describe("BD-4 tree-06: resolveApiCost priceTable fallback, summary rounding, and reasoning guards", () => {
+  it("resolves priceTable fallback, summary nanodollar rounding, reasoning === 0, and zero-basis guards", () => {
+    const fxUsdToCad = { from: "USD" as const, to: "CAD" as const, rate: 1.385, source: "boc", asOf: "2026-11-22" };
+    const priceTableUsd = parseValidatedPriceTable({
+      source: "op", as_of: "2026-11-22", currency: "USD", per_million: { input: 2, output: 8, reasoning: 10 },
+    });
+    const priceTableNoReas = parseValidatedPriceTable({
+      source: "op", as_of: "2026-11-22", currency: "USD", per_million: { input: 2, output: 8 },
+    });
+    const usageUnknownApi = summarizeInvocationUsage([{ id: "a1" }, { id: "a2" }, {
+      type: "summary", ok: 2, failed: 0, calls_total: 2,
+      tokens: { input: 500_000, output: 100_000, reasoning: 20_000, total: 620_000 },
+      cost: { currency: "USD", api_equivalent: "unknown" },
+    }]);
+    // (0.5e6*2 + 0.1e6*8 + 0.02e6*10)/1e6 = 2.0 USD; CAD = 2.0 * 1.385 = 2.77; perItem = 2.77 / 2 = 1.385.
+    expect(resolveApiCost(usageUnknownApi, makeArm({ fx: fxUsdToCad }), priceTableUsd, "CAD")).toEqual({
+      costUnknownReason: null, apiEquivalentTotal: 2.77, apiEquivalentPerItem: 1.385,
+    });
+    const usageNumeric = summarizeInvocationUsage([
+      { id: "a1" }, { id: "a2" }, { type: "summary", ok: 2, failed: 0, cost: { currency: "USD", api_equivalent: 1.2 } },
+    ]);
+    expect(resolveApiCost(usageNumeric, makeArm({ fx: fxUsdToCad }), null, "CAD")).toEqual({
+      costUnknownReason: null, apiEquivalentTotal: 1.662, apiEquivalentPerItem: 0.831,
+    });
+    // Summary-path roundCostNano: 0.1 + 0.2 = 0.30000000000000004 -> 0.3; 1e-9 * 1.5 = 1.5e-9 -> 2e-9.
+    const usageFloatSum = summarizeInvocationUsage([
+      { id: "a1" }, { type: "summary", ok: 1, failed: 0, cost: { currency: "USD", api_equivalent: 0.1 } },
+      { id: "a2" }, { type: "summary", ok: 1, failed: 0, cost: { currency: "USD", api_equivalent: 0.2 } },
+    ]);
+    expect(resolveApiCost(usageFloatSum, makeArm(), null, "USD")).toEqual({
+      costUnknownReason: null, apiEquivalentTotal: 0.3, apiEquivalentPerItem: 0.15,
+    });
+    const usageHalfNano = summarizeInvocationUsage([
+      { id: "a1" }, { type: "summary", ok: 1, failed: 0, cost: { currency: "USD", api_equivalent: 1e-9 } },
+    ]);
+    expect(resolveApiCost(usageHalfNano, makeArm({
+      fx: { from: "USD", to: "CAD", rate: 1.5, source: "boc", asOf: "2026-11-22" },
+    }), null, "CAD")).toEqual({
+      costUnknownReason: null, apiEquivalentTotal: 2e-9, apiEquivalentPerItem: 2e-9,
+    });
+    // pt lacking reasoning rate with tokens.reasoning === 0 or unknown tokens keeps numeric summaryApiTotal.
+    const usageZeroReasNumeric = summarizeInvocationUsage([{ id: "a1" }, {
+      type: "summary", ok: 1, failed: 0,
+      tokens: { input: 500_000, output: 100_000, reasoning: 0, total: 600_000 },
+      cost: { currency: "USD", api_equivalent: 9.99 },
+    }]);
+    expect(resolveApiCost(usageZeroReasNumeric, makeArm(), priceTableNoReas, "USD")).toEqual({
+      costUnknownReason: null, apiEquivalentTotal: 9.99, apiEquivalentPerItem: 9.99,
+    });
+    const usageNoTokNumeric = summarizeInvocationUsage([{ id: "a1" }, {
+      type: "summary", ok: 1, failed: 0, cost: { currency: "USD", api_equivalent: 8.88 },
+    }]);
+    expect(resolveApiCost(usageNoTokNumeric, makeArm(), priceTableNoReas, "USD")).toEqual({
+      costUnknownReason: null, apiEquivalentTotal: 8.88, apiEquivalentPerItem: 8.88,
+    });
+    // pt WITH reasoning rate keeps numeric summaryApiTotal (7.77 != pt calculation) when reasoning > 0.
+    const usagePosReasNumeric = summarizeInvocationUsage([{ id: "a1" }, {
+      type: "summary", ok: 1, failed: 0,
+      tokens: { input: 10, output: 10, reasoning: 5, total: 25 },
+      cost: { currency: "USD", api_equivalent: 7.77 },
+    }]);
+    expect(resolveApiCost(usagePosReasNumeric, makeArm(), priceTableUsd, "USD")).toEqual({
+      costUnknownReason: null, apiEquivalentTotal: 7.77, apiEquivalentPerItem: 7.77,
+    });
+    const zeroBasisUsage = summarizeInvocationUsage([{
+      type: "summary", ok: 0, failed: 0, cost: { api_equivalent: 0 },
+    }]);
+    expect(resolveApiCost(zeroBasisUsage, makeArm(), null, "USD")).toEqual({
+      costUnknownReason: null, apiEquivalentTotal: 0, apiEquivalentPerItem: 0,
+    });
+    refuse(() => resolveApiCost(summarizeInvocationUsage([
+      { type: "summary", ok: 0, failed: 0, cost: { api_equivalent: 0.1 } },
+    ]), makeArm(), null, "USD"), "BAD_SHAPE", "$.cost.apiEquivalentTotal");
   });
 });
