@@ -912,4 +912,132 @@ describe("nested estimator, Wilson and pooled edge-case matrix", () => {
       refuse(() => validateBenchResultsInvariants(doc), invariant, path, code);
     }
   });
+
+  it("refuses nested zero-denominator Wilson, null-vs-0 metric, pooled fallback and maxValues bindings", () => {
+    const intervalOff = {
+      estimator: "unweighted", method: "none", clustering: "independent_site", valid: false, low: null, high: null,
+    } as const;
+    const cases: [
+      () => BenchResultsFile, (doc: any) => void, BenchInvariantCode, string, BenchResultsErrorCode?, any?,
+    ][] = [
+      [
+        makeResultsFile,
+        (doc) => {
+          const record = doc.records[0];
+          record.tp = 0;
+          record.fp = 0;
+          record.fpOnPresent = 0;
+          record.fpOnAbsent = 0;
+          record.fpElementsOnAbsent = 0;
+          record.fn = 0;
+          record.goldPositive = 0;
+          record.tn = 0;
+          record.failedOnAbsent = 10;
+          record.abstentionSpecificity = null;
+          record.unweighted.precision = null;
+          record.unweighted.recall = null;
+          record.unweighted.f1 = null;
+          record.precision = null;
+          record.recall = null;
+          record.f1 = null;
+          record.sitePresence = {
+            ...record.sitePresence, goldPresentSites: 0, unresolvedSites: 5, insufficientSites: 5,
+            tpSites: 0, fnSites: 0, wrongValueOnPresentSites: 0, fpOnAbsentSites: 0, tnSites: 0,
+            failedOnAbsentSites: 10, siteRecall: null, siteRecallInterval: { ...intervalOff },
+            siteAbstentionSpecificity: null, siteAbstentionInterval: { ...intervalOff },
+          };
+        },
+        "WILSON_INTERVAL",
+        "$.records[0].unweighted.precisionInterval",
+        "BAD_INTERVAL",
+      ],
+      [
+        makeResultsFile,
+        (doc) => {
+          doc.records[0].fpOnPresent = 2;
+          doc.records[0].fpElementsOnAbsent = 4;
+        },
+        "POOLED_WILSON_FORBIDDEN",
+        "$.records[0].unweighted.precisionInterval",
+        "BAD_INTERVAL",
+      ],
+      [
+        makeResultsFile,
+        (doc) => {
+          const record = doc.records[0];
+          record.goldPositive = 12;
+          record.fn = 6;
+          record.unweighted.recall = 0.5;
+          record.unweighted.f1 = 0.5;
+          record.recall = 0.5;
+          record.f1 = 0.5;
+        },
+        "POOLED_WILSON_FORBIDDEN",
+        "$.records[0].unweighted.precisionInterval",
+        "BAD_INTERVAL",
+      ],
+      [
+        makeResultsFile,
+        (doc) => { doc.records[0].field = "tags"; },
+        "POOLED_WILSON_FORBIDDEN",
+        "$.records[0].unweighted.precisionInterval",
+        "BAD_INTERVAL",
+        { missionSpecs: [{ name: "tags", kind: "scalar", maxValues: 3 }] },
+      ],
+      [
+        makeResultsFile,
+        (doc) => {
+          const record = doc.records[0];
+          record.tp = 0;
+          record.fn = 2;
+          record.goldPositive = 2;
+          record.fp = 0;
+          record.fpOnPresent = 0;
+          record.fpOnAbsent = 0;
+          record.fpElementsOnAbsent = 0;
+          record.tn = 8;
+          record.failedOnAbsent = 2;
+          record.abstentionSpecificity = 1;
+          record.precision = null;
+          record.recall = null;
+          record.f1 = 0;
+          record.precisionInterval = { ...intervalOff };
+          record.recallInterval = { ...WILSON_0_OF_2 };
+          record.unweighted = {
+            precision: null, recall: null, f1: 0,
+            precisionInterval: { ...intervalOff }, recallInterval: { ...WILSON_0_OF_2 },
+          };
+          record.sitePresence = {
+            ...record.sitePresence, goldPresentSites: 2, unresolvedSites: 4, insufficientSites: 4,
+            tpSites: 0, fnSites: 2, wrongValueOnPresentSites: 0, fpOnAbsentSites: 0, tnSites: 8,
+            siteRecall: 0, siteRecallInterval: { ...WILSON_0_OF_2 },
+            siteAbstentionSpecificity: 1, siteAbstentionInterval: { ...WILSON_8_OF_8 },
+          };
+        },
+        "UNWEIGHTED_METRIC",
+        "$.records[0].unweighted.recall",
+      ],
+      [
+        makeWeightedFile,
+        (doc) => { doc.records[0].unweighted.precisionInterval = { ...WILSON_6_OF_12 }; },
+        "POOLED_WILSON_FORBIDDEN",
+        "$.records[0].unweighted.precisionInterval",
+        "BAD_INTERVAL",
+        { missionSpecs: [{ name: "office", kind: "record", maxValues: 3, subFields: [{ name: "city" }] }] },
+      ],
+      [
+        makeResultsFile,
+        (doc) => { doc.records[0].field = "aliases"; },
+        "POOLED_WILSON_FORBIDDEN",
+        "$.records[0].unweighted.precisionInterval",
+        "BAD_INTERVAL",
+        { missionSpecs: [{ name: "aliases", kind: "scalar", maxValues: 2 }] },
+      ],
+    ];
+    for (const [buildDoc, mutate, invariant, path, code = "BAD_SHAPE", opts] of cases) {
+      const doc = clone(buildDoc());
+      mutate(doc);
+      refuse(() => validateBenchResultsInvariants(doc, opts), invariant, path, code);
+    }
+  });
 });
