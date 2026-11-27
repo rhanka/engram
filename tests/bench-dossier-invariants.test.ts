@@ -1041,3 +1041,123 @@ describe("nested estimator, Wilson and pooled edge-case matrix", () => {
     }
   });
 });
+
+describe("cost and seat consistency invariants", () => {
+  it("accepts all costUnknownReason variants, zero-basis, tolerance drift, estimated and unknown seats", () => {
+    const positiveCases: ((doc: any) => void)[] = [
+      (doc) => {
+        const cost = doc.records[0].cost;
+        cost.costUnknownReason = "unpriced-mission";
+        cost.apiEquivalentTotal = "unknown";
+        cost.apiEquivalentPerItem = "unknown";
+      },
+      (doc) => {
+        const cost = doc.records[0].cost;
+        cost.costUnknownReason = "reasoning-rate-missing";
+        cost.apiEquivalentTotal = "unknown";
+        cost.apiEquivalentPerItem = "unknown";
+      },
+      (doc) => {
+        const cost = doc.records[0].cost;
+        cost.costUnknownReason = "missing-usage";
+        cost.apiEquivalentTotal = "unknown";
+        cost.apiEquivalentPerItem = "unknown";
+      },
+      (doc) => {
+        const record = doc.records[0];
+        record.accepted = 0;
+        record.failed = 20;
+        record.cost.costBasisItems = 0;
+        record.cost.apiEquivalentTotal = 0;
+        record.cost.apiEquivalentPerItem = 0;
+      },
+      (doc) => {
+        doc.records[0].cost.apiEquivalentPerItem = 0.0025 + 5e-13;
+      },
+      (doc) => {
+        const record = doc.records[0];
+        record.accepted = 1;
+        record.failed = 19;
+        record.cost.costBasisItems = 1;
+        record.cost.apiEquivalentTotal = 1e-12;
+        record.cost.apiEquivalentPerItem = 0;
+      },
+      (doc) => {
+        const cost = doc.records[0].cost;
+        cost.seatStatus = "estimated";
+        cost.seatMethod = "api_cost_proportional";
+        cost.seatSharePerItem = "unknown";
+      },
+      (doc) => {
+        const cost = doc.records[0].cost;
+        cost.seatStatus = "unknown";
+        cost.seatMethod = "unknown";
+        cost.seatUnknownReason = "shared-seat-concurrent";
+        cost.seatCostPerItem = "unknown";
+        cost.seatSharePerItem = "unknown";
+      },
+    ];
+    for (const mutate of positiveCases) {
+      const doc = clone(makeResultsFile());
+      mutate(doc);
+      expect(validateBenchResultsInvariants(doc).records).toHaveLength(1);
+    }
+  });
+
+  it("refuses one single-defect violation per cost consistency term", () => {
+    const cases: [(doc: any) => void, BenchInvariantCode, string][] = [
+      [(doc) => { doc.records[0].cost.costUnknownReason = "unpriced-mission"; },
+        "COST_CONSISTENCY", "$.records[0].cost.apiEquivalentTotal"],
+      [
+        (doc) => {
+          doc.records[0].cost.costUnknownReason = "unpriced-mission";
+          doc.records[0].cost.apiEquivalentTotal = "unknown";
+        },
+        "COST_CONSISTENCY",
+        "$.records[0].cost.apiEquivalentPerItem",
+      ],
+      [
+        (doc) => {
+          const record = doc.records[0];
+          record.cost.costUnknownReason = "incomplete-invocation-summary";
+          record.cost.apiEquivalentTotal = "unknown";
+          record.cost.apiEquivalentPerItem = "unknown";
+        },
+        "COST_CONSISTENCY",
+        "$.records[0].calls",
+      ],
+      [
+        (doc) => {
+          const record = doc.records[0];
+          record.calls = "unknown";
+          record.cost.costUnknownReason = "incomplete-invocation-summary";
+          record.cost.apiEquivalentTotal = "unknown";
+          record.cost.apiEquivalentPerItem = "unknown";
+        },
+        "COST_CONSISTENCY",
+        "$.records[0].callsPerItem",
+      ],
+      [
+        (doc) => {
+          const record = doc.records[0];
+          record.calls = "unknown";
+          record.callsPerItem = "unknown";
+          record.cost.costUnknownReason = "incomplete-invocation-summary";
+          record.cost.apiEquivalentTotal = "unknown";
+          record.cost.apiEquivalentPerItem = "unknown";
+        },
+        "COST_CONSISTENCY",
+        "$.records[0].tokens",
+      ],
+      [(doc) => { doc.records[0].cost.apiEquivalentPerItem = 0.003; },
+        "COST_CONSISTENCY", "$.records[0].cost.apiEquivalentPerItem"],
+      [(doc) => { doc.records[0].cost.apiEquivalentPerItem = 0.0025 + 2e-12; },
+        "COST_CONSISTENCY", "$.records[0].cost.apiEquivalentPerItem"],
+    ];
+    for (const [mutate, invariant, path] of cases) {
+      const doc = clone(makeResultsFile());
+      mutate(doc);
+      refuse(() => validateBenchResultsInvariants(doc), invariant, path);
+    }
+  });
+});

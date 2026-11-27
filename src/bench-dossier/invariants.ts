@@ -1,7 +1,7 @@
 import { specsOf, type FieldSpec, type Mission } from "../scrap/extract.js";
 import { nonEmptyString } from "./results-guards.js";
-import type { BenchResultsFile } from "./results-types.js";
-import { BenchInvariantError, failInv, validateCountsAndSites,
+import type { BenchResultRecord, BenchResultsFile } from "./results-types.js";
+import { BenchInvariantError, checkAll, failInv, sameNum, validateCountsAndSites,
   validateEstimator, wilson95, type BenchInvariantCode } from "./invariants-checks.js";
 export { BenchInvariantError, wilson95, type BenchInvariantCode };
 
@@ -60,6 +60,27 @@ export function validateProseName(proseName: string, path = "$"): void {
     token.replace(/^[.,!?:;"'`]+|[.,!?:;"'`]+$/g, "").replace(/^utf-8$/i, "") !== ""))
     failInv("PROSE_NAME_GATE", path);
 }
+const SEAT_METHOD = { unknown: "unknown", measured: "weekly_burn_delta", estimated: "api_cost_proportional" } as const;
+function validateCostAndSeat(record: BenchResultRecord, base: string): void {
+  const cost = record.cost;
+  const { apiEquivalentTotal, apiEquivalentPerItem, costBasisItems, seatStatus } = cost;
+  const noCost = cost.costUnknownReason !== null;
+  const seatUnknown = seatStatus === "unknown";
+  const expectedPer = costBasisItems === 0 ? 0 : (apiEquivalentTotal as number) / costBasisItems;
+  checkAll(`${base}.cost`, [
+    ["apiEquivalentTotal", noCost ? apiEquivalentTotal === "unknown" : typeof apiEquivalentTotal === "number"],
+    ["apiEquivalentPerItem", noCost ? apiEquivalentPerItem === "unknown" : typeof apiEquivalentPerItem === "number"
+      && (costBasisItems > 0 || apiEquivalentTotal === 0) && sameNum(apiEquivalentPerItem, expectedPer)],
+    ["seatMethod", cost.seatMethod === SEAT_METHOD[seatStatus], "SEAT_CONSISTENCY"],
+    ["seatUnknownReason", (cost.seatUnknownReason !== null) === seatUnknown, "SEAT_CONSISTENCY"],
+    ["seatCostPerItem", (cost.seatCostPerItem === "unknown") === seatUnknown, "SEAT_CONSISTENCY"],
+    ["seatSharePerItem",
+      seatStatus === "estimated" || (cost.seatSharePerItem === "unknown") === seatUnknown, "SEAT_CONSISTENCY"],
+  ], "COST_CONSISTENCY");
+  if (cost.costUnknownReason === "incomplete-invocation-summary")
+    for (const key of ["calls", "callsPerItem", "tokens"] as const)
+      if (record[key] !== "unknown") failInv("COST_CONSISTENCY", `${base}.${key}`);
+}
 /** Validate cross-field, uniqueness, prose-name, estimator, count, site-matrix and cost invariants. */
 export function validateBenchResultsInvariants(file: BenchResultsFile,
   opts?: { readonly missionSpecs?: readonly FieldSpec[] }): BenchResultsFile {
@@ -86,6 +107,7 @@ export function validateBenchResultsInvariants(file: BenchResultsFile,
     const spec = specs.get(record.field);
     validateCountsAndSites(record, base, file.corpus.goldenIds, file.corpus.currency, spec);
     validateEstimator(record, file.corpus.primaryEstimator, base, spec);
+    validateCostAndSeat(record, base);
   });
   for (const primary of primaries.values())
     if (primary.count !== 1) failInv("PRIMARY_COMPARATOR", `$.records[${primary.firstIdx}].isPrimaryComparator`);
