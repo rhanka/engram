@@ -55,6 +55,33 @@ const STATE_MACHINE_KEYS = new Set(["states", "initial_state", "terminal_states"
 const TRANSITION_NORM_KEYS = new Set(["requires", "authority"]);
 const HARDENING_KEYS = new Set(["statuses", "default_status", "promotion_requires", "status_transitions"]);
 const ADMISSION_POLICY_KEYS = new Set(["mode", "third_party_distinct_from_author", "by_rank", "by_operation", "by_transition"]);
+const LEVEL_KEYS = new Set(["id", "rank", "modes", "requires_parent", "rollup", "closure_gate_ref"]);
+const AXIS_KEYS = new Set(["attribute", "pattern", "inherited_downward"]);
+const NESTING_KEYS = new Set(["parent_level", "parent_modes", "allowed_child_levels", "child_subkind", "when_attributes"]);
+const STAGE_REF_KEYS = new Set(["parent_stage", "sub_stages", "witness_link_kinds"]);
+const GATE_KEYS = new Set([
+  "applies_to_levels", "authority", "designated_owner_attribute", "required_actor_class",
+  "non_waivable_evidence_kinds", "require_all_children_terminal", "freshness_anchor_equality",
+]);
+const TIMEBOX_KEYS = new Set([
+  "applies_to_level", "subkind", "target_days", "hard_ceiling_days",
+  "clock_start_trigger", "clock_stop_triggers", "rebaseline_decision_kind", "overdue_escalation",
+]);
+const ETA_KEYS = new Set([
+  "eligible_ranks", "max_active_slots_per_item", "source_kinds",
+  "measured_provenance_required_fields", "append_only_slip_journal", "rebaseline_requires_decision",
+]);
+const BAND_KEYS = new Set(["id", "min_score", "max_score"]);
+const REMAP_KEYS = new Set(["target_level", "subkind", "read_only"]);
+const INVARIANT_KEYS = new Set(["id", "summary", "scope", "severity"]);
+const TRACK_PROJ_KEYS = new Set(["kind", "content_mode", "root_dir", "event_journal", "head_anchor", "state_snapshot", "owner_table_inputs", "link_fingerprint_sidecar"]);
+const TRACK_EJ_KEYS = new Set(["relative_path_template", "format", "forbid_header_lines", "aggregates", "event_types", "order_by", "frame_integrity", "envelope_contract"]);
+const TRACK_SS_KEYS = new Set(["relative_path_template", "schema", "include_collections", "report_sections", "status_vocabulary", "stage_vocabulary", "remaining_work_realizations"]);
+const TRACK_ENV_KEYS = new Set(["core_fields", "optional_core_fields", "frame_fields"]);
+const TRACK_HEAD_KEYS = new Set(["relative_path_template", "format"]);
+const TRACK_OTI_KEYS = new Set(["required_folded_collections", "required_event_stream_lookbacks", "options_fields", "confidentiality_policy_contract"]);
+const TRACK_SIDECAR_KEYS = new Set(["relative_path_template", "schema", "hash_algorithm"]);
+const H2A_PROJ_KEYS = new Set(["kind", "include_node_types", "projected_fields", "root_dir", "relative_path_template", "relative_path_templates", "precedence", "format", "order_by"]);
 
 const rankIn = (table: Readonly<Record<string, number>>, val: unknown): number | undefined => typeof val === "string" && Object.hasOwn(table, val) ? table[val] : undefined;
 const isFiniteNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
@@ -960,6 +987,39 @@ const isValidNormAdmission = (raw: unknown): boolean => hasOnlyKeys(raw, ADMISSI
 const isValidNormNode = (raw: unknown): boolean => hasOnlyKeys(raw, NODE_KNOWN_KEYS) && (raw.source_backed === undefined || typeof raw.source_backed === "boolean") && (!isRecord(raw.attributes) || Object.values(raw.attributes).every((v) => isValidAttrDeclDeep(v))) && (!isRecord(raw.properties) || Object.values(raw.properties).every((v) => isValidAttrDeclDeep(v))) && (raw.state_machine === undefined || isValidNormStateMachine(raw.state_machine)) && (!isRecord(raw.state_machines) || Object.values(raw.state_machines).every(isValidNormStateMachine)) && (raw.admission_policy === undefined || isValidNormAdmission(raw.admission_policy));
 const isValidNormRelation = (raw: unknown): boolean => hasOnlyKeys(raw, REL_KNOWN_KEYS) && (raw.requires_evidence === undefined || typeof raw.requires_evidence === "boolean") && (!isRecord(raw.attributes) || Object.values(raw.attributes).every((v) => isValidAttrDeclDeep(v))) && (raw.hierarchy === undefined || hasOnlyKeys(raw.hierarchy, REL_HIERARCHY_KEYS)) && (raw.cardinality === undefined || (isRecord(raw.cardinality) && Object.keys(raw.cardinality).every((k) => k === "in" || k === "out") && (["in", "out"] as const).every((d) => raw.cardinality![d] === undefined || (isRecord(raw.cardinality![d]) && Object.keys(raw.cardinality![d] as object).every((k) => k === "min" || k === "max")))));
 const isValidNormHardening = (raw: unknown): boolean => hasOnlyKeys(raw, HARDENING_KEYS) && (raw.status_transitions === undefined || (isRecord(raw.status_transitions) && Object.values(raw.status_transitions).every(isValidNormTransition)));
+const isValidNormProjection = (raw: unknown): boolean => isRecord(raw) && (raw.kind === "h2a-harness-overlay" ? hasOnlyKeys(raw, H2A_PROJ_KEYS) : raw.kind === "track-pr-slice" && hasOnlyKeys(raw, TRACK_PROJ_KEYS) && (raw.event_journal === undefined || (hasOnlyKeys(raw.event_journal, TRACK_EJ_KEYS) && (raw.event_journal.envelope_contract === undefined || hasOnlyKeys(raw.event_journal.envelope_contract, TRACK_ENV_KEYS)))) && (raw.head_anchor === undefined || hasOnlyKeys(raw.head_anchor, TRACK_HEAD_KEYS)) && (raw.state_snapshot === undefined || hasOnlyKeys(raw.state_snapshot, TRACK_SS_KEYS)) && (raw.owner_table_inputs === undefined || hasOnlyKeys(raw.owner_table_inputs, TRACK_OTI_KEYS)) && (raw.link_fingerprint_sidecar === undefined || hasOnlyKeys(raw.link_fingerprint_sidecar, TRACK_SIDECAR_KEYS)));
+
+function isStrictDownstreamStage(candidateDoc: NormalizedDocument, oldStage: string, newStage: string): boolean {
+  const nodes = isRecord(candidateDoc.node_types) ? candidateDoc.node_types : {};
+  const canReach = (adj: Map<string, Set<string>>, start: string, goal: string): boolean => {
+    const visited = new Set<string>([start]), queue = [start];
+    while (queue.length > 0) {
+      const cur = queue.shift()!;
+      if (cur === goal && start !== goal) return true;
+      for (const nxt of adj.get(cur) ?? []) if (!visited.has(nxt)) { visited.add(nxt); queue.push(nxt); }
+    }
+    return false;
+  };
+  for (const node of Object.values(nodes)) {
+    if (!isRecord(node)) continue;
+    for (const sm of [node.state_machine, ...(isRecord(node.state_machines) ? Object.values(node.state_machines) : [])]) {
+      if (!isRecord(sm) || !isStringArray(sm.states) || !sm.states.includes(oldStage) || !sm.states.includes(newStage)) continue;
+      const adj = new Map<string, Set<string>>();
+      if (isRecord(sm.transitions)) for (const edge of Object.keys(sm.transitions)) { const [f, t] = edge.split("->"); if (f && t) adj.set(f, (adj.get(f) ?? new Set()).add(t)); }
+      if (canReach(adj, oldStage, newStage) && !canReach(adj, newStage, oldStage)) return true;
+    }
+  }
+  return false;
+}
+
+const sameNestingGroup = (a: Record<string, unknown>, b: Record<string, unknown>): boolean =>
+  a.parent_level === b.parent_level && (a.child_subkind ?? null) === (b.child_subkind ?? null) && canonicalBytes(a.when_attributes ?? null) === canonicalBytes(b.when_attributes ?? null);
+
+function nestingRuleSubsumes(subsumer: unknown, target: unknown): boolean {
+  if (!hasOnlyKeys(subsumer, NESTING_KEYS) || !isRecord(target) || !sameNestingGroup(subsumer, target)) return false;
+  if (!isSetSuperset(target.allowed_child_levels, subsumer.allowed_child_levels)) return false;
+  return subsumer.parent_modes === undefined || (target.parent_modes !== undefined && isSetSuperset(target.parent_modes, subsumer.parent_modes));
+}
 
 function setRule(
   id: string, patterns: readonly string[], additiveCode: string, breakingCode: string, subsetWidens: boolean,
@@ -973,6 +1033,13 @@ function boolOffRule(
   inBundle: WideningRule["inBundle"], formatSubject?: WideningRule["formatSubject"],
 ): WideningRule {
   return { id, patterns, additiveCode, breakingCode, inBundle, canWiden: (o, n) => o === true && n === false, formatSubject };
+}
+
+function upperRule(
+  id: string, patterns: readonly string[], additiveCode: string, breakingCode: string,
+  inBundle: WideningRule["inBundle"], formatSubject?: WideningRule["formatSubject"], formatTag?: WideningRule["formatTag"],
+): WideningRule {
+  return { id, patterns, additiveCode, breakingCode, inBundle, canWiden: isWidenedUpper, formatSubject, formatTag };
 }
 
 function addedRule(
@@ -1008,6 +1075,24 @@ function admissionOverrideRanks(o: unknown, n: unknown, c: RuleContext): readonl
   return [rankIn(ADMISSION_MODE_RANK, o ?? oAp?.mode), rankIn(ADMISSION_MODE_RANK, n ?? nAp?.mode)];
 }
 
+const nestingRuleSubject = (c: RuleContext): string => {
+  const k = c.segments[2]!;
+  const r = isRecord(c.newParent?.[k]) ? c.newParent![k] as Record<string, unknown> : isRecord(c.oldParent?.[k]) ? c.oldParent![k] as Record<string, unknown> : null;
+  return String(r?.parent_level ?? k);
+};
+
+const nestingRulePath = (out: "additive" | "breaking", c: RuleContext): string => {
+  const k = c.segments[2]!;
+  if (out === "additive" && isRecord(c.oldParent?.[k]) && !isRecord(c.newParent?.[k])) return "domain_policies.nesting_matrix.parent_modes";
+  if (out === "breaking" && isRecord(c.oldParent?.[k]) && isRecord(c.newParent)) {
+    const oldR = c.oldParent![k] as Record<string, unknown>;
+    if (Object.entries(c.newParent).some(([nk, nv]) => !Object.hasOwn(c.oldParent as object, nk) && isRecord(nv) && sameNestingGroup(oldR, nv) && (oldR.parent_modes === undefined || (Array.isArray(oldR.parent_modes) && Array.isArray(nv.parent_modes) && isSetSuperset(nv.parent_modes, oldR.parent_modes))))) {
+      return "domain_policies.nesting_matrix.parent_modes";
+    }
+  }
+  return "domain_policies.nesting_matrix";
+};
+
 const segAt = (idx: number) => (_out: "additive" | "breaking", c: RuleContext) => c.segments[idx]!;
 const attrInBundle = (_out: "additive" | "breaking", c: RuleContext) => !isNodeProp(c.segments);
 const attrTag = (_out: "additive" | "breaking", code: string, c: RuleContext) => `${code}:${attrOwnerSubject(c.segments)}`;
@@ -1019,6 +1104,7 @@ const trPath = (_out: "additive" | "breaking", c: RuleContext) => trBundlePath(c
 const smTag = (_out: "additive" | "breaking", code: string, c: RuleContext) => `${code}:${smSubject(c.segments)}`;
 const smSubj = (_out: "additive" | "breaking", c: RuleContext) => smSubject(c.segments);
 const noSubjTag = (_out: "additive" | "breaking", code: string) => code;
+const tbSubj = (_out: "additive" | "breaking", c: RuleContext) => c.segments[2]!.split("\0", 1)[0]!;
 
 /** Explicit table of paths downgraded to PATCH (doc-only / presentation / envelope metadata). */
 export const PRESENTATION_ONLY_RULES: readonly PresentationRule[] = [
@@ -1111,4 +1197,90 @@ export const WIDENING_RULES: readonly WideningRule[] = [
   },
   boolOffRule("relaxed-relation-requires-evidence", ["relation_types.*.requires_evidence"], "relaxed_relation_requires_evidence", "tightened_relation_requires_evidence", false, segAt(1)),
   setRule("added-relation-basis-or-method", ["relation_types.*.{assertion_basis,derivation_methods}"], "added_relation_basis", "removed_relation_basis", false, false, segAt(1), (out, _c, c) => `${out === "additive" ? "added" : "removed"}_relation_${c.segments[2]!}:${c.segments[1]!}`),
+  addedRule("added-domain-level", ["domain_policies.levels.*"], "added_domain_level", "removed_domain_level", true, (n) => hasOnlyKeys(n, LEVEL_KEYS), segAt(2)),
+  setRule("added-domain-level-mode", ["domain_policies.levels.*.modes"], "added_domain_level_mode", "removed_domain_level_mode", false, true, segAt(2)),
+  boolOffRule("relaxed-level-requires-parent", ["domain_policies.levels.*.requires_parent"], "relaxed_level_requires_parent", "tightened_level_requires_parent", true, segAt(2)),
+  { id: "relaxed-level-closure-gate", patterns: ["domain_policies.levels.*.closure_gate_ref"], additiveCode: "relaxed_level_closure_gate", breakingCode: "changed_level_closure_gate", inBundle: true, canWiden: (o, n) => typeof o === "string" && n === undefined, formatSubject: segAt(2) },
+  addedRule("added-domain-map-entry", ["domain_policies.{acceptance_gates,cross_cutting_axes,legacy_role_remap}.*"], "added_domain_entry", "removed_domain_entry", true, (n, c) => hasOnlyKeys(n, c.segments[1] === "acceptance_gates" ? GATE_KEYS : c.segments[1] === "cross_cutting_axes" ? AXIS_KEYS : REMAP_KEYS), segAt(2), (out, _c, c) => {
+    const addedInvalid = out === "breaking" && (!isRecord(c.oldParent) || !Object.hasOwn(c.oldParent, c.segments[2]!)) && isRecord(c.newParent) && Object.hasOwn(c.newParent, c.segments[2]!);
+    return `${out === "additive" ? "added" : addedInvalid ? "added_invalid" : "removed"}_domain_${c.segments[1]!}:${c.segments[2]!}`;
+  }),
+  {
+    id: "added-nesting-rule", patterns: ["domain_policies.nesting_matrix.*"], edgeOnly: true, additiveCode: "added_nesting_rule", breakingCode: "removed_nesting_rule", inBundle: true,
+    canWiden: (o, n) => o === undefined && hasOnlyKeys(n, NESTING_KEYS),
+    classify: (o, n, c) => {
+      if (o === undefined) {
+        if (!hasOnlyKeys(n, NESTING_KEYS)) return "breaking";
+        if (isRecord(c.oldParent) && isRecord(c.newParent)) {
+          for (const [ok, ov] of Object.entries(c.oldParent)) {
+            if (!Object.hasOwn(c.newParent, ok) && isRecord(ov) && sameNestingGroup(ov, n) && (nestingRuleSubsumes(n, ov) || nestingRuleSubsumes(ov, n))) return "noop";
+          }
+        }
+        return "additive";
+      }
+      return (n === undefined && isRecord(o) && isRecord(c.newParent) && Object.values(c.newParent).some((cand) => nestingRuleSubsumes(cand, o))) ? "additive" : "breaking";
+    },
+    formatSubject: (_out, c) => nestingRuleSubject(c),
+    formatPath: nestingRulePath,
+    formatTag: (out, code, c) => {
+      const subj = nestingRuleSubject(c);
+      if (out === "additive" && isRecord(c.oldParent) && Object.hasOwn(c.oldParent, c.segments[2]!)) return `widened_nesting_modes:${subj}`;
+      if (out === "breaking" && nestingRulePath(out, c) === "domain_policies.nesting_matrix.parent_modes") return `narrowed_nesting_modes:${subj}`;
+      return `${code}:${subj}`;
+    },
+  },
+  setRule("widened-nesting-children", ["domain_policies.nesting_matrix.*.allowed_child_levels"], "widened_nesting_children", "narrowed_nesting_children", false, true, (_out, c) => String((isRecord(c.oldParent) ? c.oldParent.parent_level : undefined) ?? c.segments[2]!), undefined, () => "domain_policies.nesting_matrix.allowed_child_levels"),
+  addedRule("added-stage-refinement", ["domain_policies.stage_refinements.*"], "added_stage_refinement", "removed_stage_refinement", true, (n) => hasOnlyKeys(n, STAGE_REF_KEYS), segAt(2)),
+  setRule("added-sub-stage", ["domain_policies.stage_refinements.*.sub_stages"], "added_sub_stage", "removed_sub_stage", false, true, segAt(2)),
+  setRule("relaxed-stage-witnesses", ["domain_policies.stage_refinements.*.witness_link_kinds"], "relaxed_stage_witnesses", "tightened_stage_witnesses", true, true, segAt(2)),
+  setRule("added-domain-actor-class", ["domain_policies.autonomy_policy.actor_classes"], "added_domain_actor_class", "removed_domain_actor_class", false, true, undefined, noSubjTag),
+  upperRule("widened-max-autonomous-create-rank", ["domain_policies.autonomy_policy.max_autonomous_create_rank"], "widened_max_autonomous_create_rank", "tightened_max_autonomous_create_rank", true, undefined, noSubjTag),
+  {
+    id: "widened-max-autonomous-create-level", patterns: ["domain_policies.autonomy_policy.max_autonomous_create_level"], additiveCode: "widened_max_autonomous_create_level", breakingCode: "tightened_max_autonomous_create_level", inBundle: true,
+    canWiden: (o, n, c) => { const or = typeof o === "string" ? c.oldLevelRankById.get(o) : undefined, nr = typeof n === "string" ? c.newLevelRankById.get(n) : undefined; return or !== undefined && nr !== undefined && nr > or; },
+    formatTag: noSubjTag,
+  },
+  {
+    id: "widened-autonomous-stage-ceiling", patterns: ["domain_policies.autonomy_policy.autonomous_stage_ceiling_by_level.*"], additiveCode: "widened_autonomous_stage_ceiling", breakingCode: "tightened_autonomous_stage_ceiling", inBundle: true,
+    canWiden: (o, n, c) => (o === undefined && typeof n === "string") || (typeof o === "string" && typeof n === "string" && isStrictDownstreamStage(c.newDoc, o, n)),
+    formatSubject: segAt(3),
+    formatTag: (out, code, c) => `${out === "additive" && c.oldParent?.[c.segments[3]!] === undefined ? "added_autonomous_stage_ceiling" : out === "breaking" && c.newParent?.[c.segments[3]!] === undefined ? "removed_autonomous_stage_ceiling" : code}:${c.segments[3]!}`,
+  },
+  setRule("relaxed-autonomy-operations", ["domain_policies.autonomy_policy.{mandated_act_operations,own_act_human_operations}"], "relaxed_autonomy_ops", "tightened_autonomy_ops", true, true, undefined, (out, _c, c) => `${out === "additive" ? "relaxed" : "tightened"}_${c.segments[2]!}`),
+  setRule("added-mandated-proof-source", ["domain_policies.autonomy_policy.mandated_act_proof_sources"], "added_mandated_proof_source", "removed_mandated_proof_source", false, true, undefined, noSubjTag),
+  setRule("relaxed-gate-levels", ["domain_policies.acceptance_gates.*.applies_to_levels"], "relaxed_gate_levels", "tightened_gate_levels", true, true, segAt(2)),
+  setRule("relaxed-gate-evidence", ["domain_policies.acceptance_gates.*.non_waivable_evidence_kinds"], "relaxed_gate_evidence", "tightened_gate_evidence", true, true, segAt(2)),
+  boolOffRule("relaxed-gate-children-terminal", ["domain_policies.acceptance_gates.*.require_all_children_terminal"], "relaxed_gate_children_terminal", "tightened_gate_children_terminal", true, segAt(2)),
+  addedRule("added-timebox", ["domain_policies.timeboxes.*"], "added_timebox", "removed_timebox", true, (n) => hasOnlyKeys(n, TIMEBOX_KEYS), tbSubj),
+  upperRule("widened-timebox-ceiling", ["domain_policies.timeboxes.*.hard_ceiling_days"], "widened_timebox_ceiling", "tightened_timebox_ceiling", true, tbSubj),
+  upperRule("widened-timebox-target", ["domain_policies.timeboxes.*.target_days"], "widened_timebox_target", "tightened_timebox_target", true, tbSubj),
+  setRule("widened-timebox-stop-triggers", ["domain_policies.timeboxes.*.clock_stop_triggers"], "widened_timebox_stop_triggers", "narrowed_timebox_stop_triggers", false, true, tbSubj),
+  addedRule("added-domain-eta-policy", ["domain_policies.eta_policy"], "added_domain_policy", "removed_domain_policy", true, (n) => hasOnlyKeys(n, ETA_KEYS) && n.max_active_slots_per_item === undefined && n.eligible_ranks === undefined && (n.rebaseline_requires_decision === undefined || n.rebaseline_requires_decision === false) && (n.measured_provenance_required_fields === undefined || (isStringArray(n.measured_provenance_required_fields) && n.measured_provenance_required_fields.length === 0)), () => "eta_policy"),
+  setRule("added-eta-source-kind", ["domain_policies.eta_policy.source_kinds"], "added_eta_source_kind", "removed_eta_source_kind", false, true, undefined, noSubjTag),
+  setRule("relaxed-eta-provenance-fields", ["domain_policies.eta_policy.measured_provenance_required_fields"], "relaxed_eta_provenance_fields", "tightened_eta_provenance_fields", true, true, undefined, noSubjTag),
+  addedRule("added-risk-severity-band", ["domain_policies.risk_policy.severity_bands.*"], "added_risk_severity_band", "removed_risk_severity_band", true, (n) => hasOnlyKeys(n, BAND_KEYS), segAt(3)),
+  setRule("added-risk-category-or-response", ["domain_policies.risk_policy.{categories,responses}"], "added_risk_vocab", "removed_risk_vocab", false, true, undefined, (out, _c, c) => `${out === "additive" ? "added" : "removed"}_risk_${c.segments[2] === "categories" ? "category" : "response"}`),
+  {
+    id: "widened-risk-review-validity", patterns: ["domain_policies.risk_policy.max_review_validity_days_by_band.*"], additiveCode: "widened_risk_review_validity", breakingCode: "tightened_risk_review_validity", inBundle: true,
+    canWiden: (o, n, c) => (isFiniteNum(o) && isFiniteNum(n) && n > o) || (o === undefined && isFiniteNum(n) && !c.oldBandIds.has(c.segments[3]!) && c.newBandIds.has(c.segments[3]!)),
+    formatSubject: segAt(3),
+    formatTag: (out, code, c) => `${c.newParent?.[c.segments[3]!] === undefined ? "removed_risk_review_validity" : c.oldParent?.[c.segments[3]!] === undefined ? "added_risk_review_validity" : code}:${c.segments[3]!}`,
+  },
+  upperRule("widened-external-register-max-age", ["domain_policies.risk_policy.external_register_max_age_days"], "widened_external_register_max_age", "tightened_external_register_max_age", true, undefined, noSubjTag),
+  {
+    id: "lowered-risk-sensitivity-floor", patterns: ["domain_policies.risk_policy.sensitivity_impact_floors.*"], additiveCode: "lowered_risk_sensitivity_floor", breakingCode: "raised_risk_sensitivity_floor", inBundle: true,
+    canWiden: (o, n) => (isFiniteNum(o) && isFiniteNum(n) && n < o) || (isFiniteNum(o) && n === undefined),
+    formatSubject: segAt(3),
+    formatTag: (out, code, c) => `${out === "additive" && c.newParent?.[c.segments[3]!] === undefined ? "removed_risk_sensitivity_floor" : out === "breaking" && c.oldParent?.[c.segments[3]!] === undefined ? "added_risk_sensitivity_floor" : code}:${c.segments[3]!}`,
+  },
+  setRule("relaxed-forbidden-risk-actor", ["domain_policies.risk_policy.forbid_actor_classes_by_response.*"], "relaxed_forbidden_risk_actor", "tightened_forbidden_risk_actor", true, true, segAt(3)),
+  addedRule("added-domain-invariant", ["domain_policies.invariants.*"], "added_domain_invariant", "removed_domain_invariant", true, (n) => hasOnlyKeys(n, INVARIANT_KEYS) && n.severity === "warning", segAt(2), (out, code, c) => `${out === "breaking" && isRecord(c.newParent) && Object.hasOwn(c.newParent, c.segments[2]!) ? "added_error_domain_invariant" : code}:${c.segments[2]!}`),
+  { id: "relaxed-domain-invariant-severity", patterns: ["domain_policies.invariants.*.severity"], additiveCode: "relaxed_domain_invariant_severity", breakingCode: "tightened_domain_invariant_severity", inBundle: true, canWiden: (o, n) => o === "error" && n === "warning", formatSubject: segAt(2) },
+  addedRule("added-file-projection", ["file_projections.*"], "added_file_projection", "removed_file_projection", true, isValidNormProjection, segAt(1)),
+  {
+    id: "added-projection-vocab", patterns: ["file_projections.*.event_journal.{aggregates,event_types}", "file_projections.*.state_snapshot.{include_collections,report_sections,status_vocabulary,stage_vocabulary,remaining_work_realizations}", "file_projections.*.{include_node_types,projected_fields}"],
+    additiveCode: "added_projection_vocab", breakingCode: "removed_projection_vocab", inBundle: true,
+    canWiden: (o, n, c) => { const op = (c.oldDoc.file_projections as Record<string, Record<string, unknown>> | undefined)?.[c.segments[1]!], np = (c.newDoc.file_projections as Record<string, Record<string, unknown>> | undefined)?.[c.segments[1]!]; return Boolean(op && np && op.kind === np.kind && isSetSuperset(o, n)); },
+    formatSubject: segAt(1), formatTag: (out, _code, c) => `${out === "additive" ? "added" : "removed"}_projection_${c.segments.at(-1)!}:${c.segments[1]!}`,
+  },
 ];
