@@ -4015,6 +4015,478 @@ describe("metamodel versioning and composition (Lot 0.3)", () => {
         expect(composer.reads.gets).toBe(0);
         expect(targetDoc.reads.gets).toBe(0);
       });
+
+      type Boundary = { readonly label: string; readonly mutate: Mutation; readonly code: MetamodelDiagnosticCode; readonly path: string; readonly options?: CandidateOptions };
+      const boundary = (label: string, mutate: Mutation, code: MetamodelDiagnosticCode, path: string, options?: CandidateOptions): Boundary => ({ label, mutate, code, path, options });
+      const CARDINALITY = "MM_REL_INVALID_CARDINALITY";
+      const childOfIn = "relation_types.child_of.cardinality.in";
+      const cardinalityByBundle: CandidateOptions = { bundleIssue: { code: CARDINALITY, path: `new.${childOfIn}` } };
+      const band = "domain_policies.risk_policy.severity_bands[0]";
+      const hardeningEdge = "hardening.status_transitions[0]";
+      const BOUNDARIES: readonly Boundary[] = [
+        boundary("an empty parent_modes list", (d) => setAt(d, "domain_policies.nesting_matrix[0].parent_modes", []), DOMAIN, "domain_policies.nesting_matrix[0].parent_modes"),
+        boundary("an empty risk scale", (d) => setAt(d, "domain_policies.risk_policy.impact_scale", []), DOMAIN, "domain_policies.risk_policy.impact_scale"),
+        boundary("a blank key in a keyed array", (d) => setAt(d, "domain_policies.levels[0].id", "  "), DOMAIN, "domain_policies.levels[0].id"),
+        boundary("a blank import alias", (d) => setAt(d, "composed_lineage_pins[0].importAlias", ""), "MM_COMPOSE_UNKNOWN_EXTERNAL_TYPE", "composed_lineage_pins[0].importAlias"),
+        boundary("a blank string inside a string list", (d) => setAt(d, "node_types.WorkItem.aliases", ["work-item", " "]), NODE, "node_types.WorkItem.aliases"),
+        boundary("a duplicated hardening status", (d) => setAt(d, "hardening.statuses", ["draft", "reviewed", "enforced", "draft"]), STATE, "hardening.statuses"),
+        boundary("a cardinality maximum that is a word other than many", (d) => setAt(d, `${childOfIn}.max`, "plenty"), CARDINALITY, childOfIn, cardinalityByBundle),
+        boundary("two malformed bounds of one cardinality, once", (d) => setAt(d, childOfIn, { min: "0", max: null }), CARDINALITY, childOfIn, cardinalityByBundle),
+        boundary("two malformed scores of one severity band, once", (d) => Object.assign(getAt(d, band) as object, { min_score: "1", max_score: null }), DOMAIN, band),
+        boundary("an empty endpoint list on a hardening transition", (d) => setAt(d, `${hardeningEdge}.from_statuses`, []), STATE, hardeningEdge),
+        boundary("a null endpoint that used to fall back on its alias", (d) => Object.assign(getAt(d, hardeningEdge) as object, { from_statuses: null, from: ["draft"] }), STATE, hardeningEdge),
+        boundary("a keyed-array entry without its required number", (d) => delAt(d, "domain_policies.timeboxes[0].hard_ceiling_days"), DOMAIN, "domain_policies.timeboxes[0].hard_ceiling_days"),
+      ];
+      it.each(BOUNDARIES)("refuses $label", ({ mutate, code, path, options }) => {
+        expectCandidateRefused(baseOf("track"), mutate, { code, path }, options);
+      });
+
+      it("names the document in a root-level refusal (template, parent, candidate) and reads a registered document given as text", () => {
+        const base = baseOf("track");
+        const cand = { ...structuredClone(base.doc), version: "1.0.1", parent_pin: base.pin };
+        const withParent = (document: unknown) => base.reg.map((record) => (record.templateId === base.doc.id ? { ...record, document: document as MetamodelTemplateDocument } : record));
+        expectSemVerRefusal(42, { registry: base.reg }, UNPROJECTABLE, "template");
+        for (const notADocument of [42, null, [], new Date(0)]) expectSemVerRefusal(cand, { registry: withParent(notADocument) }, UNPROJECTABLE, "parent");
+        expect(diffSemVerDocuments(42, cand).refusals?.map(codePath)).toEqual([{ code: UNPROJECTABLE, path: "parent" }]);
+        expect(diffSemVerDocuments(cand, 42).refusals?.map(codePath)).toEqual([{ code: UNPROJECTABLE, path: "candidate" }]);
+        expect(diffSemVerDocuments(null, undefined).refusals?.map(codePath)).toEqual([{ code: UNPROJECTABLE, path: "parent" }, { code: UNPROJECTABLE, path: "candidate" }]);
+        expect(evaluateSemVerGate(cand, { registry: withParent(JSON.stringify(base.doc)) })).toMatchObject({ status: "accepted", changeClass: "patch", diff: EMPTY_DIFF });
+        expectSemVerRefusal(cand, { registry: withParent("{ not json") }, "MM_SYNTAX_PARSE_ERROR", "parent");
+      });
+
+      it("interprets a member only where the metamodel gives it that meaning: sets, tuples, per-kind defaults", () => {
+        const base = baseOf("track");
+        const diffAfter = (mutate: Mutation, from: MetamodelTemplateDocument = base.doc) => {
+          const cand = structuredClone(from);
+          mutate(cand);
+          const diff = diffSemVerDocuments(asRaw(from), asRaw(cand));
+          return { breaking: diff.breaking, additive: diff.additive, refusals: diff.refusals };
+        };
+        const unchanged = { breaking: [], additive: [], refusals: undefined };
+        const breaking = (tag: string) => ({ breaking: [tag], additive: [], refusals: undefined });
+        // A set: neither order nor repetition is a change.
+        expect(diffAfter((d) => setAt(d, "domain_policies.levels[0].modes", ["run", "build", "run"]))).toEqual(unchanged);
+        expect(diffAfter((d) => setAt(d, "node_types.WorkItem.attributes.subkind.values", ["spike", "quick-task", "standard"]))).toEqual(unchanged);
+        // A default: stating it is no change.
+        expect(diffAfter((d) => setAt(d, "node_types.WorkItem.attributes.subkind.required", false))).toEqual(unchanged);
+        expect(diffAfter((d) => setAt(d, "relation_types.child_of.requires_evidence", false))).toEqual(unchanged);
+        expect(diffAfter((d) => setAt(d, "node_types.WorkItem.attributes.subkind.minLength", 0))).toEqual(breaking("narrowed_attr_length:WorkItem.subkind"));
+        // A tuple: its order is its meaning.
+        expect(diffAfter((d) => setAt(d, `${SLICE}.event_journal.envelope_contract.frame_fields`, ["prevHash", "seq", "contentHash"]))).toEqual(breaking("changed_file_projection_unmodeled"));
+        // `values` is a set on an enum only, `minItems` defaults to 0 on a collection only.
+        const stringWithValues = structuredClone(base.doc);
+        setAt(stringWithValues, "node_types.WorkItem.attributes.title.values", ["a", "b"]);
+        expect(diffAfter((d) => setAt(d, "node_types.WorkItem.attributes.title.values", ["b", "a"]), stringWithValues)).toEqual(breaking("narrowed_attr_enum:WorkItem.title"));
+        expect(diffAfter((d) => setAt(d, "node_types.WorkItem.attributes.title.minItems", 0))).toEqual(breaking("narrowed_attr_items:WorkItem.title"));
+        // A container the parent lacks entirely is walked like any other, prototype-named members included.
+        const { domain_policies: _domainPolicies, ...withoutPolicies } = base.doc;
+        const gates = { constructor: { applies_to_levels: ["task"], authority: "own-act-human" } };
+        expect(diffAfter((d) => { asRaw(d).domain_policies = { acceptance_gates: gates }; }, withoutPolicies as MetamodelTemplateDocument))
+          .toEqual({ breaking: [], additive: ["added_domain_acceptance_gates:constructor"], refusals: undefined });
+        // An admission override equal to the policy mode is no override: the compared policy does not carry it.
+        const redundantOverride = structuredClone(base.doc);
+        setAt(redundantOverride, "node_types.WorkItem.admission_policy.by_rank", { "2": "mandate-gated", "3": "promotion-third-party-review" });
+        const withoutPolicy = structuredClone(base.doc);
+        delAt(withoutPolicy, "node_types.WorkItem.admission_policy");
+        expect(classifyV1Compatibility(asRaw(redundantOverride), asRaw(withoutPolicy)).deltas.map((delta) => [delta.code, delta.before])).toEqual([
+          ["removed_admission_policy", { mode: "promotion-third-party-review", third_party_distinct_from_author: true, by_rank: { "2": "mandate-gated" }, by_operation: {}, by_transition: {} }],
+        ]);
+      });
+
+      it("compares every member of a transition except the two it reads as endpoints", () => {
+        const base = baseOf("track");
+        const diffAfter = (mutate: Mutation) => {
+          const cand = structuredClone(base.doc);
+          mutate(cand);
+          const diff = diffSemVerDocuments(asRaw(base.doc), asRaw(cand));
+          return { breaking: diff.breaking, additive: diff.additive, refusals: diff.refusals };
+        };
+        const edge = "hardening.status_transitions[0]";
+        // A state machine reads `from` / `to`: `from_statuses` there is a member the gate does not model.
+        expect(diffAfter((d) => setAt(d, "node_types.RiskEntry.state_machine.transitions[0].from_statuses", ["identified"])))
+          .toEqual({ breaking: ["changed_state_machine:RiskEntry"], additive: [], refusals: undefined });
+        // Hardening reads `from_statuses`, and the bare `from` when that one is absent: one edge, two spellings.
+        expect(diffAfter((d) => { delAt(d, `${edge}.from_statuses`); setAt(d, `${edge}.from`, "draft"); }))
+          .toEqual({ breaking: [], additive: [], refusals: undefined });
+        // Stated next to `from_statuses`, the bare `from` names no endpoint: it is compared like any other member.
+        expect(diffAfter((d) => setAt(d, `${edge}.from`, ["enforced"])))
+          .toEqual({ breaking: ["changed_hardening_unmodeled:status_transitions.draft->reviewed.from"], additive: [], refusals: undefined });
+      });
+
+      it("refuses a document it cannot read or that nests beyond its bound instead of throwing", () => {
+        const base = baseOf("track");
+        const cand = { ...structuredClone(base.doc), version: "1.0.1", parent_pin: base.pin };
+        const withParent = (document: unknown) => base.reg.map((record) => (record.templateId === base.doc.id ? { ...record, document: document as MetamodelTemplateDocument } : record));
+        const outcome = (result: { readonly status: string; readonly diagnostics: readonly { readonly code: string; readonly path: string }[] }) =>
+          ({ status: result.status, diagnostics: result.diagnostics.map(codePath) });
+        const refusedAt = (path: string) => ({ status: "refused-metamodel-invalid", diagnostics: [{ code: UNPROJECTABLE, path }] });
+        const nested = (levels: number): unknown => {
+          let value: unknown = "leaf";
+          for (let level = 0; level < levels; level += 1) value = { n: value };
+          return value;
+        };
+        // Objects whose reads run caller code, and nesting that exhausts the stack of any recursive reader.
+        const unreadable: ReadonlyArray<readonly [string, () => unknown]> = [
+          ["a proxy whose trap throws", () => new Proxy(structuredClone(base.doc), { ownKeys: throwing })],
+          ["a revoked proxy", () => { const { proxy, revoke } = Proxy.revocable(structuredClone(base.doc), {}); revoke(); return proxy; }],
+          ["100 000 nested objects", () => ({ ...structuredClone(base.doc), presentation: nested(100_000) })],
+        ];
+        for (const [label, make] of unreadable) {
+          expect(outcome(evaluateSemVerGate(make(), { registry: base.reg })), label).toEqual(refusedAt("template"));
+          expect(outcome(evaluateSemVerGate(cand, { registry: withParent(make()) })), label).toEqual(refusedAt("parent"));
+          expect(diffSemVerDocuments(make(), cand).refusals?.map(codePath), label).toEqual([{ code: UNPROJECTABLE, path: "parent" }]);
+          expect(classifyV1Compatibility(cand, make()).refusals.map(codePath), label).toEqual([{ code: UNPROJECTABLE, path: "candidate" }]);
+          expect(outcome(validateCrossLineageComposition(make())), label).toEqual(refusedAt("template"));
+        }
+        // The bound: 256 levels below the root are read (here a presentation-only change), a 257th is refused where it starts.
+        const atBound = { ...cand, presentation: nested(256) };
+        expect(evaluateSemVerGate(atBound, { registry: base.reg })).toMatchObject({ status: "accepted", changeClass: "patch", diff: { ...EMPTY_DIFF, docOnly: ["changed_presentation"] } });
+        const beyond = `presentation${".n".repeat(256)}`;
+        const tooDeep = { ...cand, presentation: nested(257) };
+        expect(outcome(evaluateSemVerGate(tooDeep, { registry: base.reg }))).toEqual(refusedAt(beyond));
+        expect(outcome(evaluateSemVerGate(cand, { registry: withParent({ ...base.doc, presentation: nested(257) }) }))).toEqual(refusedAt(beyond));
+        expect(diffSemVerDocuments(asRaw(base.doc), tooDeep).refusals?.map(codePath)).toEqual([{ code: UNPROJECTABLE, path: beyond }]);
+        expect(outcome(validateCrossLineageComposition(tooDeep))).toEqual(refusedAt(beyond));
+      });
+
+      it("exports no function that takes a raw document besides its entries: the Lot 0.2 helpers are imported, never re-exported", async () => {
+        const functionsOf = (module: Record<string, unknown>) => Object.keys(module).filter((name) => typeof module[name] === "function").sort();
+        const gate = await import("../src/metamodel/semver-gate.js");
+        // `checkDocument` and `classifyProjectedDocuments` take branded documents only (the compile-time proof above),
+        // `unfailing` takes none; the five others are entries. Lot 0.2's `validateVersionProgression` and
+        // `diffMetamodelDocuments` throw on the round-4 M-1 parent: exported from here, either would be a way around.
+        expect(functionsOf(gate)).toEqual(["admitContext", "checkDocument", "classifyProjectedDocuments", "classifyV1Compatibility", "diffSemVerDocuments", "evaluateSemVerGate", "projectDocument", "unfailing"]);
+        expect(functionsOf(await import("../src/metamodel/composition.js"))).toEqual(["validateCrossLineageComposition"]);
+        // The two entry steps the composition check shares are total on their own. A record's document stays opaque
+        // to `admitContext`: only `projectDocument` reads one.
+        const base = baseOf("track");
+        const steps = (raw: unknown) => {
+          const sink: Parameters<typeof gate.projectDocument>[1] = { diagnostics: [], lineage: null, subject: "template" };
+          const projected = gate.projectDocument(raw, sink);
+          const admitted = gate.admitContext({ registry: [{ ...base.reg[3], document: raw }] }, sink);
+          const policies = projected === null ? null : Object.keys(projected.domain_policies as object);
+          return { statesEtaPolicy: policies?.includes("eta_policy") ?? null, admitted: admitted?.documents[0] === raw, refusals: sink.diagnostics.map(codePath) };
+        };
+        expect(steps(base.doc)).toEqual({ statesEtaPolicy: true, admitted: true, refusals: [] });
+        const undefinedInside = structuredClone(base.doc);
+        setAt(undefinedInside, "domain_policies.eta_policy", undefined);
+        expect(steps(undefinedInside)).toEqual({ statesEtaPolicy: false, admitted: true, refusals: [] });
+        const poisoned = structuredClone(base.doc);
+        setAt(poisoned, "domain_policies.eta_policy", BigInt(1));
+        expect(steps(poisoned)).toEqual({ statesEtaPolicy: null, admitted: true, refusals: [{ code: UNPROJECTABLE, path: "domain_policies.eta_policy" }] });
+        expect(steps(new Proxy({}, { ownKeys: throwing }))).toEqual({ statesEtaPolicy: null, admitted: true, refusals: [{ code: UNPROJECTABLE, path: "template" }] });
+      });
+
+      it("refuses a parent and a candidate malformed at the same site in one refusal, instead of taking the second for checked", () => {
+        const refusalsOf = (parent: unknown, cand: unknown) => [diffSemVerDocuments(parent, cand).refusals?.map(codePath), classifyV1Compatibility(parent, cand).refusals.map(codePath)];
+        // The second document repeated the refusal of the first, passed for checked, and its key was read: a throw.
+        const nullPin = { composed_lineage_pins: [null] };
+        const pinRefusal = [{ code: "MM_COMPOSE_UNKNOWN_EXTERNAL_TYPE", path: "composed_lineage_pins[0]" }];
+        expect(refusalsOf(nullPin, structuredClone(nullPin))).toEqual([pinRefusal, pinRefusal]);
+        const emptyRule = { domain_policies: { nesting_matrix: [{}] } };
+        const ruleRefusals = ["parent_level", "allowed_child_levels"].map((member) => ({ code: DOMAIN, path: `domain_policies.nesting_matrix[0].${member}` }));
+        expect(refusalsOf(emptyRule, structuredClone(emptyRule))).toEqual([ruleRefusals, ruleRefusals]);
+        // Unreadable at the same path on both sides: one refusal as well.
+        const poisoned = () => {
+          const doc = structuredClone(baseOf("track").doc);
+          setAt(doc, "domain_policies.eta_policy", BigInt(1));
+          return doc;
+        };
+        const poisonRefusal = [{ code: UNPROJECTABLE, path: "domain_policies.eta_policy" }];
+        expect(refusalsOf(poisoned(), poisoned())).toEqual([poisonRefusal, poisonRefusal]);
+        // The registered twin and the candidate, through the gate.
+        const twin = { metamodel_version: "engram.metamodel/v1", lineage: "track", id: "sentropic.r5-twin", version: "1.0.0", node_types: { Item: { definition: "x" } }, composed_lineage_pins: [null] };
+        const record = { lineage: "track", templateId: twin.id, templateVersion: "1.0.0", templateDigestSha256: independentTemplateSha256(twin as unknown as MetamodelTemplateDocument), document: twin };
+        expectSemVerRefusal(structuredClone(twin), { registry: [record] } as unknown as MetamodelValidationContext, "MM_COMPOSE_UNKNOWN_EXTERNAL_TYPE", "composed_lineage_pins[0]");
+        // A vocabulary the rules read whatever the kind of a projection is typed whatever the kind: on both sides, once.
+        const anyKind = (value: unknown) => ({ file_projections: { view: { kind: "future-kind", include_node_types: value } } });
+        const vocabularyRefusal = [{ code: OVERLAY, path: "file_projections.view.include_node_types" }];
+        expect(refusalsOf(anyKind(5), anyKind(6))).toEqual([vocabularyRefusal, vocabularyRefusal]);
+        expectCandidateRefused(baseOf("track"), (d) => { asRaw(d.file_projections).future = { kind: "future-kind", state_snapshot: { stage_vocabulary: "draft" } }; }, { code: OVERLAY, path: "file_projections.future.state_snapshot.stage_vocabulary" });
+        expectCandidateRefused(baseOf("track"), (d) => setAt(d, `${SLICE}.projected_fields`, "title"), { code: D29, path: `${SLICE}.projected_fields` });
+        const overlay = "file_projections.overlay_view";
+        for (const [member, vocabulary] of [["event_journal", "aggregates"], ["state_snapshot", "stage_vocabulary"]] as const) {
+          expectCandidateRefused(baseOf("h2a"), (d) => setAt(d, `${overlay}.${member}`, { [vocabulary]: "one" }), { code: OVERLAY, path: `${overlay}.${member}.${vocabulary}` });
+          for (const kind of JSON_KINDS.filter((other) => other !== "object")) {
+            expectCandidateRefused(baseOf("h2a"), (d) => setAt(d, `${overlay}.${member}`, OF_KIND[kind]), { code: OVERLAY, path: `${overlay}.${member}` });
+          }
+        }
+      });
+
+      it("refuses what it cannot compare within its bounds: a pin member of another type, a parent version it cannot order, a document too large", () => {
+        const base = baseOf("track");
+        const cand = { ...structuredClone(base.doc), version: "1.0.1", parent_pin: base.pin };
+        const withParent = (document: unknown) => base.reg.map((record) => (record.templateId === base.doc.id ? { ...record, document: document as MetamodelTemplateDocument } : record));
+        const outcome = (result: { readonly status: string; readonly diagnostics: readonly { readonly code: string; readonly path: string }[] }) =>
+          ({ status: result.status, diagnostics: result.diagnostics.map(codePath) });
+        const refusedAt = (path: string) => ({ status: "refused-metamodel-invalid", diagnostics: [{ code: UNPROJECTABLE, path }] });
+        // A member of a pin: refused on the pin, once, by the pair APIs as by the gate (Lot 0.2 reports the same site).
+        const pinRefusal: Refusal = { code: "MM_VERSION_PARENT_PIN_MISSING_OR_MISMATCH", path: "parent_pin" };
+        for (const member of ["id", "version", "contentDigest"]) {
+          for (const kind of JSON_KINDS.filter((other) => other !== "string")) {
+            const mistyped = { ...cand, parent_pin: { ...base.pin, [member]: OF_KIND[kind] } };
+            expect(diffSemVerDocuments(asRaw(base.doc), mistyped).refusals?.map(codePath), `${member} <- ${kind}`).toEqual([pinRefusal]);
+          }
+        }
+        expectSemVerRefusal({ ...cand, parent_pin: { ...base.pin, id: 5 } }, { registry: base.reg }, pinRefusal.code, pinRefusal.path);
+        const numericDigest = { ...cand, mapping_pin: { id: "map", version: "1.0.0", contentDigest: 7 } };
+        expect(diffSemVerDocuments(asRaw(base.doc), numericDigest).refusals?.map(codePath)).toEqual([{ code: "MM_VERSION_UNMAPPED_BREAKING_RENAME", path: "mapping_pin" }]);
+        // A pinned parent registered under a version that is not exact SemVer cannot be ordered: refused, not passed uncompared.
+        const looseVersion = base.reg.map((record) => (record.templateId === base.doc.id ? { ...record, templateVersion: "1.0" } : record));
+        expectSemVerRefusal({ ...cand, parent_pin: { ...base.pin, version: "1.0" } }, { registry: looseVersion }, pinRefusal.code, pinRefusal.path);
+        // A digest-only parent cannot be compared: the renames the caller declares still need their mapping.
+        const digestOnly = base.reg.map(({ document: _document, ...record }) => record);
+        expectSemVerRefusal({ ...cand, version: "2.0.0" }, { registry: digestOnly, declaredRenames: [{ from: "node_types.Old", to: "node_types.New" }] }, "MM_VERSION_UNMAPPED_BREAKING_RENAME", "mapping_pin");
+        // Envelope members a presentation rule matches are typed like the others: a string is no change, another type is refused.
+        expect(diffSemVerDocuments(asRaw(base.doc), { ...cand, sourcePath: "profiles/track.yaml", profile_hash: "0".repeat(64) })).toEqual(EMPTY_DIFF);
+        for (const [member, code] of [["sourcePath", UNPROJECTABLE], ["profile_hash", "MM_DIGEST_MISMATCH"]] as const) {
+          for (const kind of JSON_KINDS.filter((other) => other !== "string")) {
+            expect(diffSemVerDocuments(asRaw(base.doc), { ...cand, [member]: OF_KIND[kind] }).refusals?.map(codePath), `${member} <- ${kind}`).toEqual([{ code, path: member }]);
+          }
+        }
+        // The size bound, counted here independently: 8 per value, plus the length of its path and of its string; all
+        // that a transition holds, once per edge it names.
+        const stated = (holder: Loose, ...names: readonly string[]) => Math.max(1, ...names.map((name) => (Array.isArray(holder[name]) ? (holder[name] as unknown[]).length : 1)));
+        const membersSize = (value: unknown, path: number, times: number): number => {
+          if (!isContainer(value)) return 0;
+          const each = Array.isArray(value) ? times : times * stated(value as Loose, "from", "from_statuses") * stated(value as Loose, "to", "to_statuses");
+          const members: (readonly [number, unknown])[] = Array.isArray(value) ? value.map((item, idx) => [String(idx).length + 2, item] as const) : Object.entries(value).map(([name, item]) => [name.length, item] as const);
+          return members.reduce((sum, [nameLength, item]) => sum + each * (8 + path + 1 + nameLength + (typeof item === "string" ? item.length : 0)) + membersSize(item, path + 1 + nameLength, each), 0);
+        };
+        const sizeOf = (doc: unknown): number => 8 + membersSize(doc, 0, 1);
+        const BOUND = 2 ** 23, TEXT = 2 ** 16;
+        /** The candidate padded with strings of at most `TEXT` characters, up to a size of exactly `BOUND + extra`. */
+        const padded = (extra: number) => {
+          const pad: string[] = [];
+          const doc = { ...cand, presentation: { pad } };
+          for (let room = Infinity; room > TEXT;) {
+            room = BOUND + extra - sizeOf({ ...doc, presentation: { pad: [...pad, ""] } });
+            pad.push("x".repeat(room > 2 * TEXT ? TEXT : room > TEXT ? Math.floor(room / 2) : room));
+          }
+          return doc;
+        };
+        const atBound = padded(0), beyondBound = padded(1);
+        expect([sizeOf(atBound), sizeOf(beyondBound)]).toEqual([BOUND, BOUND + 1]);
+        expect(evaluateSemVerGate(atBound, { registry: base.reg })).toMatchObject({ status: "accepted", changeClass: "patch", diff: { ...EMPTY_DIFF, docOnly: ["changed_presentation"] } });
+        expect(outcome(evaluateSemVerGate(beyondBound, { registry: base.reg }))).toEqual(refusedAt("template"));
+        expect(diffSemVerDocuments(asRaw(base.doc), beyondBound).refusals?.map(codePath)).toEqual([{ code: UNPROJECTABLE, path: "candidate" }]);
+        expect(outcome(validateCrossLineageComposition(beyondBound))).toEqual(refusedAt("template"));
+        // A value referenced two hundred times counts two hundred times: small in memory, large once serialised.
+        const copies = { copies: Array(200).fill("y".repeat(60_000)) };
+        expect(outcome(evaluateSemVerGate({ ...cand, presentation: copies }, { registry: base.reg }))).toEqual(refusedAt("template"));
+        expect(outcome(evaluateSemVerGate(cand, { registry: withParent({ ...base.doc, presentation: copies }) }))).toEqual(refusedAt("parent"));
+        // No string and no member name beyond 2^16 characters: Lot 0.2 matches a version against an expression that
+        // exhausts its stack on a few million of them.
+        const text = (length: number) => "v".repeat(length);
+        expect(evaluateSemVerGate({ ...cand, presentation: { [text(TEXT)]: text(TEXT) } }, { registry: base.reg })).toMatchObject({ status: "accepted", changeClass: "patch" });
+        expect(outcome(evaluateSemVerGate({ ...cand, presentation: { note: text(TEXT + 1) } }, { registry: base.reg }))).toEqual(refusedAt("template"));
+        expect(outcome(evaluateSemVerGate({ ...cand, presentation: { [text(TEXT + 1)]: 1 } }, { registry: base.reg }))).toEqual(refusedAt("template"));
+        const longVersion = `1.0.0-${"a.".repeat(40_000)}a`;
+        expect(outcome(evaluateSemVerGate({ ...cand, version: longVersion }, { registry: base.reg }))).toEqual(refusedAt("template"));
+        expect(outcome(validateCrossLineageComposition({ ...cand, version: longVersion }, { registry: base.reg }))).toEqual(refusedAt("template"));
+        const longRecord = base.reg.map((record) => (record.templateId === base.doc.id ? { ...record, templateVersion: longVersion } : record));
+        expect(outcome(evaluateSemVerGate(cand, { registry: longRecord }))).toEqual(refusedAt("context.registry[3]"));
+        // A path is written with every value below it: one long name over many members is many long paths.
+        const manyPaths = { ...cand, presentation: { ["n".repeat(4000)]: Object.fromEntries(Array.from({ length: 2500 }, (_, index) => [`k${index}`, index])) } };
+        expect(outcome(evaluateSemVerGate(manyPaths, { registry: base.reg }))).toEqual(refusedAt("template"));
+        // All that a transition holds is compared once per edge: a hundred states to a hundred states is ten thousand edges.
+        const states = (prefix: string) => Array.from({ length: 100 }, (_, index) => `${prefix}${index}`);
+        const fanOut = structuredClone(cand);
+        (getAt(fanOut, "node_types.RiskEntry.state_machine.transitions") as unknown[]).push({ from: states("a"), to: states("b"), requires: ["evidence"] });
+        expect(outcome(evaluateSemVerGate(fanOut, { registry: base.reg }))).toEqual(refusedAt("template"));
+        expect(diffSemVerDocuments(fanOut, fanOut).refusals?.map(codePath)).toEqual([{ code: UNPROJECTABLE, path: "parent" }, { code: UNPROJECTABLE, path: "candidate" }]);
+      });
+
+      it("turns a failure inside a reused Lot 0.2 helper into a refusal of the document, never an exception of the gate", async () => {
+        const { vi } = await import("vitest");
+        const base = baseOf("track");
+        const cand = { ...structuredClone(base.doc), version: "1.0.1", parent_pin: base.pin };
+        const failing = (): never => { throw new RangeError("Maximum call stack size exceeded"); };
+        vi.resetModules();
+        vi.doMock("../src/metamodel/validate-syntax.js", async (original) => ({ ...(await original<Record<string, unknown>>()), validateIdentity: failing }));
+        vi.doMock("../src/metamodel/validate-versioning.js", async (original) => ({ ...(await original<Record<string, unknown>>()), diffMetamodelDocuments: failing }));
+        try {
+          const gate = await import("../src/metamodel/semver-gate.js");
+          const composition = await import("../src/metamodel/composition.js");
+          const failure = { code: UNPROJECTABLE, path: "template" };
+          const refused = { status: "refused-metamodel-invalid", diagnostics: [failure] };
+          const gated = gate.evaluateSemVerGate(structuredClone(cand), { registry: base.reg });
+          expect({ status: gated.status, diagnostics: gated.diagnostics.map(codePath) }).toEqual(refused);
+          const composedUnderFailure = composition.validateCrossLineageComposition(structuredClone(cand), { registry: base.reg });
+          expect({ status: composedUnderFailure.status, diagnostics: composedUnderFailure.diagnostics.map(codePath) }).toEqual(refused);
+          expect(gate.diffSemVerDocuments(asRaw(base.doc), cand).refusals?.map(codePath)).toEqual([failure]);
+          const pair = gate.classifyV1Compatibility(asRaw(base.doc), cand);
+          expect({ refusals: pair.refusals.map(codePath), deltas: pair.deltas }).toEqual({ refusals: [failure], deltas: [] });
+        } finally {
+          vi.doUnmock("../src/metamodel/validate-syntax.js");
+          vi.doUnmock("../src/metamodel/validate-versioning.js");
+          vi.resetModules();
+        }
+      });
+
+      it("composition reads a pin list of any length and bounds the registered targets it follows, instead of exhausting the stack", () => {
+        const { agile, target, candidate } = compositionFixture();
+        const link = (index: number) => ({ lineage: "engram" as const, templateId: `sentropic.link${index}`, templateVersion: "1.0.0", templateDigestSha256: `sha256:${"0".repeat(64)}` as Sha256Digest });
+        // The pins a registered target states are read one by one (300 000 spread into one call exhausted the stack),
+        // and a record is held to the bounds of the entry like a document: 20 000 pins are read, 300 000 are refused.
+        const manyPins = (count: number) => Array.from({ length: count }, (_, index) => ({ lineage: "engram", templateId: `sentropic.absent${index}`, templateVersion: "1.0.0" }));
+        expect(composed(candidate, [{ ...target, nodeTypeIds: ["WorkItem"], composedLineagePins: manyPins(20_000) }])).toEqual(composedOk);
+        expect(composed(candidate, [{ ...target, nodeTypeIds: ["WorkItem"], composedLineagePins: manyPins(300_000) }])).toEqual(composedRefused(UNPROJECTABLE, "context.registry[0]"));
+        // A chain of registered targets, each pinning the next. Lot 0.2 follows it recursively: the entry bounds it.
+        const chain = (length: number) => [
+          { ...target, nodeTypeIds: ["WorkItem"], composedLineagePins: [link(1)] },
+          ...Array.from({ length: length - 1 }, (_, index) => ({ ...link(index + 1), nodeTypeIds: ["Link"], composedLineagePins: index + 2 < length ? [link(index + 2)] : [] })),
+        ];
+        const beyondBound = composedRefused(UNPROJECTABLE, "context.registry[1024]");
+        expect(composed(candidate, chain(1024))).toEqual(composedOk);
+        expect(composed(candidate, chain(1025))).toEqual(beyondBound);
+        expect(composed(candidate, chain(12_000))).toEqual(beyondBound);
+        // A pin stated by a target's document must designate its target. Lot 0.2 follows such a pin with `undefined`
+        // read as a name: left in, it led past the bound through records registered under that name.
+        const namedUndefined = Array.from({ length: 12_000 }, (_, index) => ({
+          ...link(index), lineage: "undefined", templateId: index === 0 ? "undefined" : `n${index}`, templateVersion: "undefined", nodeTypeIds: ["Link"],
+          composedLineagePins: [{ lineage: "undefined", templateId: `n${index + 1}`, templateVersion: "undefined" }],
+        }));
+        const loosePin = "context.registry[0].document.composed_lineage_pins[0]";
+        expect(composed(candidate, [{ ...target, nodeTypeIds: ["WorkItem"], document: { ...agile, composed_lineage_pins: [{ importAlias: "loose" }] } }, ...namedUndefined])).toEqual({
+          status: "refused-metamodel-invalid",
+          diagnostics: [
+            { code: "MM_COMPOSE_TARGET_NOT_REGISTERED", path: `${loosePin}.lineage` },
+            { code: "MM_COMPOSE_TARGET_NOT_REGISTERED", path: `${loosePin}.templateId` },
+            { code: "MM_COMPOSE_FLOATING_VERSION", path: `${loosePin}.templateVersion` },
+          ],
+          externalEndpoints: null,
+        });
+      });
+
+      // ---- Minors of the entry review (m-1, m-2, m-3): one defect per vector, exact code and path ---------------------
+      it("entry review m-1: the bundle has the gate type-check the five members its projection strips, and one that is not a string is refused with its code", () => {
+        const base = sweepTrackBase();
+        const fn = "node_types.WorkItem.linking.normalize.fn";
+        /** The five members a v1 bundle leaves out of its document projection: the code of each, and a string the bundle takes there. */
+        const STRIPPED: ReadonlyArray<readonly [path: string, code: MetamodelDiagnosticCode, wellFormed: string | null]> = [
+          ["presentation_hash", "MM_DIGEST_MISMATCH", `sha256:${"0".repeat(64)}`],
+          ["profile_hash", "MM_DIGEST_MISMATCH", "0".repeat(64)],
+          ["sourcePath", UNPROJECTABLE, "profiles/track.yaml"],
+          ["registries.work_items.bound_source_path", "MM_NODE_INVALID_REGISTRY_REF", "data/work_items.csv"],
+          [fn, NODE, null],
+        ];
+        const clean = { ...structuredClone(base.doc), version: "1.1.0", parent_pin: base.pin };
+        const compatOf = (parent: unknown, cand: unknown) => {
+          const compat = checkProfileCompatibility(asProfile(parent), asProfile(cand));
+          return { ok: compat.ok, compatible: compat.compatible, breaking: compat.breaking, nonBreaking: compat.nonBreaking.map((change) => change.code), issues: compat.validationIssues.map(codePath) };
+        };
+        const versionBump = { ok: true, compatible: true, breaking: [], nonBreaking: ["bumped_profile_version"], issues: [] };
+        const refusedWith = (code: string, path: string) => ({ ok: false, compatible: false, breaking: [], nonBreaking: [], issues: [{ code, path }] });
+        expect(compatOf(base.doc, clean)).toEqual(versionBump);
+        const stated = structuredClone(clean);
+        for (const [path, code, wellFormed] of STRIPPED) {
+          // On the candidate: one refusal, the same from the gate, the diff, the pair API and the bundle.
+          expectCandidateRefused(base, (d) => setAt(d, path, 123), { code, path });
+          // On the parent, then on both sides at once: the bundle hands the gate each side as it was stated, and the
+          // one site is refused once.
+          const parent = structuredClone(base.doc), cand = structuredClone(clean);
+          setAt(parent, path, 123);
+          expect(compatOf(parent, clean), `parent ${path}`).toEqual(refusedWith(code, path));
+          setAt(cand, path, 123);
+          expect(compatOf(parent, cand), `both ${path}`).toEqual(refusedWith(code, path));
+          if (wellFormed === null) continue;
+          // A string there is no change: the member stays out of what the bundle compares.
+          setAt(cand, path, wellFormed);
+          expect(compatOf(base.doc, cand), `string ${path}`).toEqual(versionBump);
+          setAt(stated, path, wellFormed);
+        }
+        // `normalize.fn` is the one member the bundle supports in no form: a string is its own refusal, before the gate.
+        const withFn = structuredClone(clean);
+        setAt(withFn, fn, "slugify");
+        expect(compatOf(base.doc, withFn)).toEqual(refusedWith("unsupported_linking_fn", `new.${fn}`));
+        // Two bundles compare as before: a bundle holds none of the five members, whatever its document stated.
+        const bundleOf = (doc: unknown) => {
+          const built = bundleProfile(asProfile(doc));
+          if (!built.ok) throw new Error(`bundleProfile refused: ${JSON.stringify(built.errors)}`);
+          return built.bundle;
+        };
+        expect(compatOf(base.doc, stated)).toEqual(versionBump);
+        expect(compatOf(bundleOf(base.doc), bundleOf(stated))).toEqual(versionBump);
+      });
+
+      it("entry review m-2: the composition check type-checks every root field of its candidate but the pins, profile_hash and sourcePath included", async () => {
+        const { agile, target, candidate } = compositionFixture();
+        const registry = [{ ...target, document: agile }];
+        /** Every root field of the schema but `composed_lineage_pins`, with the code of its area: stated here, not read from the schema. */
+        const ROOT_CODES: ReadonlyArray<readonly [field: string, code: MetamodelDiagnosticCode]> = [
+          ["metamodel_version", "MM_IDENTITY_MISSING_REQUIRED"],
+          ["lineage", "MM_IDENTITY_MISSING_REQUIRED"],
+          ["id", "MM_IDENTITY_MISSING_REQUIRED"],
+          ["version", "MM_IDENTITY_MISSING_REQUIRED"],
+          ["default_language", "MM_IDENTITY_MISSING_REQUIRED"],
+          ["parent_pin", "MM_VERSION_PARENT_PIN_MISSING_OR_MISMATCH"],
+          ["mapping_pin", "MM_VERSION_UNMAPPED_BREAKING_RENAME"],
+          ["presentation", UNPROJECTABLE],
+          ["presentation_hash", "MM_DIGEST_MISMATCH"],
+          ["profile_hash", "MM_DIGEST_MISMATCH"],
+          ["sourcePath", UNPROJECTABLE],
+          ["registries", "MM_NODE_INVALID_REGISTRY_REF"],
+          ["node_types", "MM_NODE_EMPTY_SET"],
+          ["relation_types", "MM_REL_MISSING_ENDPOINTS"],
+          ["hardening", STATE],
+          ["domain_policies", DOMAIN],
+          ["file_projections", OVERLAY],
+        ];
+        // One field at a time, a number where the schema types a string or a container: refused once, at the field.
+        for (const [field, code] of ROOT_CODES) {
+          expect(composed({ ...structuredClone(candidate), [field]: 5 }, registry), field).toEqual(composedRefused(code, field));
+        }
+        // The two envelope members are strings: stated as such, the candidate is accepted and they are handed back.
+        const stated = { ...structuredClone(candidate), profile_hash: "0".repeat(64), sourcePath: "profiles/h2a.yaml" };
+        expect(composed(stated, registry)).toEqual(composedOk);
+        const accepted = validateCrossLineageComposition(stated, { registry });
+        const template = accepted.status === "accepted" ? asRaw(accepted.template) : {};
+        expect([template.profile_hash, template.sourcePath]).toEqual(["0".repeat(64), "profiles/h2a.yaml"]);
+        // The pins stay Lot 0.2's to type-check: its two refusals, where the schema would state one of its own.
+        expect(composed({ ...structuredClone(candidate), composed_lineage_pins: 5 }, registry).diagnostics).toEqual([
+          { code: "MM_COMPOSE_FLOATING_VERSION", path: "composed_lineage_pins" },
+          { code: "MM_COMPOSE_UNKNOWN_EXTERNAL_TYPE", path: "node_types.Skill.attributes.work.targetTypes[0]" },
+        ]);
+        // The schema's own list of root fields is these seventeen and the pins: a field added there has to be stated here.
+        const { ROOT_FIELDS } = await import("../src/metamodel/semver-gate.js");
+        expect([...ROOT_FIELDS].sort()).toEqual([...ROOT_CODES.map(([field]) => field), "composed_lineage_pins"].sort());
+      });
+
+      it("entry review m-3: a parent or mapping pin that leaves out one of its three members is refused on the pin by every entry: gate, pair APIs, bundle and composition", () => {
+        const base = baseOf("track");
+        const { agile, target, candidate } = compositionFixture();
+        const targets = [{ ...target, document: agile }];
+        const mappingPin = { id: "map", version: "1.0.0", contentDigest: "0".repeat(64) };
+        // Both pins complete: a PATCH with nothing to report, and nothing for the pair APIs to refuse.
+        const complete = { ...structuredClone(base.doc), version: "1.0.1", parent_pin: base.pin, mapping_pin: mappingPin };
+        expect(evaluateSemVerGate(freezeInput(structuredClone(complete)), { registry: base.reg })).toMatchObject({ status: "accepted", changeClass: "patch", diff: EMPTY_DIFF, diagnostics: [] });
+        expect(diffSemVerDocuments(asRaw(base.doc), asRaw(complete))).toEqual(EMPTY_DIFF);
+        expect(classifyV1Compatibility(asRaw(base.doc), asRaw(complete))).toEqual({ refusals: [], deltas: [] });
+        const PINS = [
+          ["parent_pin", base.pin, "MM_VERSION_PARENT_PIN_MISSING_OR_MISMATCH"],
+          ["mapping_pin", mappingPin, "MM_VERSION_UNMAPPED_BREAKING_RENAME"],
+        ] as const;
+        for (const [pin, whole, code] of PINS) {
+          const refusal: Refusal = { code, path: pin };
+          const without = (member: "id" | "version" | "contentDigest") => {
+            const { [member]: _omitted, ...incomplete } = whole;
+            return incomplete;
+          };
+          for (const member of ["id", "version", "contentDigest"] as const) {
+            // On the candidate: one refusal on the pin, the same from the gate, the diff, the pair API and the bundle.
+            expectCandidateRefused(base, (d) => setAt(d, pin, without(member)), refusal, { version: "1.0.1" });
+            // On the parent's side of a pair: the same refusal.
+            const parent = { ...structuredClone(base.doc), [pin]: without(member) };
+            expect(diffSemVerDocuments(asRaw(parent), asRaw(complete)).refusals?.map(codePath), `parent ${pin} without ${member}`).toEqual([refusal]);
+          }
+          // None of the three: still one refusal for the pin, not one per member.
+          expectCandidateRefused(base, (d) => setAt(d, pin, {}), refusal, { version: "1.0.1" });
+          // The composition check type-checks the same pins on its candidate: complete is accepted, incomplete refused.
+          expect(composed({ ...structuredClone(candidate), [pin]: whole }, targets), `composition ${pin}`).toEqual(composedOk);
+          expect(composed({ ...structuredClone(candidate), [pin]: without("contentDigest") }, targets), `composition ${pin}`).toEqual(composedRefused(code, pin));
+        }
+      });
     });
   });
 });
