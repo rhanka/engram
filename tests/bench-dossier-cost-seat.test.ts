@@ -1294,3 +1294,121 @@ describe("BD-4 tree-16: required row.id undefined, guard order, summary CAD fall
   });
 });
 
+describe("BD-4 tree-17: reverse-order multi-summary sticky flags and Summary-2 unknown distinctions", () => {
+  const summaryOneFull = {
+    type: "summary", mission_digest: "d1", ok: 1, failed: 0, calls_total: 5,
+    tokens: { input: 10, output: 20, reasoning: 0, cached: 4, total: 30 },
+    cost: { currency: "USD", api_equivalent: 1.5 },
+  };
+  const summaryTwoFull = {
+    type: "summary", mission_digest: "d2", ok: 1, failed: 0, calls_total: 5,
+    tokens: { input: 10, output: 20, reasoning: 0, cached: 4, total: 30 },
+    cost: { currency: "USD", api_equivalent: 1.5 },
+  };
+
+  it("keeps Summary-1 missing or unknown flags sticky across a populated Summary 2", () => {
+    expect(summarizeInvocationUsage([
+      { id: "a1" },
+      { type: "summary", ok: 1, failed: 0, calls_total: 5, tokens: summaryOneFull.tokens, cost: summaryOneFull.cost },
+      { id: "a2" }, summaryTwoFull,
+    ])).toEqual({
+      nonSummaryRows: 2, summaryRows: 2, summaryItemCount: 2, interrupted: false, costBasisItems: 2,
+      calls: 10, callsPerItem: 5, tokens: { input: 20, output: 40, reasoning: 0, cached: 8, total: 60 },
+      summaryApiTotal: 3, summaryCurrencies: ["USD"], missionDigests: ["d2"], hasMissingDigest: true,
+    });
+    expect(summarizeInvocationUsage([
+      { id: "a1" }, { ...summaryOneFull, calls_total: "unknown" }, { id: "a2" }, summaryTwoFull,
+    ])).toEqual({
+      nonSummaryRows: 2, summaryRows: 2, summaryItemCount: 2, interrupted: false, costBasisItems: 2,
+      calls: "unknown", callsPerItem: "unknown",
+      tokens: { input: 20, output: 40, reasoning: 0, cached: 8, total: 60 },
+      summaryApiTotal: 3, summaryCurrencies: ["USD"], missionDigests: ["d1", "d2"], hasMissingDigest: false,
+    });
+    expect(summarizeInvocationUsage([
+      { id: "a1" },
+      { type: "summary", mission_digest: "d1", ok: 1, failed: 0, tokens: summaryOneFull.tokens,
+        cost: summaryOneFull.cost },
+      { id: "a2" }, summaryTwoFull,
+    ])).toEqual({
+      nonSummaryRows: 2, summaryRows: 2, summaryItemCount: 2, interrupted: false, costBasisItems: 2,
+      calls: "unknown", callsPerItem: "unknown",
+      tokens: { input: 20, output: 40, reasoning: 0, cached: 8, total: 60 },
+      summaryApiTotal: 3, summaryCurrencies: ["USD"], missionDigests: ["d1", "d2"], hasMissingDigest: false,
+    });
+    expect(summarizeInvocationUsage([
+      { id: "a1" }, { ...summaryOneFull, tokens: "unknown" }, { id: "a2" }, summaryTwoFull,
+    ])).toEqual({
+      nonSummaryRows: 2, summaryRows: 2, summaryItemCount: 2, interrupted: false, costBasisItems: 2,
+      calls: 10, callsPerItem: 5, tokens: "unknown",
+      summaryApiTotal: 3, summaryCurrencies: ["USD"], missionDigests: ["d1", "d2"], hasMissingDigest: false,
+    });
+    expect(summarizeInvocationUsage([
+      { id: "a1" },
+      { type: "summary", mission_digest: "d1", ok: 1, failed: 0, calls_total: 5, cost: summaryOneFull.cost },
+      { id: "a2" }, summaryTwoFull,
+    ])).toEqual({
+      nonSummaryRows: 2, summaryRows: 2, summaryItemCount: 2, interrupted: false, costBasisItems: 2,
+      calls: 10, callsPerItem: 5, tokens: "unknown",
+      summaryApiTotal: 3, summaryCurrencies: ["USD"], missionDigests: ["d1", "d2"], hasMissingDigest: false,
+    });
+    expect(summarizeInvocationUsage([
+      { id: "a1" },
+      { ...summaryOneFull, tokens: { input: 10, output: 20, reasoning: 0, total: 30 } },
+      { id: "a2" }, summaryTwoFull,
+    ])).toEqual({
+      nonSummaryRows: 2, summaryRows: 2, summaryItemCount: 2, interrupted: false, costBasisItems: 2,
+      calls: 10, callsPerItem: 5, tokens: { input: 20, output: 40, reasoning: 0, cached: "unknown", total: 60 },
+      summaryApiTotal: 3, summaryCurrencies: ["USD"], missionDigests: ["d1", "d2"], hasMissingDigest: false,
+    });
+    expect(summarizeInvocationUsage([
+      { id: "a1" },
+      { ...summaryOneFull, tokens: { input: 10, output: 20, reasoning: 0, cached: "unknown", total: 30 } },
+      { id: "a2" }, summaryTwoFull,
+    ])).toEqual({
+      nonSummaryRows: 2, summaryRows: 2, summaryItemCount: 2, interrupted: false, costBasisItems: 2,
+      calls: 10, callsPerItem: 5, tokens: { input: 20, output: 40, reasoning: 0, cached: "unknown", total: 60 },
+      summaryApiTotal: 3, summaryCurrencies: ["USD"], missionDigests: ["d1", "d2"], hasMissingDigest: false,
+    });
+    expect(summarizeInvocationUsage([
+      { id: "a1" },
+      { ...summaryOneFull, cost: { currency: "USD", api_equivalent: "unknown" } },
+      { id: "a2" }, summaryTwoFull,
+    ])).toEqual({
+      nonSummaryRows: 2, summaryRows: 2, summaryItemCount: 2, interrupted: false, costBasisItems: 2,
+      calls: 10, callsPerItem: 5, tokens: { input: 20, output: 40, reasoning: 0, cached: 8, total: 60 },
+      summaryApiTotal: "unknown", summaryCurrencies: ["USD"],
+      missionDigests: ["d1", "d2"], hasMissingDigest: false,
+    });
+    expect(summarizeInvocationUsage([
+      { id: "a1" },
+      { type: "summary", mission_digest: "d1", ok: 1, failed: 0, calls_total: 5, tokens: summaryOneFull.tokens },
+      { id: "a2" }, summaryTwoFull,
+    ])).toEqual({
+      nonSummaryRows: 2, summaryRows: 2, summaryItemCount: 2, interrupted: false, costBasisItems: 2,
+      calls: 10, callsPerItem: 5, tokens: { input: 20, output: 40, reasoning: 0, cached: 8, total: 60 },
+      summaryApiTotal: "unknown", summaryCurrencies: ["USD"],
+      missionDigests: ["d1", "d2"], hasMissingDigest: false,
+    });
+  });
+
+  it("degrades Summary-2 explicit unknown cached and api_equivalent independently of omission", () => {
+    expect(summarizeInvocationUsage([
+      { id: "a1" }, summaryOneFull, { id: "a2" },
+      { ...summaryTwoFull, tokens: { input: 10, output: 20, reasoning: 0, cached: "unknown", total: 30 } },
+    ])).toEqual({
+      nonSummaryRows: 2, summaryRows: 2, summaryItemCount: 2, interrupted: false, costBasisItems: 2,
+      calls: 10, callsPerItem: 5, tokens: { input: 20, output: 40, reasoning: 0, cached: "unknown", total: 60 },
+      summaryApiTotal: 3, summaryCurrencies: ["USD"], missionDigests: ["d1", "d2"], hasMissingDigest: false,
+    });
+    expect(summarizeInvocationUsage([
+      { id: "a1" }, summaryOneFull, { id: "a2" },
+      { ...summaryTwoFull, cost: { currency: "USD", api_equivalent: "unknown" } },
+    ])).toEqual({
+      nonSummaryRows: 2, summaryRows: 2, summaryItemCount: 2, interrupted: false, costBasisItems: 2,
+      calls: 10, callsPerItem: 5, tokens: { input: 20, output: 40, reasoning: 0, cached: 8, total: 60 },
+      summaryApiTotal: "unknown", summaryCurrencies: ["USD"],
+      missionDigests: ["d1", "d2"], hasMissingDigest: false,
+    });
+  });
+});
+
