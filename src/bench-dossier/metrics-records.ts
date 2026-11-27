@@ -7,6 +7,7 @@ import { parseGoldenRecordUnit } from "./metrics-records-score.js";
 
 export * from "./metrics-records-align.js";
 export * from "./metrics-records-score.js";
+export * from "./metrics-records-import.js";
 export type { UnweightedScalarScore as UnweightedRecordScore,
   ScoreUnweightedScalarInput as ScoreUnweightedRecordInput };
 

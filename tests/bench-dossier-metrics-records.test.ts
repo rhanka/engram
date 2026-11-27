@@ -12,6 +12,7 @@ import {
   buildFallbackUsage, parseGoldenRecordUnit, projectImportedRecord,
 } from "../src/bench-dossier/metrics-records-score.js";
 import {
+  mapMetricsImportToBenchResults,
   scoreClusterSite, scoreUnweightedRecord,
 } from "../src/bench-dossier/metrics-records.js";
 import { BenchInvariantError, validateBenchResultsInvariants } from "../src/bench-dossier/invariants.js";
@@ -746,5 +747,33 @@ describe("BD-3 golden record parser, real converge shapes & majority gate", () =
       independentGroupSupport: { predictions: 2, positives: 2 },
     });
     expect(groupRes.indeterminate).toEqual({ precision: true, recall: true, f1: true });
+  });
+});
+
+describe("BD-3 metrics.json to BenchResultsFile lossless importer", () => {
+  it("imports minimal empty unweighted metrics.json losslessly with defaults & barrel export", () => {
+    expect(recordsBarrel.mapMetricsImportToBenchResults).toBe(mapMetricsImportToBenchResults);
+    const out = mapMetricsImportToBenchResults({
+      metrics: {
+        schemaId: "urn:engram:bench-metrics-import:1.0.0", campaignId: "c1", partition: "eval",
+        primaryEstimator: "unweighted", goldenSha256: "a".repeat(64), goldenMissionSha256: "b".repeat(64),
+        candidateMissionSha256: "c".repeat(64), fieldShapeVerified: true, goldenIds: 0, fields: ["o.city"],
+        annotatorCount: 2, krippendorffAlphaByField: { "o.city": null }, records: [],
+      },
+      arms: {},
+      generatedAt: "2026-11-26T12:00:00Z",
+    });
+    expect(out).toEqual({
+      schemaId: "urn:engram:bench-results:1.0.0", schemaVersion: 1, generatedAt: "2026-11-26T12:00:00Z",
+      campaignId: "c1",
+      corpus: {
+        partition: "eval", primaryEstimator: "unweighted", costBasisLabel: "extracted_packet", currency: "USD",
+        goldenMissionSha256: "b".repeat(64), candidateMissionSha256: "c".repeat(64), fieldShapeVerified: true,
+        goldenSha256: "a".repeat(64), goldenIds: 0, fields: ["o.city"], annotatorCount: 2,
+        krippendorffAlphaByField: { "o.city": null },
+      },
+      supportFloors: { recallMinPositives: 30, precisionMinPredictions: 30, failureCeiling: 0.05 },
+      records: [],
+    });
   });
 });

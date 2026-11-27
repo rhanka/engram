@@ -30,7 +30,7 @@ const WEIGHTED_SCHEMA: Validator<WeightedEstimateBlock> = objectSchema(
   { f1Interval: validateBenchInterval },
 );
 
-const COST_SCHEMA: Validator<BenchCostBlock> = objectSchema({
+export const COST_SCHEMA: Validator<BenchCostBlock> = objectSchema({
   currency: CURRENCY, costBasisItems: countInt, costUnknownReason: nullable(enumValue(COST_UNKNOWN_REASONS)),
   ...fieldsOf(["apiEquivalentTotal", "apiEquivalentPerItem", "seatSharePerItem", "seatCostPerItem"],
     unknownOr(nonNegativeNumber)),
