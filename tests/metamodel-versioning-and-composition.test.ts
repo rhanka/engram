@@ -1,6 +1,366 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
+import type {
+  MetamodelTemplateDocument,
+  RegisteredTemplateRecord,
+} from "../src/metamodel/types.js";
+import type { Sha256Digest } from "../src/metamodel-contracts.js";
+import { ARCHI_V1, ARCHI_V1_PIN } from "../src/ontology-guardian/archi-profile.js";
+import { bundleProfile, checkProfileCompatibility } from "../src/profile-bundle.js";
+import type { OntologyProfile } from "../src/types.js";
+
+/** Independent RFC 8785 JCS serializer (never imports production canonical/digest helpers). */
+function jcsStringify(value: unknown): string {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => (item === undefined ? "null" : jcsStringify(item))).join(",")}]`;
+  }
+  const obj = value as Record<string, unknown>;
+  const keys = Object.keys(obj)
+    .filter((key) => obj[key] !== undefined)
+    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  return `{${keys.map((key) => `${JSON.stringify(key)}:${jcsStringify(obj[key])}`).join(",")}}`;
+}
+
+function independentSemanticProjection(doc: unknown, path: string[] = []): unknown {
+  if (Array.isArray(doc)) {
+    return doc.map((item, idx) => independentSemanticProjection(item, [...path, String(idx)]));
+  }
+  if (doc !== null && typeof doc === "object") {
+    const out: Record<string, unknown> = {};
+    for (const key of Object.keys(doc as Record<string, unknown>).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))) {
+      if (path.length === 0 && (key === "sourcePath" || key === "profile_hash" || key === "presentation" || key === "presentation_hash")) {
+        continue;
+      }
+      if (path.length === 2 && path[0] === "node_types" && key === "visual_encoding") {
+        continue;
+      }
+      out[key] = independentSemanticProjection((doc as Record<string, unknown>)[key], [...path, key]);
+    }
+    return out;
+  }
+  return doc;
+}
+
+function independentTemplateSha256(doc: MetamodelTemplateDocument): Sha256Digest {
+  const bytes = jcsStringify(independentSemanticProjection(doc));
+  return `sha256:${createHash("sha256").update(bytes, "utf8").digest("hex")}`;
+}
+
+function independentPresentationSha256(doc: MetamodelTemplateDocument): Sha256Digest {
+  const nodeVisualEncoding = Object.fromEntries(
+    Object.entries(doc.node_types).map(([id, nt]) => [id, nt.visual_encoding ?? null]),
+  );
+  const bytes = jcsStringify({
+    node_visual_encoding: nodeVisualEncoding,
+    presentation: doc.presentation ?? null,
+  });
+  return `sha256:${createHash("sha256").update(bytes, "utf8").digest("hex")}`;
+}
+
+function stripSha256Prefix(digest: Sha256Digest): string {
+  return digest.slice("sha256:".length);
+}
+
+const ARCHI_V1_SHA256: Sha256Digest = `sha256:${ARCHI_V1_PIN.contentDigest}`;
+const ARCHI_V1_ENTITY_IDS = ARCHI_V1.declaration.entityTypes.map((entity) => entity.id);
+
+function makeTrackTemplate(): MetamodelTemplateDocument {
+  return {
+    metamodel_version: "engram.metamodel/v1",
+    lineage: "track",
+    id: "sentropic.agile-product",
+    version: "1.0.0",
+    default_language: "en",
+    composed_lineage_pins: [],
+    node_types: {
+      WorkItem: {
+        definition: "Trackable product work unit with orthogonal specification and realization state machines.",
+        id_prefix: "WI",
+        aliases: ["work-item"],
+        source_backed: true,
+        attributes: {
+          title: { kind: "string", required: true, minLength: 3, maxLength: 160 },
+          rank: { kind: "integer", required: true, min: 0, max: 3 },
+          subkind: { kind: "enum", values: ["standard", "quick-task", "spike"] },
+          archi_asset_ref: {
+            kind: "record",
+            description: "Inert architecture asset locator with zero compile-time cross-lineage coupling.",
+            attributes: {
+              profile: { kind: "enum", required: true, values: ["archi@1", "archi@2"] },
+              entity_id: { kind: "string", required: true, minLength: 1, maxLength: 120 },
+            },
+          },
+        },
+        state_machines: {
+          specification: {
+            states: ["request-recorded", "scoped", "specified", "withdrawn"],
+            initial_state: "request-recorded",
+            terminal_states: ["withdrawn"],
+            transitions: [
+              { from: ["request-recorded"], to: ["scoped"], authority: "author" },
+              { from: ["scoped"], to: ["specified"], authority: "track-control" },
+              { from: ["request-recorded", "scoped", "specified"], to: ["withdrawn"], authority: "mandated-act" },
+            ],
+          },
+          realization: {
+            states: ["to-do", "in-progress", "in-review", "verified", "acceptance-pending", "accepted", "closed"],
+            initial_state: "to-do",
+            terminal_states: ["closed"],
+            transitions: [
+              { from: ["to-do"], to: ["in-progress"], authority: "author" },
+              { from: ["in-progress"], to: ["in-review"], authority: "author" },
+              { from: ["in-review"], to: ["verified"], authority: "third-party-reviewer" },
+              { from: ["verified"], to: ["acceptance-pending"], authority: "track-control" },
+              { from: ["acceptance-pending"], to: ["accepted"], authority: "own-act-human" },
+              { from: ["accepted", "verified"], to: ["closed"], authority: "mandated-act" },
+            ],
+          },
+        },
+        visual_encoding: {
+          shape: "box",
+          fill: "solid",
+          border: "normal",
+          color_hex: "#2B6CB0",
+        },
+      },
+      RiskEntry: {
+        definition: "Project risk register entry.",
+        id_prefix: "RSK",
+        attributes: {
+          likelihood: { kind: "integer", required: true, min: 1, max: 5 },
+          impact: { kind: "integer", required: true, min: 1, max: 5 },
+        },
+        state_machine: {
+          states: ["identified", "active", "mitigated", "closed"],
+          initial_state: "identified",
+          terminal_states: ["closed"],
+          transitions: [
+            { from: ["identified"], to: ["active"], authority: "author" },
+            { from: ["active"], to: ["mitigated"], authority: "track-control" },
+            { from: ["mitigated", "active"], to: ["closed"], authority: "mandated-act" },
+          ],
+        },
+      },
+    },
+    relation_types: {
+      child_of: {
+        description: "Hierarchical parent-child containment.",
+        source_types: ["WorkItem"],
+        target_types: ["WorkItem"],
+        cardinality: {
+          out: { min: 0, max: 1 },
+          in: { min: 0, max: "many" },
+        },
+      },
+      governs_risk: {
+        description: "Links a work item to a tracked risk.",
+        source_types: ["WorkItem"],
+        target_types: ["RiskEntry"],
+        cardinality: {
+          out: { min: 0, max: "many" },
+          in: { min: 0, max: "many" },
+        },
+      },
+    },
+    domain_policies: {
+      levels: [
+        { id: "initiative", rank: 0, modes: ["build", "run"], requires_parent: false, rollup: true },
+        { id: "epic", rank: 1, modes: ["build", "run"], requires_parent: true, rollup: true },
+        { id: "feature", rank: 2, modes: ["build"], requires_parent: true, rollup: true, closure_gate_ref: "feature_uat" },
+        { id: "task", rank: 3, requires_parent: true, rollup: false },
+      ],
+      nesting_matrix: [
+        { parent_level: "initiative", parent_modes: ["build", "run"], allowed_child_levels: ["epic"] },
+        { parent_level: "epic", parent_modes: ["build"], allowed_child_levels: ["feature"] },
+        { parent_level: "feature", parent_modes: ["build"], allowed_child_levels: ["task"] },
+      ],
+      stage_refinements: [
+        { parent_stage: "in-implementation", sub_stages: ["coding", "unit-testing"] },
+      ],
+      autonomy_policy: {
+        actor_classes: ["human", "agent", "conductor"],
+        max_autonomous_create_rank: 2,
+        max_autonomous_create_level: "feature",
+        autonomous_stage_ceiling_by_level: {
+          feature: "verified",
+          task: "closed",
+        },
+        mandated_act_operations: ["item.create", "item.reparent"],
+        own_act_human_operations: ["acceptance.uat-recorded"],
+        overlay_precedence: "tighten-only",
+      },
+      acceptance_gates: {
+        feature_uat: {
+          applies_to_levels: ["feature"],
+          authority: "own-act-human",
+          required_actor_class: "human",
+          non_waivable_evidence_kinds: ["verification_run", "uat_receipt"],
+          require_all_children_terminal: true,
+        },
+      },
+      timeboxes: [
+        {
+          applies_to_level: "feature",
+          subkind: "standard",
+          target_days: 10,
+          hard_ceiling_days: 20,
+          clock_start_trigger: "in-progress",
+          clock_stop_triggers: ["accepted", "closed"],
+        },
+      ],
+      risk_policy: {
+        likelihood_scale: [1, 2, 3, 4, 5],
+        impact_scale: [1, 2, 3, 4, 5],
+        severity_bands: [
+          { id: "low", min_score: 1, max_score: 4 },
+          { id: "medium", min_score: 5, max_score: 9 },
+          { id: "high", min_score: 10, max_score: 16 },
+          { id: "critical", min_score: 17, max_score: 25 },
+        ],
+        categories: ["schedule", "security"],
+        responses: ["mitigate", "avoid", "transfer", "accept"],
+        max_review_validity_days_by_band: { low: 90, medium: 45, high: 14, critical: 7 },
+        external_register_max_age_days: 30,
+        sensitivity_impact_floors: { regulated: 4, public: 1 },
+      },
+      invariants: [
+        {
+          id: "inv-uat-human-only",
+          summary: "Feature acceptance receipts require human owner sign-off.",
+          scope: "acceptance_gates.feature_uat",
+          severity: "error",
+        },
+      ],
+    },
+    file_projections: {
+      default_pr_slice: {
+        kind: "track-pr-slice",
+        content_mode: "both",
+        root_dir: ".track",
+        event_journal: {
+          relative_path_template: ".track/events.jsonl",
+          format: "track-events-jsonl/v1",
+          forbid_header_lines: true,
+          aggregates: ["item", "risk"],
+          event_types: ["workspace.ontology-bound", "item.created"],
+          order_by: ["stream_seq"],
+          frame_integrity: "positional-prevhash-and-aggregate-seq",
+          envelope_contract: {
+            core_fields: ["id", "type", "aggregate", "aggregateId", "at", "by", "payload"],
+            optional_core_fields: ["prov", "clientToken", "cmdId", "cmd"],
+            frame_fields: ["seq", "prevHash", "contentHash"],
+          },
+        },
+        head_anchor: {
+          relative_path_template: ".track/head.json",
+          format: "track-head/v1",
+        },
+        state_snapshot: {
+          relative_path_template: ".track/state.snapshot.json",
+          schema: "track.state-snapshot/v1",
+          include_collections: ["items", "risks"],
+          status_vocabulary: ["on-track", "waiting", "blocked", "done"],
+          stage_vocabulary: ["request-recorded", "scoped", "specified", "in-implementation", "verified", "closed"],
+          remaining_work_realizations: ["to-do", "in-progress"],
+        },
+        link_fingerprint_sidecar: {
+          relative_path_template: ".track/engram-link.json",
+          schema: "engram.track-pr-link-fingerprint/v1",
+          hash_algorithm: "sha256-rfc8785",
+        },
+      },
+    },
+  };
+}
 
 describe("metamodel versioning and composition (Lot 0.3)", () => {
+  describe("round-2 regressions per review finding (M-1..M-7, m-1..m-4)", () => {
+    function makeValidBaseContext() {
+      const base = makeTrackTemplate();
+      const baseDigest = independentTemplateSha256(base);
+      const basePres = independentPresentationSha256(base);
+      const parentPin = { id: base.id, version: "1.0.0", contentDigest: stripSha256Prefix(baseDigest) };
+      const archiReg: RegisteredTemplateRecord = {
+        lineage: "archi",
+        templateId: "archi",
+        templateVersion: "1.0.0",
+        templateDigestSha256: ARCHI_V1_SHA256,
+        nodeTypeIds: ARCHI_V1_ENTITY_IDS,
+      };
+      const trackReg: RegisteredTemplateRecord = {
+        lineage: "track",
+        templateId: base.id,
+        templateVersion: "1.0.0",
+        templateDigestSha256: baseDigest,
+        presentationDigest: basePres,
+        nodeTypeIds: Object.keys(base.node_types),
+        document: base,
+      };
+      return { base, baseDigest, parentPin, archiReg, trackReg, registry: [trackReg, archiReg] };
+    }
+
+    it("M-7: exercises mapping_pin, state_machine, admission_policy, and relation hierarchy in profile-bundle (kills M33/M35/M36/M38)", () => {
+      const { base } = makeValidBaseContext();
+
+      // M33: mapping_pin consumed in V1_CONSUMED_KEYS
+      const withMapPin = {
+        ...structuredClone(base),
+        mapping_pin: { id: "noop-map", version: "1.0.0", contentDigest: "c".repeat(64) },
+      };
+      const mapPinBundle = bundleProfile(withMapPin as unknown as OntologyProfile);
+      expect(mapPinBundle.ok).toBe(true);
+      if (mapPinBundle.ok) {
+        expect(mapPinBundle.bundle.extensions).toEqual({});
+      }
+      const mapPinCompat = checkProfileCompatibility(base as unknown as OntologyProfile, withMapPin as unknown as OntologyProfile);
+      expect(mapPinCompat).toMatchObject({ ok: true, compatible: true, breaking: [], nonBreaking: [] });
+
+      // M35: state_machine modeled in V1_MODELED_NODE_KEYS
+      const riskAddedState = structuredClone(base);
+      riskAddedState.node_types.RiskEntry!.state_machine!.states = ["identified", "active", "mitigated", "monitored", "closed"];
+      const riskCompat = checkProfileCompatibility(base as unknown as OntologyProfile, riskAddedState as unknown as OntologyProfile);
+      expect(riskCompat).toMatchObject({ ok: true, compatible: true, breaking: [] });
+      expect(riskCompat.nonBreaking.map((d) => ({ code: d.code, path: d.path }))).toEqual([
+        { code: "added_state", path: "node_types.RiskEntry.state_machine.states" },
+      ]);
+
+      // M36: admission_policy modeled in V1_MODELED_NODE_KEYS
+      const admParent = structuredClone(base);
+      admParent.node_types.WorkItem!.admission_policy = { mode: "promotion-third-party-review" };
+      const admRelaxed = structuredClone(admParent);
+      admRelaxed.node_types.WorkItem!.admission_policy = { mode: "bounded-auto" };
+      const admCompat = checkProfileCompatibility(admParent as unknown as OntologyProfile, admRelaxed as unknown as OntologyProfile);
+      expect(admCompat).toMatchObject({ ok: true, compatible: true, breaking: [] });
+      expect(admCompat.nonBreaking.map((d) => ({ code: d.code, path: d.path }))).toEqual([
+        { code: "relaxed_admission_mode", path: "node_types.WorkItem.admission_policy.mode" },
+      ]);
+
+      // M38: hierarchy modeled in V1_MODELED_REL_KEYS
+      const hierParent = structuredClone(base);
+      hierParent.relation_types!.governs_risk!.hierarchy = {
+        id: "work-risk-dag",
+        shape: "dag",
+        parent_role: "source",
+        child_role: "target",
+      };
+      const hierChanged = structuredClone(hierParent);
+      hierChanged.relation_types!.governs_risk!.hierarchy = {
+        id: "work-risk-dag",
+        shape: "tree",
+        parent_role: "source",
+        child_role: "target",
+      };
+      const hierCompat = checkProfileCompatibility(hierParent as unknown as OntologyProfile, hierChanged as unknown as OntologyProfile);
+      expect(hierCompat.compatible).toBe(false);
+      expect(hierCompat.breaking.map((d) => ({ code: d.code, path: d.path }))).toEqual([
+        { code: "changed_relation_hierarchy", path: "relation_types.governs_risk.hierarchy" },
+      ]);
+    });
+  });
+
   describe("round-3 whole-document diff, data tables, default-breaking, and R2 closures", () => {
     describe("round-5 single entry: each public API projects every document once, type-checks it against the closed schema and hands on a branded document", () => {
       it("makes a raw, a JSON-shaped or a merely projected document a compile error wherever a branded one is required", async () => {
