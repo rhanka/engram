@@ -1161,3 +1161,113 @@ describe("cost and seat consistency invariants", () => {
     }
   });
 });
+
+describe("remaining nested cost and seat edge cases", () => {
+  it("accepts estimated seat numeric share", () => {
+    const estimatedSeat = clone(makeResultsFile()) as any;
+    estimatedSeat.records[0].cost.seatStatus = "estimated";
+    estimatedSeat.records[0].cost.seatMethod = "api_cost_proportional";
+    expect(validateBenchResultsInvariants(estimatedSeat).records[0]?.cost.seatStatus).toBe("estimated");
+  });
+
+  it("refuses nested unknown-basis cost and single-defect measured/unknown/estimated seat bindings", () => {
+    const cases: [(doc: any) => void, BenchInvariantCode, string][] = [
+      [
+        (doc) => {
+          const record = doc.records[0];
+          record.accepted = 0;
+          record.failed = 20;
+          record.cost.costBasisItems = 0;
+          record.cost.apiEquivalentPerItem = 0;
+        },
+        "COST_CONSISTENCY",
+        "$.records[0].cost.apiEquivalentPerItem",
+      ],
+      [(doc) => { doc.records[0].cost.seatMethod = "api_cost_proportional"; },
+        "SEAT_CONSISTENCY", "$.records[0].cost.seatMethod"],
+      [(doc) => { doc.records[0].cost.seatUnknownReason = "missing-observation"; },
+        "SEAT_CONSISTENCY", "$.records[0].cost.seatUnknownReason"],
+      [(doc) => { doc.records[0].cost.seatCostPerItem = "unknown"; },
+        "SEAT_CONSISTENCY", "$.records[0].cost.seatCostPerItem"],
+      [(doc) => { doc.records[0].cost.seatSharePerItem = "unknown"; },
+        "SEAT_CONSISTENCY", "$.records[0].cost.seatSharePerItem"],
+      [(doc) => { doc.records[0].cost.apiEquivalentTotal = "unknown"; },
+        "COST_CONSISTENCY", "$.records[0].cost.apiEquivalentTotal"],
+      [(doc) => { doc.records[0].cost.apiEquivalentPerItem = "unknown"; },
+        "COST_CONSISTENCY", "$.records[0].cost.apiEquivalentPerItem"],
+      [(doc) => { doc.records[0].cost.costBasisItems = 50; },
+        "COST_CONSISTENCY", "$.records[0].cost.apiEquivalentPerItem"],
+      [
+        (doc) => {
+          const cost = doc.records[0].cost;
+          cost.seatStatus = "unknown";
+          cost.seatUnknownReason = "no-quota-delta";
+          cost.seatCostPerItem = "unknown";
+          cost.seatSharePerItem = "unknown";
+        },
+        "SEAT_CONSISTENCY",
+        "$.records[0].cost.seatMethod",
+      ],
+      [
+        (doc) => {
+          const cost = doc.records[0].cost;
+          cost.seatStatus = "unknown";
+          cost.seatMethod = "unknown";
+          cost.seatCostPerItem = "unknown";
+          cost.seatSharePerItem = "unknown";
+        },
+        "SEAT_CONSISTENCY",
+        "$.records[0].cost.seatUnknownReason",
+      ],
+      [
+        (doc) => {
+          const cost = doc.records[0].cost;
+          cost.seatStatus = "unknown";
+          cost.seatMethod = "unknown";
+          cost.seatUnknownReason = "no-quota-delta";
+          cost.seatSharePerItem = "unknown";
+        },
+        "SEAT_CONSISTENCY",
+        "$.records[0].cost.seatCostPerItem",
+      ],
+      [
+        (doc) => {
+          const cost = doc.records[0].cost;
+          cost.seatStatus = "unknown";
+          cost.seatMethod = "unknown";
+          cost.seatUnknownReason = "no-quota-delta";
+          cost.seatCostPerItem = "unknown";
+        },
+        "SEAT_CONSISTENCY",
+        "$.records[0].cost.seatSharePerItem",
+      ],
+      [(doc) => { doc.records[0].cost.seatStatus = "estimated"; },
+        "SEAT_CONSISTENCY", "$.records[0].cost.seatMethod"],
+      [
+        (doc) => {
+          const cost = doc.records[0].cost;
+          cost.seatStatus = "estimated";
+          cost.seatMethod = "api_cost_proportional";
+          cost.seatUnknownReason = "no-quota-delta";
+        },
+        "SEAT_CONSISTENCY",
+        "$.records[0].cost.seatUnknownReason",
+      ],
+      [
+        (doc) => {
+          const cost = doc.records[0].cost;
+          cost.seatStatus = "estimated";
+          cost.seatMethod = "api_cost_proportional";
+          cost.seatCostPerItem = "unknown";
+        },
+        "SEAT_CONSISTENCY",
+        "$.records[0].cost.seatCostPerItem",
+      ],
+    ];
+    for (const [mutate, invariant, path] of cases) {
+      const doc = clone(makeResultsFile());
+      mutate(doc);
+      refuse(() => validateBenchResultsInvariants(doc), invariant, path);
+    }
+  });
+});
