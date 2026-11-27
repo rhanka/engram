@@ -607,4 +607,144 @@ describe("BD-3 golden record parser, real converge shapes & majority gate", () =
         subFields: [{ name: "postal_code" }, { name: "street" }, { name: "city" }] }],
     }).records).toHaveLength(1);
   });
+
+  it("enforces MAJOR #1 unresolved FP routing, isolated anySplit disjuncts, failuresByCode & failed sites", () => {
+    const splitCityRow = {
+      id: "u_split",
+      fields: { o: { verdict: "majority", n_answered: 4, aligned: [{ fields: {
+        postal_code: { verdict: "majority", value: "V6B 1A1", n_answered: 4,
+          runs: { r1: fv("V6B 1A1"), r2: fv("V6B 1A1"), r3: fv("V6B 1A1"), r4: fv(null) } },
+        city: { verdict: "split", value: null, n_answered: 4,
+          runs: { r1: fv("Vancouver"), r2: fv("Burnaby"), r3: fv(null), r4: fv(null) } },
+      } }] } },
+    };
+    const probe1 = scoreUnweightedRecord({
+      field: "o.city",
+      goldenRows: [splitCityRow, { id: "abs1", fields: { o: { verdict: "absent", n_answered: 4 } } }],
+      candidateRows: [
+        { id: "u_split", fields: { o: { values: [
+          { postal_code: fv("V6B 1A1"), city: fv("Vancouver") },
+          { postal_code: fv("Z9Z 9Z9"), city: fv("Extra") },
+        ] } } },
+        { id: "abs1", fields: { o: { values: [] } } },
+      ],
+    });
+    expect([probe1.goldAbsent, probe1.tn, probe1.fpOnAbsent, probe1.fpElementsOnAbsent, probe1.fpOnPresent, probe1.fp,
+      probe1.abstentionSpecificity]).toEqual([1, 1, 0, 0, 1, 1, 1]);
+    expect(probe1.sitePresence).toEqual({
+      goldPresentSites: 0, goldAbsentSites: 1, unresolvedSites: 1, insufficientSites: 0,
+      tpSites: 0, fnSites: 0, wrongValueOnPresentSites: 0, fpOnAbsentSites: 0, tnSites: 1, failedOnAbsentSites: 0,
+      siteRecall: null,
+      siteRecallInterval: {
+        estimator: "unweighted", method: "none", clustering: "independent_site", valid: false, low: null, high: null,
+      },
+      siteAbstentionSpecificity: 1,
+      siteAbstentionInterval: {
+        estimator: "unweighted", method: "wilson_95_unweighted", clustering: "independent_site", valid: true,
+        low: expect.closeTo(0.20654931437723742, 12), high: 1,
+      },
+    });
+
+    const probe2 = scoreUnweightedRecord({
+      field: "o.city",
+      goldenRows: [{
+        id: "u_unm",
+        fields: { o: { verdict: "majority", n_answered: 3, aligned: [],
+          unmatched: [{ fields: { postal_code: fv("B3J 3N4"), city: fv("Halifax") } }] } },
+      }],
+      candidateRows: [{
+        id: "u_unm",
+        fields: { o: { values: [
+          { postal_code: fv("B3J 3N4"), city: fv(null) },
+          { postal_code: fv("H2Y 1S1"), city: fv("Extra") },
+        ] } },
+      }],
+    });
+    expect([probe2.goldAbsent, probe2.tn, probe2.fpOnAbsent, probe2.fpElementsOnAbsent, probe2.fpOnPresent,
+      probe2.unresolved, probe2.abstentionSpecificity, probe2.sitePresence.unresolvedSites,
+      probe2.sitePresence.fpOnAbsentSites, probe2.sitePresence.siteAbstentionSpecificity])
+      .toEqual([0, 0, 0, 0, 1, 0, null, 1, 0, null]);
+
+    const recSplitOnly = scoreUnweightedRecord({
+      field: "o.city",
+      goldenRows: [{ id: "rs", fields: { o: { verdict: "split", n_answered: 3, aligned: [{ fields: {
+        postal_code: { verdict: "unanimous", value: "M5X 1A9" }, city: { verdict: "absent", value: null },
+      } }] } } }],
+      candidateRows: [{ id: "rs", fields: { o: { values: [] } } }],
+    });
+    expect([recSplitOnly.sitePresence.unresolvedSites, recSplitOnly.goldAbsent]).toEqual([1, 0]);
+
+    const nonMajOnly = scoreUnweightedRecord({
+      field: "o.city",
+      goldenRows: [{ id: "nm", fields: { o: { verdict: "majority", n_answered: 5, aligned: [{ fields: {
+        city: { verdict: "majority", value: null, n_answered: 5,
+          runs: { r1: fv("Toronto"), r2: fv("Toronto"), r3: fv(null), r4: fv(null), r5: fv(null) } },
+      } }] } } }],
+      candidateRows: [{ id: "nm", fields: { o: { values: [] } } }],
+    });
+    expect([nonMajOnly.sitePresence.unresolvedSites, nonMajOnly.unresolved, nonMajOnly.goldAbsent]).toEqual([1, 1, 0]);
+
+    const missedSplit = scoreUnweightedRecord({
+      field: "o.city",
+      goldenRows: [splitCityRow],
+      candidateRows: [{ id: "u_split", fields: { o: { values: [] } } }],
+    });
+    expect(missedSplit.diagnostics.broad).toEqual({ tp: 0, fp: 0, fn: 1, precision: null, recall: 0, f1: 0 });
+
+    const twoClusters = {
+      id: "two",
+      fields: { o: { verdict: "unanimous", n_answered: 3, aligned: [
+        { fields: { postal_code: { verdict: "unanimous", value: "M5X 1A9" },
+          city: { verdict: "unanimous", value: "Toronto" } } },
+        { fields: { postal_code: { verdict: "unanimous", value: "H2Y 1S1" },
+          city: { verdict: "unanimous", value: "Montreal" } } },
+      ] } },
+    };
+    const twoGolden = [
+      twoClusters,
+      { id: "p3", fields: { o: { verdict: "unanimous", n_answered: 3, aligned: [
+        { fields: { postal_code: { verdict: "unanimous", value: "K1P 6L2" },
+          city: { verdict: "unanimous", value: "Ottawa" } } },
+      ] } } },
+      { id: "p4", fields: { o: { verdict: "unanimous", n_answered: 3, aligned: [
+        { fields: { postal_code: { verdict: "unanimous", value: "T2P 1N2" },
+          city: { verdict: "unanimous", value: "Calgary" } } },
+      ] } } },
+    ];
+    const failMulti = scoreUnweightedRecord({
+      field: "o.city",
+      goldenRows: twoGolden,
+      candidateRows: [
+        { id: "two", error: "llm_error", fields: null },
+        { id: "p3", error: "llm_error", fields: null },
+        { id: "p4", error: "alpha_err", fields: null },
+      ],
+      supportFloors: { precisionMinPredictions: 5, recallMinPositives: 5 },
+      independentGroupSupport: { predictions: 2, positives: 2 },
+    });
+    expect(Object.entries(failMulti.failuresByCode)).toEqual([["alpha_err", 1], ["llm_error", 2]]);
+    expect([failMulti.goldPositive, failMulti.fn, failMulti.sitePresence.fnSites,
+      failMulti.sitePresence.wrongValueOnPresentSites]).toEqual([4, 4, 3, 0]);
+    const groupRes = scoreUnweightedRecord({
+      field: "o.city",
+      goldenRows: [twoClusters, twoGolden[1]!, twoGolden[2]!, {
+        id: "p5", fields: { o: { verdict: "unanimous", n_answered: 3, aligned: [
+          { fields: { postal_code: { verdict: "unanimous", value: "V6B 1A1" },
+            city: { verdict: "unanimous", value: "Vancouver" } } },
+        ] } } },
+      ],
+      candidateRows: [
+        { id: "two", fields: { o: { values: [
+          { postal_code: fv("M5X 1A9"), city: fv("Toronto") },
+          { postal_code: fv("H2Y 1S1"), city: fv("Montreal") },
+        ] } } },
+        { id: "p3", fields: { o: { values: [{ postal_code: fv("K1P 6L2"), city: fv("Ottawa") }] } } },
+        { id: "p4", fields: { o: { values: [{ postal_code: fv("T2P 1N2"), city: fv("Calgary") }] } } },
+        { id: "p5", fields: { o: { values: [{ postal_code: fv("V6B 1A1"), city: fv("Vancouver") }] } } },
+      ],
+      supportFloors: { precisionMinPredictions: 5, recallMinPositives: 5 },
+      independentGroupSupport: { predictions: 2, positives: 2 },
+    });
+    expect(groupRes.indeterminate).toEqual({ precision: true, recall: true, f1: true });
+  });
 });
