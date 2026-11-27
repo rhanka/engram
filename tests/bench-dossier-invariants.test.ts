@@ -787,3 +787,129 @@ describe("estimator pairing, unweighted metrics and Wilson intervals", () => {
     }
   });
 });
+
+describe("nested estimator, Wilson and pooled edge-case matrix", () => {
+  it("accepts optional f1Interval omission, single-record Wilson, maxValues=2 and mixed records", () => {
+    const withoutF1Interval = makeWeightedFile() as any;
+    delete withoutF1Interval.records[0].weighted.f1Interval;
+    expect(validateBenchResultsInvariants(withoutF1Interval).records[0]?.weighted?.f1Interval).toBeUndefined();
+    const singleRecord = clone(makeResultsFile()) as any;
+    singleRecord.records[0].field = "overflow.city";
+    singleRecord.records[0].fp = 4;
+    singleRecord.records[0].fpOnPresent = 1;
+    singleRecord.records[0].fpElementsOnAbsent = 3;
+    singleRecord.records[0].precision = 0.6;
+    singleRecord.records[0].f1 = 2 / 3;
+    singleRecord.records[0].precisionInterval = { ...WILSON_6_OF_10 };
+    singleRecord.records[0].unweighted.precision = 0.6;
+    singleRecord.records[0].unweighted.f1 = 2 / 3;
+    singleRecord.records[0].unweighted.precisionInterval = { ...WILSON_6_OF_10 };
+    expect(validateBenchResultsInvariants(singleRecord, {
+      missionSpecs: [{ name: "overflow", kind: "record", maxValues: 1, subFields: [{ name: "city" }] }],
+    }).records).toHaveLength(1);
+    const max2 = clone(makeResultsFile()) as any;
+    const pooledDisabled = makeWeightedFile().records[0]!.unweighted.precisionInterval;
+    max2.records[0].field = "aliases";
+    max2.records[0].precisionInterval = { ...pooledDisabled };
+    max2.records[0].recallInterval = { ...pooledDisabled };
+    max2.records[0].unweighted.precisionInterval = { ...pooledDisabled };
+    max2.records[0].unweighted.recallInterval = { ...pooledDisabled };
+    expect(validateBenchResultsInvariants(max2, {
+      missionSpecs: [{ name: "aliases", kind: "scalar", maxValues: 2 }],
+    }).records).toHaveLength(1);
+    const mixedRecords = makeResultsFile([
+      makeScalarRecord(),
+      makeScalarRecord({ field: "province", weighted: makeWeightedFile().records[0]!.weighted }),
+    ]);
+    expect(validateBenchResultsInvariants(mixedRecords).records).toHaveLength(2);
+  });
+
+  it("refuses remaining nested estimator pairing, interval and Wilson interval bindings", () => {
+    const cases: [() => BenchResultsFile, (doc: any) => void, BenchInvariantCode, string, BenchResultsErrorCode?][] = [
+      [makeWeightedFile, (doc) => { doc.records[0].recall = 0.71; }, "ESTIMATOR_PAIRING", "$.records[0].recall"],
+      [makeWeightedFile, (doc) => { doc.records[0].f1 = 0.6; }, "ESTIMATOR_PAIRING", "$.records[0].f1"],
+      [makeWeightedFile, (doc) => { doc.records[0].recallInterval.low = 0.51; },
+        "ESTIMATOR_PAIRING", "$.records[0].recallInterval", "BAD_INTERVAL"],
+      [makeResultsFile, (doc) => { doc.records[0].precisionInterval.method = "design_bootstrap_95"; },
+        "ESTIMATOR_PAIRING", "$.records[0].precisionInterval", "BAD_INTERVAL"],
+      [makeResultsFile, (doc) => { doc.records[0].precisionInterval.clustering = "group_resampled"; },
+        "ESTIMATOR_PAIRING", "$.records[0].precisionInterval", "BAD_INTERVAL"],
+      [makeResultsFile, (doc) => { doc.records[0].precisionInterval.valid = false; },
+        "ESTIMATOR_PAIRING", "$.records[0].precisionInterval", "BAD_INTERVAL"],
+      [makeWeightedFile, (doc) => { doc.records[0].weighted.recallInterval.estimator = "unweighted"; },
+        "INTERVAL_ESTIMATOR", "$.records[0].weighted.recallInterval.estimator", "BAD_INTERVAL"],
+      [makeWeightedFile, (doc) => { doc.records[0].weighted.f1Interval.estimator = "unweighted"; },
+        "INTERVAL_ESTIMATOR", "$.records[0].weighted.f1Interval.estimator", "BAD_INTERVAL"],
+      [makeResultsFile, (doc) => { doc.records[0].precision = 0.51; }, "ESTIMATOR_PAIRING", "$.records[0].precision"],
+      [makeResultsFile, (doc) => { doc.records[0].recall = 0.74; }, "ESTIMATOR_PAIRING", "$.records[0].recall"],
+      [makeResultsFile, (doc) => { doc.records[0].f1 = 0.61; }, "ESTIMATOR_PAIRING", "$.records[0].f1"],
+      [makeResultsFile, (doc) => { doc.records[0].precisionInterval.estimator = "weighted"; },
+        "INTERVAL_ESTIMATOR", "$.records[0].precisionInterval.estimator", "BAD_INTERVAL"],
+      [makeResultsFile, (doc) => { doc.records[0].recallInterval.estimator = "weighted"; },
+        "INTERVAL_ESTIMATOR", "$.records[0].recallInterval.estimator", "BAD_INTERVAL"],
+      [makeResultsFile, (doc) => { doc.records[0].recallInterval.high = 0.9; },
+        "ESTIMATOR_PAIRING", "$.records[0].recallInterval", "BAD_INTERVAL"],
+      [
+        makeResultsFile,
+        (doc) => {
+          doc.records[0].weighted = makeWeightedFile().records[0]!.weighted;
+          doc.records[0].weighted.recallInterval.estimator = "unweighted";
+        },
+        "INTERVAL_ESTIMATOR",
+        "$.records[0].weighted.recallInterval.estimator",
+        "BAD_INTERVAL",
+      ],
+      [makeResultsFile, (doc) => { doc.records[0].unweighted.precisionInterval.estimator = "weighted"; },
+        "INTERVAL_ESTIMATOR", "$.records[0].unweighted.precisionInterval.estimator", "BAD_INTERVAL"],
+      [makeResultsFile, (doc) => { doc.records[0].unweighted.recallInterval.estimator = "weighted"; },
+        "INTERVAL_ESTIMATOR", "$.records[0].unweighted.recallInterval.estimator", "BAD_INTERVAL"],
+      [makeResultsFile, (doc) => { doc.records[0].sitePresence.siteRecallInterval.estimator = "weighted"; },
+        "INTERVAL_ESTIMATOR", "$.records[0].sitePresence.siteRecallInterval.estimator", "BAD_INTERVAL"],
+      [makeResultsFile, (doc) => { doc.records[0].sitePresence.siteAbstentionInterval.estimator = "weighted"; },
+        "INTERVAL_ESTIMATOR", "$.records[0].sitePresence.siteAbstentionInterval.estimator", "BAD_INTERVAL"],
+      [makeResultsFile, (doc) => { doc.records[0].unweighted.recallInterval.low = 0.4; },
+        "WILSON_INTERVAL", "$.records[0].unweighted.recallInterval", "BAD_INTERVAL"],
+      [makeResultsFile, (doc) => { doc.records[0].unweighted.precisionInterval.valid = false; },
+        "WILSON_INTERVAL", "$.records[0].unweighted.precisionInterval", "BAD_INTERVAL"],
+      [makeResultsFile, (doc) => { doc.records[0].sitePresence.siteAbstentionInterval.low = 0.4; },
+        "WILSON_INTERVAL", "$.records[0].sitePresence.siteAbstentionInterval", "BAD_INTERVAL"],
+      [
+        makeWeightedFile,
+        (doc) => { doc.records[0].weighted.precisionInterval = { ...WILSON_6_OF_12, estimator: "weighted" }; },
+        "WILSON_INTERVAL",
+        "$.records[0].weighted.precisionInterval",
+        "BAD_INTERVAL",
+      ],
+      [
+        makeWeightedFile,
+        (doc) => {
+          doc.records[0].unweighted.precisionInterval = {
+            estimator: "unweighted", method: "design_bootstrap_95", clustering: "group_resampled",
+            valid: true, low: 0.25, high: 0.75,
+          };
+        },
+        "POOLED_WILSON_FORBIDDEN",
+        "$.records[0].unweighted.precisionInterval",
+        "BAD_INTERVAL",
+      ],
+      [
+        makeWeightedFile,
+        (doc) => {
+          doc.records[0].unweighted.precisionInterval = { ...WILSON_6_OF_12, valid: false, low: null, high: null };
+        },
+        "POOLED_WILSON_FORBIDDEN",
+        "$.records[0].unweighted.precisionInterval",
+        "BAD_INTERVAL",
+      ],
+      [makeResultsFile, (doc) => { doc.records[0].field = "office.city"; },
+        "POOLED_WILSON_FORBIDDEN", "$.records[0].unweighted.precisionInterval", "BAD_INTERVAL"],
+      [makeResultsFile, (doc) => { doc.records[0].unverifiedWholeRecordsDropped = 0; },
+        "POOLED_WILSON_FORBIDDEN", "$.records[0].unweighted.precisionInterval", "BAD_INTERVAL"],
+    ];
+    for (const [buildDoc, mutate, invariant, path, code = "BAD_SHAPE"] of cases) {
+      const doc = clone(buildDoc());
+      mutate(doc);
+      refuse(() => validateBenchResultsInvariants(doc), invariant, path, code);
+    }
+  });
+});
