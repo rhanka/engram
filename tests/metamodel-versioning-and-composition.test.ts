@@ -3212,6 +3212,506 @@ describe("metamodel versioning and composition (Lot 0.3)", () => {
         expect(errors.map((error) => error.line)).toEqual([13, 15, 17, 19, 21, 23, 25, 27, 29, 31, 33, 35, 37, 39]);
         expect(errors.every((error) => [2345, 2769, 2322, 2741].includes(error.code))).toBe(true);
       }, 120_000);
+
+      type Base = {
+        readonly doc: MetamodelTemplateDocument;
+        readonly pin: { readonly id: string; readonly version: string; readonly contentDigest: string };
+        readonly reg: readonly RegisteredTemplateRecord[];
+      };
+      type Refusal = { readonly code: MetamodelDiagnosticCode; readonly path: string };
+      type Loose = Record<string | number, unknown>;
+      type Mutation = (doc: MetamodelTemplateDocument) => void;
+
+      const DOMAIN = "MM_DOMAIN_POLICY_INVALID", D29 = "MM_FILE_SHAPE_INCOMPLETE_D29_PAIR", OVERLAY = "MM_FILE_SHAPE_LINEAGE_FORBIDDEN";
+      const NODE = "MM_NODE_INVALID_IDENTIFIER", STATE = "MM_STATE_INVALID_MACHINE", ATTR = "MM_ATTR_INVALID_DECLARATION";
+      const UNPROJECTABLE = "MM_SYNTAX_NON_PLAIN_OBJECT";
+      const EMPTY_DIFF = { breaking: [], additive: [], docOnly: [], detectedRenames: [] };
+      const SLICE = "file_projections.default_pr_slice";
+      const GATE_FLAG = "domain_policies.acceptance_gates.feature_uat.require_all_children_terminal";
+
+      const asRaw = (doc: unknown) => doc as Record<string, unknown>;
+      const asProfile = (doc: unknown) => doc as OntologyProfile;
+      const codePath = (d: { readonly code: string; readonly path: string }) => ({ code: d.code, path: d.path });
+      const jsonClone = <T,>(doc: T): T => JSON.parse(JSON.stringify(doc)) as T;
+
+      /** "a.b[2].c" -> ["a", "b", 2, "c"] (test-side path walker; no production helper involved). */
+      function pathKeys(path: string): (string | number)[] {
+        return path.split(".").flatMap((segment) => {
+          const [name, ...indexes] = segment.split("[");
+          return [name!, ...indexes.map((idx) => Number(idx.slice(0, -1)))];
+        });
+      }
+      function holderOf(doc: unknown, path: string): { readonly holder: Loose; readonly key: string | number } {
+        const keys = pathKeys(path);
+        let holder = doc as Loose;
+        for (const key of keys.slice(0, -1)) holder = holder[key] as Loose;
+        return { holder, key: keys.at(-1)! };
+      }
+      function setAt(doc: unknown, path: string, value: unknown): void {
+        const { holder, key } = holderOf(doc, path);
+        holder[key] = value;
+      }
+      function delAt(doc: unknown, path: string): void {
+        const { holder, key } = holderOf(doc, path);
+        delete holder[key];
+      }
+      function getAt(doc: unknown, path: string): unknown {
+        const { holder, key } = holderOf(doc, path);
+        return holder[key];
+      }
+
+      function trackBase(): Base {
+        const ctx = makeR3RichBase();
+        return { doc: ctx.doc, pin: ctx.pin, reg: ctx.registry };
+      }
+      function variantBase(id: string, mutate: Mutation): Base {
+        const track = trackBase();
+        const doc: MetamodelTemplateDocument = { ...structuredClone(track.doc), id };
+        mutate(doc);
+        const init = registerR3Initial(doc, track.reg);
+        return { doc, pin: init.pin, reg: init.reg };
+      }
+      function h2aBase(): Base {
+        const track = trackBase();
+        const agile = makeTrackTemplate();
+        const agileDigest = independentTemplateSha256(agile);
+        const doc: MetamodelTemplateDocument = {
+          ...structuredClone(makeH2aTemplate(agileDigest)),
+          id: "sentropic.r5-h2a-overlay",
+          relation_types: {},
+          file_projections: {
+            overlay_view: {
+              kind: "h2a-harness-overlay",
+              root_dir: ".h2a",
+              relative_path_template: ".h2a/overlays/repo/view.json",
+              format: "json",
+              include_node_types: ["HarnessSkill"],
+              order_by: ["entity_id"],
+              projected_fields: ["skill_id"],
+            },
+          },
+        };
+        const init = registerR3Initial(doc, [
+          ...track.reg,
+          {
+            lineage: "track",
+            templateId: agile.id,
+            templateVersion: agile.version,
+            templateDigestSha256: agileDigest,
+            presentationDigest: independentPresentationSha256(agile),
+            nodeTypeIds: Object.keys(agile.node_types),
+            document: agile,
+          },
+        ]);
+        return { doc, pin: init.pin, reg: init.reg };
+      }
+      const BASES = {
+        track: trackBase,
+        h2a: h2aBase,
+        noEta: () => variantBase("sentropic.r5-no-eta", (d) => delAt(d, "domain_policies.eta_policy")),
+        gateFalse: () => variantBase("sentropic.r5-gate-false", (d) => setAt(d, GATE_FLAG, false)),
+        noCeiling: () => variantBase("sentropic.r5-no-ceiling", (d) => delAt(d, "domain_policies.autonomy_policy.autonomous_stage_ceiling_by_level")),
+      };
+      type BaseName = keyof typeof BASES;
+      const builtBases = new Map<BaseName, Base>();
+      /** Bases are built once inside a running test and never mutated: every helper clones before it writes. */
+      function baseOf(name: BaseName): Base {
+        if (!builtBases.has(name)) builtBases.set(name, BASES[name]());
+        return builtBases.get(name)!;
+      }
+
+      type CandidateOptions = {
+        readonly version?: string;
+        /** The Lot 0.2 validator accepts the malformed candidate: only the gate stands in its way. */
+        readonly lot02Accepted?: boolean;
+        /** The bundle's own schema validation refuses this candidate before it consults the gate: its issue, not the gate's. */
+        readonly bundleIssue?: { readonly code: string; readonly path: string };
+      };
+
+      /** A malformed CANDIDATE is refused with exactly one stable diagnostic by the gate, the diff and the bundle. */
+      function expectCandidateRefused(base: Base, mutate: Mutation, refusal: Refusal, options: CandidateOptions = {}): void {
+        const cand = { ...structuredClone(base.doc), version: options.version ?? "1.1.0", parent_pin: base.pin };
+        mutate(cand);
+        if (options.lot02Accepted === true) expect(validateTemplateAgainstMetamodel(cand, { registry: base.reg }).status).toBe("accepted");
+        const gate = evaluateSemVerGate(freezeInput(structuredClone(cand)), { registry: base.reg });
+        expect({ status: gate.status, diff: gate.diff, diagnostics: gate.diagnostics.map(codePath) }).toEqual({
+          status: "refused-metamodel-invalid",
+          diff: null,
+          diagnostics: [refusal],
+        });
+        const diff = diffSemVerDocuments(asRaw(base.doc), asRaw(cand));
+        expect({ ...diff, refusals: diff.refusals?.map(codePath) }).toEqual({ ...EMPTY_DIFF, refusals: [refusal] });
+        const pair = classifyV1Compatibility(asRaw(base.doc), asRaw(cand));
+        expect({ refusals: pair.refusals.map(codePath), deltas: pair.deltas }).toEqual({ refusals: [refusal], deltas: [] });
+        const compat = checkProfileCompatibility(asProfile(base.doc), asProfile(cand));
+        expect({ ok: compat.ok, compatible: compat.compatible, breaking: compat.breaking, nonBreaking: compat.nonBreaking, issues: compat.validationIssues.map(codePath) }).toEqual({
+          ok: false,
+          compatible: false,
+          breaking: [],
+          nonBreaking: [],
+          issues: [options.bundleIssue ?? refusal],
+        });
+      }
+
+      /** A registered PARENT holding an explicit `undefined` compares as if the property were absent: never a throw. */
+      function expectUndefinedParentIsInert(base: Base, path: string): void {
+        const parent: MetamodelTemplateDocument = { ...structuredClone(base.doc), id: `${base.doc.id}.undef` };
+        setAt(parent, path, undefined);
+        const { holder, key } = holderOf(parent, path);
+        expect(Object.hasOwn(holder, key) && holder[key] === undefined).toBe(true);
+        const init = registerR3Initial(parent, base.reg);
+        const cand = { ...jsonClone(parent), version: "1.0.1", parent_pin: init.pin };
+        expect(evaluateSemVerGate(freezeInput(cand), { registry: init.reg })).toMatchObject({
+          status: "accepted",
+          changeClass: "patch",
+          diff: EMPTY_DIFF,
+          diagnostics: [],
+        });
+        expect(diffSemVerDocuments(asRaw(parent), asRaw(cand))).toEqual(EMPTY_DIFF);
+        expect(classifyV1Compatibility(asRaw(parent), asRaw(cand)).refusals).toEqual([]);
+        expect(checkProfileCompatibility(asProfile(parent), asProfile(cand))).toMatchObject({ ok: true, compatible: true, breaking: [] });
+      }
+
+      /** A registered PARENT that is not JSON-projectable is refused at the exact offending path: never a throw. */
+      function expectUnprojectableParentRefused(base: Base, poison: Mutation, path: string): void {
+        const parent = structuredClone(base.doc);
+        poison(parent);
+        const refusal: Refusal = { code: UNPROJECTABLE, path };
+        const registry = base.reg.map((record) => (record.templateId === base.doc.id ? { ...record, document: parent } : record));
+        const cand = { ...structuredClone(base.doc), version: "1.0.1", parent_pin: base.pin };
+        const gate = evaluateSemVerGate(freezeInput(cand), { registry });
+        expect({ status: gate.status, diff: gate.diff, diagnostics: gate.diagnostics.map(codePath) }).toEqual({
+          status: "refused-metamodel-invalid",
+          diff: null,
+          diagnostics: [refusal],
+        });
+        const diff = diffSemVerDocuments(asRaw(parent), asRaw(cand));
+        expect({ ...diff, refusals: diff.refusals?.map(codePath) }).toEqual({ ...EMPTY_DIFF, refusals: [refusal] });
+        expect(classifyV1Compatibility(asRaw(parent), asRaw(cand)).refusals.map(codePath)).toEqual([refusal]);
+        const compat = checkProfileCompatibility(asProfile(parent), asProfile(cand));
+        expect([compat.ok, compat.compatible]).toEqual([false, false]);
+      }
+
+      type ReviewSite =
+        | { readonly id: string; readonly base: BaseName; readonly kind: "candidate"; readonly mutate: Mutation; readonly refusal: Refusal; readonly options: CandidateOptions }
+        | { readonly id: string; readonly base: BaseName; readonly kind: "undefined-in-parent"; readonly path: string }
+        | { readonly id: string; readonly base: BaseName; readonly kind: "unprojectable-parent"; readonly poison: Mutation; readonly path: string };
+      const LOT02_ACCEPTED: CandidateOptions = { lot02Accepted: true };
+      const bundleFirst = (path: string): CandidateOptions => ({ bundleIssue: { code: "invalid_profile_schema", path: `new.${path}` } });
+      const candidate = (id: string, base: BaseName, mutate: Mutation, path: string, code: MetamodelDiagnosticCode, options: CandidateOptions = {}): ReviewSite =>
+        ({ id, base, kind: "candidate", mutate, refusal: { code, path }, options });
+      const deleted = (id: string, base: BaseName, path: string, code: MetamodelDiagnosticCode): ReviewSite =>
+        candidate(id, base, (d) => delAt(d, path), path, code);
+      const mistyped = (id: string, base: BaseName, path: string, value: unknown, code: MetamodelDiagnosticCode, options: CandidateOptions = {}): ReviewSite =>
+        candidate(id, base, (d) => setAt(d, path, value), path, code, options);
+      const undefinedInParent = (id: string, base: BaseName, path: string): ReviewSite => ({ id, base, kind: "undefined-in-parent", path });
+      const unprojectable = (id: string, poison: Mutation, path: string): ReviewSite => ({ id, base: "track", kind: "unprojectable-parent", poison, path });
+      const addedSlice = (path: string, value: unknown): Mutation => (d) => {
+        asRaw(d.file_projections).audit_slice = structuredClone(d.file_projections!.default_pr_slice);
+        setAt(d, `file_projections.audit_slice.${path}`, value);
+      };
+      const addedNode = (body: Record<string, unknown>): Mutation => (d) => { asRaw(d.node_types).Milestone = { definition: "x", ...body }; };
+      const ownerInputs = { required_folded_collections: ["items"], required_event_stream_lookbacks: ["item"], options_fields: "x", confidentiality_policy_contract: "track-owner-table-policy/v1" };
+      const badEta = { source_kinds: ["measured"], append_only_slip_journal: true, measured_provenance_required_fields: "not-an-array" };
+      const scalarEdgeMachine = { states: ["open", "done"], initial_state: "open", terminal_states: ["done"], transitions: [{ from: "open", to: "done" }] };
+
+      const REVIEW_SITES: readonly ReviewSite[] = [
+        // Round 3 · M-1 (M01..M08): a required container or array deleted from the candidate used to throw.
+        deleted("R3-M01", "track", "domain_policies.risk_policy.severity_bands", DOMAIN),
+        deleted("R3-M02", "track", "domain_policies.nesting_matrix[0].allowed_child_levels", DOMAIN),
+        deleted("R3-M03", "track", "domain_policies.stage_refinements[0].sub_stages", DOMAIN),
+        deleted("R3-M04", "track", `${SLICE}.event_journal`, D29),
+        deleted("R3-M05", "track", `${SLICE}.state_snapshot`, D29),
+        deleted("R3-M06", "track", `${SLICE}.event_journal.aggregates`, D29),
+        deleted("R3-M07", "track", `${SLICE}.state_snapshot.include_collections`, D29),
+        deleted("R3-M08", "h2a", "file_projections.overlay_view.include_node_types", OVERLAY),
+        // Round 3 · M-1 (M09 / P2-03): explicit `undefined` in a Lot-0.2-valid parent used to throw.
+        undefinedInParent("R3-M09", "track", "parent_pin"),
+        undefinedInParent("R3-P2-03", "track", "node_types.WorkItem.attributes.title.description"),
+        // Round 3 · M-2 (M10..M15, P2-01, P2-02): a non-boolean or non-array used to be coerced and classified ADDITIVE.
+        mistyped("R3-M10", "track", "node_types.WorkItem.attributes.title.required", 0, ATTR),
+        mistyped("R3-M11", "track", "node_types.WorkItem.source_backed", 0, NODE),
+        mistyped("R3-M12", "track", "relation_types.governs_risk.requires_evidence", "", ATTR),
+        mistyped("R3-M13", "track", "domain_policies.levels[1].requires_parent", null, DOMAIN),
+        mistyped("R3-M14", "track", GATE_FLAG, null, DOMAIN, LOT02_ACCEPTED),
+        mistyped("R3-M15", "track", "node_types.WorkItem.admission_policy.third_party_distinct_from_author", null, STATE),
+        candidate("R3-P2-01", "noEta", (d) => setAt(d, "domain_policies.eta_policy", badEta), "domain_policies.eta_policy.measured_provenance_required_fields", DOMAIN, LOT02_ACCEPTED),
+        mistyped("R3-P2-02", "gateFalse", GATE_FLAG, "false", DOMAIN, LOT02_ACCEPTED),
+        // Round 4 · M-1 (F-M1-01..08): explicit `undefined` inside the parent's domain_policies / file_projections threw.
+        undefinedInParent("R4-F-M1-01", "track", "domain_policies.eta_policy"),
+        undefinedInParent("R4-F-M1-02", "track", "domain_policies.levels[0].closure_gate_ref"),
+        undefinedInParent("R4-F-M1-03", "track", "domain_policies.risk_policy.external_register_max_age_days"),
+        undefinedInParent("R4-F-M1-04", "track", "domain_policies.nesting_matrix[0].child_subkind"),
+        undefinedInParent("R4-F-M1-05", "track", "domain_policies.acceptance_gates.feature_uat.designated_owner_attribute"),
+        undefinedInParent("R4-F-M1-06", "track", `${SLICE}.owner_table_inputs`),
+        undefinedInParent("R4-F-M1-07", "track", `${SLICE}.state_snapshot.report_sections`),
+        undefinedInParent("R4-F-M1-08", "h2a", "file_projections.overlay_view.relative_path_templates"),
+        // Round 4 · M-1 (F-M1-09..16): an unserializable value in the same two parent containers threw.
+        unprojectable("R4-F-M1-09 bigint", (p) => setAt(p, "domain_policies.risk_policy.external_register_max_age_days", BigInt(1)), "domain_policies.risk_policy.external_register_max_age_days"),
+        unprojectable("R4-F-M1-10 NaN", (p) => setAt(p, "domain_policies.timeboxes[0].target_days", Number.NaN), "domain_policies.timeboxes[0].target_days"),
+        unprojectable("R4-F-M1-11 Date", (p) => setAt(p, "domain_policies.eta_policy", new Date(0)), "domain_policies.eta_policy"),
+        unprojectable("R4-F-M1-12 cycle", (p) => setAt(p, "domain_policies.invariants[0].self", p.domain_policies), "domain_policies.invariants[0].self"),
+        unprojectable("R4-F-M1-13 lone surrogate", (p) => setAt(p, `${SLICE}.head_anchor.format`, "\uD800"), `${SLICE}.head_anchor.format`),
+        unprojectable("R4-F-M1-14 getter", (p) => { Object.defineProperty(getAt(p, `${SLICE}.event_journal`), "format", { get: () => "track-events-jsonl/v1", enumerable: true }); }, `${SLICE}.event_journal.format`),
+        unprojectable("R4-F-M1-15 symbol key", (p) => { (getAt(p, `${SLICE}.state_snapshot`) as Record<symbol, unknown>)[Symbol("hidden")] = 1; }, `${SLICE}.state_snapshot`),
+        unprojectable("R4-F-M1-16 sparse array", (p) => setAt(p, `${SLICE}.event_journal.aggregates`, new Array(2)), `${SLICE}.event_journal.aggregates[0]`),
+        // Round 4 · M-2 site 1: scalar transition endpoints were expanded into arrays and classified ADDITIVE.
+        candidate("R4-F-M2-17", "track", (d) => { (getAt(d, "node_types.RiskEntry.state_machine.transitions") as unknown[]).push({ from: "identified", to: "closed" }); }, "node_types.RiskEntry.state_machine.transitions[3]", STATE),
+        candidate("R4-F-M2-18", "track", addedNode({ state_machine: scalarEdgeMachine }), "node_types.Milestone.state_machine.transitions[0]", STATE),
+        // Round 4 · M-2 site 2: unchecked file-projection arrays were classified ADDITIVE (added) or BREAKING (changed).
+        candidate("R4-F-M2-08", "track", addedSlice("event_journal.order_by", "stream_seq"), "file_projections.audit_slice.event_journal.order_by", D29),
+        candidate("R4-F-M2-09", "track", addedSlice("event_journal.envelope_contract.core_fields", "id"), "file_projections.audit_slice.event_journal.envelope_contract.core_fields", D29),
+        candidate("R4-F-M2-10", "track", addedSlice("owner_table_inputs", ownerInputs), "file_projections.audit_slice.owner_table_inputs.options_fields", D29),
+        candidate("R4-F-M2-11", "h2a", (d) => { asRaw(d.file_projections).second_view = { ...structuredClone(d.file_projections!.overlay_view!), order_by: "entity_id" }; }, "file_projections.second_view.order_by", OVERLAY),
+        mistyped("R4-F-M2-12", "track", `${SLICE}.event_journal.order_by`, "stream_seq", D29, { version: "2.0.0" }),
+        // Round 4 · M-2 site 3: unchecked `linking` arrays and `llm.dry_run` on an added node type were ADDITIVE.
+        // (The bundle validates `linking` itself and refuses first; the gate and the diff refuse with the code below.)
+        candidate("R4-F-M2-14a", "track", addedNode({ linking: { normalize: { builtin: "lower" } } }), "node_types.Milestone.linking.normalize.builtin", NODE, bundleFirst("node_types.Milestone.builtin")),
+        candidate("R4-F-M2-14b", "track", addedNode({ linking: { patterns: "x" } }), "node_types.Milestone.linking.patterns", NODE, bundleFirst("node_types.Milestone.linking.patterns")),
+        candidate("R4-F-M2-14c", "track", addedNode({ linking: { detect: "lexicon" } }), "node_types.Milestone.linking.detect", NODE, bundleFirst("node_types.Milestone.linking.detect")),
+        candidate("R4-F-M2-15", "track", addedNode({ linking: { detect: [{ llm: { trigger: "zero_candidates", dry_run: "true" } }] } }), "node_types.Milestone.linking.detect[0].llm.dry_run", NODE, bundleFirst("node_types.Milestone.linking.detect[0].llm.dry_run")),
+        // Round 4 · M-2 site 4: `null` was coerced to `{}` by `??` and accepted as a PATCH with an empty diff.
+        mistyped("R4-F-M2-32a", "noCeiling", "domain_policies.autonomy_policy.autonomous_stage_ceiling_by_level", null, DOMAIN, { version: "1.0.1" }),
+      ];
+
+      it.each(REVIEW_SITES)("review site $id is closed with its exact outcome: never a throw, never ADDITIVE, never PATCH", (site) => {
+        const base = baseOf(site.base);
+        if (site.kind === "candidate") expectCandidateRefused(base, site.mutate, site.refusal, site.options);
+        else if (site.kind === "undefined-in-parent") expectUndefinedParentIsInert(base, site.path);
+        else expectUnprojectableParentRefused(base, site.poison, site.path);
+      });
+
+      it("review site R4-m-1 (F-M1-23): a digest-only parent record does not skip the candidate's type check", () => {
+        const track = baseOf("track");
+        const digestOnly = track.reg.map(({ document: _document, ...record }) => record);
+        const malformed = { ...structuredClone(track.doc), version: "1.1.0", parent_pin: track.pin };
+        setAt(malformed, GATE_FLAG, null);
+        expectSemVerRefusal(malformed, { registry: digestOnly }, DOMAIN, GATE_FLAG);
+        const wellFormed = { ...structuredClone(track.doc), version: "1.1.0", parent_pin: track.pin };
+        expect(evaluateSemVerGate(freezeInput(wellFormed), { registry: digestOnly })).toMatchObject({ status: "accepted", changeClass: "minor", diff: null });
+      });
+
+      // ---- Fresh probes of both defect classes at every level of a Lot-0.2-valid document -------------------------
+      type JsonKind = "null" | "boolean" | "number" | "string" | "array" | "object";
+      const JSON_KINDS: readonly JsonKind[] = ["null", "boolean", "number", "string", "array", "object"];
+      const OF_KIND: Readonly<Record<JsonKind, unknown>> = { null: null, boolean: true, number: 7, string: "wrong-type", array: ["wrong-type"], object: { wrong: "type" } };
+      const kindOf = (value: unknown): JsonKind => (value === null ? "null" : Array.isArray(value) ? "array" : (typeof value as JsonKind));
+      const isContainer = (value: unknown): value is object => typeof value === "object" && value !== null;
+      const pathOf = (holder: string, key: string | number): string => (typeof key === "number" ? `${holder}[${key}]` : holder === "" ? key : `${holder}.${key}`);
+
+      /** Every path of a document, depth first: object members and array elements alike. */
+      function* everyPath(value: unknown, path = ""): Generator<{ readonly path: string; readonly value: unknown }> {
+        if (!isContainer(value)) return;
+        const members: readonly (readonly [string | number, unknown])[] = Array.isArray(value) ? [...value.entries()] : Object.entries(value);
+        for (const [key, member] of members) {
+          yield { path: pathOf(path, key), value: member };
+          yield* everyPath(member, pathOf(path, key));
+        }
+      }
+
+      /** A track document that uses every member the metamodel types, and stays Lot-0.2-valid. */
+      function sweepTrackBase(): Base {
+        return variantBase("sentropic.r5-sweep-track", (d) => {
+          asRaw(d).presentation = { theme: { accent: "#2B6CB0", dense: true } };
+          asRaw(d.node_types.WorkItem).linking = {
+            preset: "gazetteer-exact",
+            normalize: { builtin: ["case_fold"] },
+            partition_from: { source_frontmatter: "team", else: { path_segment: 1 } },
+            detect: ["lexicon", { pattern: { form: "^WI-[0-9]+$", flags: "u", membership: "required", expand: { ranges: "numeric" } } }, { llm: { trigger: "zero_candidates", budget_usd: 1, dry_run: true, min_candidates: 1 } }],
+            patterns: [{ form: "^WI-[0-9]+$" }],
+            resolve: { mode: "exact" },
+            evidence: { verbatim: "required", context_window: 80 },
+          };
+          Object.assign(d.node_types.RiskEntry!.attributes!, {
+            due_at: { kind: "timestamp", description: "Review deadline." },
+            checksum: { kind: "digest", minLength: 8, maxLength: 128, pattern: "^[a-f0-9]+$" },
+            weight: { kind: "number", min: 0, max: 1 },
+            flagged: { kind: "boolean" },
+          });
+          asRaw(d.relation_types!.child_of).hierarchy = { id: "containment", shape: "tree", parent_role: "target", child_role: "source" };
+          (getAt(d, "domain_policies.nesting_matrix") as unknown[]).push({ parent_level: "feature", parent_modes: ["build"], allowed_child_levels: ["task"], child_subkind: "spike", when_attributes: { subkind: ["spike"] } });
+          Object.assign(d.domain_policies!.timeboxes![0]!, { rebaseline_decision_kind: "rebaseline", overdue_escalation: "notify-owner" });
+          Object.assign(d.domain_policies!.acceptance_gates!.feature_uat!, { designated_owner_attribute: "title", freshness_anchor_equality: { receipt_field: "head", target_field: "head" } });
+          asRaw(d.file_projections!.default_pr_slice).owner_table_inputs = {
+            required_folded_collections: ["items"],
+            required_event_stream_lookbacks: ["item"],
+            options_fields: ["title"],
+            confidentiality_policy_contract: "track-owner-table-policy/v1",
+          };
+        });
+      }
+      function sweepH2aBase(): Base {
+        const h2a = h2aBase();
+        const doc: MetamodelTemplateDocument = { ...structuredClone(h2a.doc), id: "sentropic.r5-sweep-h2a" };
+        Object.assign(doc.file_projections!.overlay_view!, {
+          precedence: "tighten-only",
+          relative_path_templates: { repo: ".h2a/overlays/repo/view.json", workspace: ".h2a/overlays/workspace/view.json", worktree: ".h2a/overlays/worktree/view.json" },
+        });
+        const init = registerR3Initial(doc, h2a.reg);
+        return { doc, pin: init.pin, reg: init.reg };
+      }
+      /**
+       * The members the gate types and no fixture above states. Registered by hand, not through Lot 0.2, which
+       * refuses some of them (a `normalize.fn`, the bare `source` / `target` of a relation): the gate types them all the same.
+       */
+      function sweepRestBase(): Base {
+        const track = trackBase();
+        const doc: MetamodelTemplateDocument = { ...structuredClone(track.doc), id: "sentropic.r5-sweep-rest" };
+        Object.assign(asRaw(doc), { presentation_hash: `sha256:${"0".repeat(64)}`, mapping_pin: { id: "map", version: "1.0.0", contentDigest: "0".repeat(64) } });
+        asRaw(doc.node_types.WorkItem).status_policy = "hardening";
+        setAt(doc, "node_types.WorkItem.linking.normalize", { fn: "slugify" });
+        Object.assign(asRaw(doc.node_types.WorkItem!.admission_policy), { by_operation: { create: "mandate-gated" }, by_transition: { verified_closed: "mandated-act" } });
+        Object.assign(asRaw(doc.registries!.work_items), { alias_columns: ["code"], partition_column: "team", bound_source_path: "data/work_items.csv" });
+        Object.assign(asRaw(doc.relation_types!.governs_risk), { source: "WorkItem", target: ["RiskEntry"], derivation_method: "explicit", attributes: { rationale: { kind: "string" } } });
+        setAt(doc, "domain_policies.autonomy_policy.max_autonomous_create_level", "feature");
+        // The vocabularies of a projection, stated on the other kind and on a kind the model does not know.
+        Object.assign(asRaw(doc.file_projections!.default_pr_slice), { include_node_types: ["WorkItem"], projected_fields: ["title"] });
+        asRaw(doc.file_projections).future_view = {
+          kind: "future-kind",
+          include_node_types: ["WorkItem"],
+          projected_fields: ["title"],
+          event_journal: { aggregates: ["item"], event_types: ["created"] },
+          state_snapshot: { include_collections: ["items"], report_sections: ["summary"], status_vocabulary: ["open"], stage_vocabulary: ["draft"], remaining_work_realizations: ["task"] },
+        };
+        const digest = independentTemplateSha256(doc);
+        const record = { lineage: doc.lineage, templateId: doc.id, templateVersion: doc.version, templateDigestSha256: digest, presentationDigest: independentPresentationSha256(doc), document: doc };
+        return { doc, pin: { id: doc.id, version: doc.version, contentDigest: stripSha256Prefix(digest) }, reg: [...track.reg, record] };
+      }
+      const REST_MEMBERS = new RegExp([
+        "^node_types\\.WorkItem\\.(status_policy|linking\\.normalize|admission_policy\\.by_(operation|transition))",
+        "^registries\\.work_items\\.(alias_columns|partition_column|bound_source_path)",
+        "^relation_types\\.governs_risk\\.(source|target|derivation_method|attributes)(?![a-z_])",
+        "^domain_policies\\.autonomy_policy\\.max_autonomous_create_level$",
+        "^(presentation_hash|mapping_pin)$",
+        "^file_projections\\.default_pr_slice\\.(include_node_types|projected_fields)",
+        "^file_projections\\.future_view\\.",
+      ].join("|"));
+
+      /** The stable code of each area of the document, stated here independently of the production schema. */
+      const AREA_CODES: ReadonlyArray<readonly [RegExp, MetamodelDiagnosticCode]> = [
+        [/^(metamodel_version|lineage|id|version|default_language)$/, "MM_IDENTITY_MISSING_REQUIRED"],
+        [/^presentation$/, UNPROJECTABLE],
+        [/^presentation_hash$/, "MM_DIGEST_MISMATCH"],
+        [/^mapping_pin$/, "MM_VERSION_UNMAPPED_BREAKING_RENAME"],
+        [/^composed_lineage_pins\[\d+\]\.(lineage|templateId)$/, "MM_COMPOSE_TARGET_NOT_REGISTERED"],
+        [/^composed_lineage_pins\[\d+\]\.templateVersion$/, "MM_COMPOSE_FLOATING_VERSION"],
+        [/^composed_lineage_pins\[\d+\]\.templateDigestSha256$/, "MM_COMPOSE_INVALID_DIGEST"],
+        [/^composed_lineage_pins/, "MM_COMPOSE_UNKNOWN_EXTERNAL_TYPE"],
+        [/^registries/, "MM_NODE_INVALID_REGISTRY_REF"],
+        [/^node_types$/, "MM_NODE_EMPTY_SET"],
+        [/^node_types\.[^.]+\.registry$/, "MM_NODE_INVALID_REGISTRY_REF"],
+        [/^node_types\.[^.]+\.visual_encoding/, "MM_NODE_INVALID_VISUAL_ENCODING"],
+        [/^node_types\.[^.]+\.(attributes|properties)/, ATTR],
+        [/^node_types\.[^.]+\.(state_machine|state_machines|admission_policy)/, STATE],
+        [/^node_types/, NODE],
+        [/^relation_types\.[^.]+\.cardinality/, "MM_REL_INVALID_CARDINALITY"],
+        [/^relation_types\.[^.]+\.hierarchy/, "MM_REL_INVALID_HIERARCHY"],
+        [/^relation_types\.[^.]+\.(description|requires_evidence|assertion_basis|derivation_methods?|attributes)/, ATTR],
+        [/^relation_types/, "MM_REL_MISSING_ENDPOINTS"],
+        [/^hardening/, STATE],
+        [/^domain_policies/, DOMAIN],
+        [/^file_projections\.[^.]+\.kind$/, OVERLAY],
+        [/^file_projections\.[^.]+\.(root_dir|relative_path_templates?(\.\w+)?|\w+\.relative_path_template)$/, "MM_FILE_SHAPE_PATH_ESCAPE"],
+        [/^file_projections\.[^.]+\.precedence$/, "MM_OVERLAY_CROSS_LINEAGE_MUTATION_FORBIDDEN"],
+        [/^file_projections\.default_pr_slice\./, D29],
+        [/^file_projections/, OVERLAY],
+      ];
+      /** Members that legitimately accept a second JSON type: writing that type there is a change, not a malformation. */
+      const SECOND_TYPE: ReadonlyArray<readonly [RegExp, JsonKind]> = [
+        [/\.visual_encoding$/, "null"],
+        [/\.linking\.resolve$/, "string"],
+        [/\.linking\.detect\[\d+\]$/, "string"],
+        [/\.linking\.detect\[\d+\]$/, "object"],
+        [/^hardening\.status_transitions\[\d+\]\.(from_statuses|to_statuses)$/, "string"],
+        [/\.cardinality\.(in|out)\.max$/, "number"],
+        [/^relation_types\.[^.]+\.(source|target|derivation_method)$/, "string"],
+        [/^relation_types\.[^.]+\.(source|target|derivation_method)$/, "array"],
+      ];
+      /** `presentation` is free-form below its root: the gate types nothing there. */
+      const UNTYPED = /^presentation\./;
+      const TRANSITION_ENDPOINT = /^(.*transitions\[\d+\])\.(?:from|to|from_statuses|to_statuses)(?:\[\d+\])?$/;
+      /** Members reported on their holder, as Lot 0.2 does: the two bounds of a cardinality, the two scores of a band. */
+      const GROUPED_MEMBER = /^(.*(?:\.cardinality\.(?:in|out)|\.severity_bands\[\d+\]))\.(?:min|max|min_score|max_score)$/;
+
+      /** Where a malformed value at `path` is reported: its transition, its group, its array of scalars, or itself. */
+      function reportedAt(doc: unknown, path: string): string {
+        const endpoint = TRANSITION_ENDPOINT.exec(path) ?? GROUPED_MEMBER.exec(path);
+        if (endpoint) return endpoint[1]!;
+        const element = /^(.*)\[\d+\]$/.exec(path);
+        const array = element ? getAt(doc, element[1]!) : undefined;
+        return Array.isArray(array) && array.every((item) => typeof item === "string" || typeof item === "number") ? element![1]! : path;
+      }
+
+      /**
+       * Writes each of the five other JSON types over every typed path, on the candidate and on the registered parent.
+       * The diff is asked every time; the gate (both positions) for one type per path and the bundle for one path
+       * in ten, since all three share the one entry.
+       */
+      function sweepWrongTypes(base: Base, only?: RegExp): { readonly refused: number; readonly classified: number } {
+        const tally = { refused: 0, classified: 0 };
+        const clean = { ...structuredClone(base.doc), version: "1.0.1", parent_pin: base.pin };
+        const asCandidate = structuredClone(clean);
+        const asParent = structuredClone(base.doc);
+        const parentRegistry = base.reg.map((record) => (record.templateId === base.doc.id ? { ...record, document: asParent } : record));
+        const refusedAs = (result: { readonly status: string; readonly diagnostics: readonly { readonly code: string; readonly path: string }[] }) =>
+          ({ status: result.status, diagnostics: result.diagnostics.map(codePath) });
+        const diffOf = (parent: unknown, cand: unknown) => {
+          const diff = diffSemVerDocuments(asRaw(parent), asRaw(cand));
+          return { ...diff, refusals: diff.refusals?.map(codePath) };
+        };
+        for (const [index, { path, value }] of [...everyPath(base.doc)].entries()) {
+          if (UNTYPED.test(path) || only?.test(path) === false) continue;
+          const original = [getAt(asCandidate, path), getAt(asParent, path)] as const;
+          const others = JSON_KINDS.filter((kind) => kind !== kindOf(value));
+          for (const kind of others) {
+            const label = `${path} <- ${kind}`;
+            setAt(asCandidate, path, structuredClone(OF_KIND[kind]));
+            setAt(asParent, path, structuredClone(OF_KIND[kind]));
+            // The candidate alone, the parent alone, then both malformed at the same site: one refusal each time.
+            const diffs = [diffOf(base.doc, asCandidate), diffOf(asParent, clean), diffOf(asParent, asCandidate)];
+            if (SECOND_TYPE.some(([pattern, accepted]) => accepted === kind && pattern.test(path))) {
+              expect(diffs.map((diff) => diff.refusals), label).toEqual([undefined, undefined, undefined]);
+              tally.classified += 1;
+            } else {
+              const refusal: Refusal = { code: AREA_CODES.find(([pattern]) => pattern.test(path))![1], path: reportedAt(base.doc, path) };
+              expect(diffs, label).toEqual(diffs.map(() => ({ ...EMPTY_DIFF, refusals: [refusal] })));
+              if (kind === others[index % others.length]) {
+                const refused = { status: "refused-metamodel-invalid", diagnostics: [refusal] };
+                expect(refusedAs(evaluateSemVerGate(asCandidate, { registry: base.reg })), `candidate ${label}`).toEqual(refused);
+                expect(refusedAs(evaluateSemVerGate(clean, { registry: parentRegistry })), `parent ${label}`).toEqual(refused);
+                expect(refusedAs(evaluateSemVerGate(asCandidate, { registry: parentRegistry })), `both ${label}`).toEqual(refused);
+              }
+              if (index % 10 === 0 && kind === others[0]) {
+                // Never compatible. `metamodel_version` alone takes the pair out of the v1 scope: the bundle then reports a breaking change itself.
+                const compat = checkProfileCompatibility(asProfile(base.doc), asProfile(asCandidate));
+                expect([compat.ok, compat.compatible], `bundle ${label}`).toEqual([path === "metamodel_version", false]);
+              }
+              tally.refused += 1;
+            }
+            setAt(asCandidate, path, original[0]);
+            setAt(asParent, path, original[1]);
+          }
+        }
+        expect(diffOf(asParent, asCandidate), "the sweep restores both documents").toEqual(EMPTY_DIFF);
+        return tally;
+      }
+
+      it("refuses a value of another JSON type at every typed path of a Lot-0.2-valid document, as candidate and as registered parent", () => {
+        expect(sweepWrongTypes(sweepTrackBase())).toEqual({ refused: 2881, classified: 9 });
+        expect(sweepWrongTypes(sweepH2aBase())).toEqual({ refused: 240, classified: 0 });
+      }, 120_000);
+
+      it("does the same on the members no Lot-0.2-valid fixture states, and on the parent_pin of an upgrade", () => {
+        expect(sweepWrongTypes(sweepRestBase(), REST_MEMBERS)).toEqual({ refused: 227, classified: 3 });
+        const track = baseOf("track");
+        const pinRefusal: Refusal = { code: "MM_VERSION_PARENT_PIN_MISSING_OR_MISMATCH", path: "parent_pin" };
+        for (const kind of JSON_KINDS.filter((other) => other !== "object")) {
+          const cand = { ...structuredClone(track.doc), version: "1.0.1", parent_pin: OF_KIND[kind] };
+          expectSemVerRefusal(cand, { registry: track.reg }, pinRefusal.code, pinRefusal.path);
+          expect(diffSemVerDocuments(asRaw(track.doc), asRaw(cand)).refusals?.map(codePath), kind).toEqual([pinRefusal]);
+          expect(diffSemVerDocuments(asRaw(cand), asRaw(track.doc)).refusals?.map(codePath), kind).toEqual([pinRefusal]);
+        }
+      });
     });
   });
 });
