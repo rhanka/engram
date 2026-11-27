@@ -648,7 +648,10 @@ describe("BD-6 DS-token SVG primitives, normalization & 7x5 glyph registry", () 
       cx: 1,
       cy: 2,
     } as const;
-    expect(renderGlyph({ ...base, outerRing: false })).toBe(renderGlyph(base));
+    expect(renderGlyph({ ...base, outerRing: false })).toBe(
+      '<circle cx="1" cy="2" r="5" fill="var(--st-semantic-data-category1, #4E79A7)"'
+      + ' stroke="var(--st-semantic-text-primary, #0f172a)" stroke-width="1"/>',
+    );
     refuse(() => renderGlyph(null as never), "NOT_OBJECT", "glyph");
     refuse(() => renderGlyph({ ...base, shape: "hex" as never }), "BAD_ENUM", "glyph.shape");
     refuse(() => renderGlyph({ ...base, state: null as never }), "BAD_ENUM", "glyph.state");
@@ -856,6 +859,76 @@ describe("BD-6 DS-token SVG primitives, normalization & 7x5 glyph registry", () 
       () => resolveRecordGlyphState(plain, { costMode: "seat", seatStatus: undefined }),
       "BAD_ENUM",
       "opts.seatStatus",
+    );
+  });
+
+  it("folds R2 primitive minors: fractional coords/sizes, distinct outerRing, points[1] & empty body", () => {
+    const blue = "var(--st-semantic-data-category1, #4E79A7)";
+    const dark = "var(--st-semantic-text-primary, #0f172a)";
+    const surface = "var(--st-semantic-surface-default, #ffffff)";
+    const orange = "var(--st-semantic-data-category2, #F28E2B)";
+    expect(renderGlyph({
+      shape: "circle", state: "seat_measured_hollow", color: blue,
+      cx: 5.556, cy: 6.666, size: 12.345, outerRing: true,
+    })).toBe(
+      `<g><circle cx="5.56" cy="6.67" r="6.17" fill="${surface}" stroke="${blue}" stroke-width="1.9"/>`
+      + `<circle cx="5.56" cy="6.67" r="11.11" fill="none" stroke="${dark}" stroke-width="2.4"/></g>`,
+    );
+    expect(renderGlyph({
+      shape: "square", state: "api_filled", color: blue, cx: 10.123, cy: 20.456, size: 12.345,
+    })).toBe(
+      `<rect x="4.57" y="14.9" width="11.11" height="11.11" fill="${blue}" stroke="${dark}" stroke-width="1"/>`,
+    );
+    expect(renderGlyph({
+      shape: "cross", state: "incomplete_hollow_dashed", color: blue, cx: 10.123, cy: 20.456, size: 12.345,
+    })).toBe(
+      '<polygon points="7.65,13.67 12.59,13.67 12.59,17.99 16.91,17.99 16.91,22.93 12.59,22.93'
+      + ' 12.59,27.25 7.65,27.25 7.65,22.93 3.33,22.93 3.33,17.99 7.65,17.99"'
+      + ` fill="${surface}" stroke="${blue}" stroke-width="1.9" stroke-dasharray="3.5 2"/>`,
+    );
+    const validPt = { x: 1, y: 2, effort: "low" as const };
+    refuse(() => renderEffortPath([validPt, null as never], orange), "NOT_OBJECT", "points[1]");
+    refuse(
+      () => renderEffortPath([validPt, { x: Number.NaN, y: 2, effort: "low" }], orange),
+      "BAD_NUMBER",
+      "points[1].x",
+    );
+    refuse(
+      () => renderEffortPath([validPt, { x: 1, y: Number.NaN, effort: "low" }], orange),
+      "BAD_NUMBER",
+      "points[1].y",
+    );
+    refuse(
+      () => renderEffortPath([validPt, { x: 1, y: 2, effort: "cascade" }], orange),
+      "CASCADE_CONFLICT",
+      "points[1].effort",
+    );
+    const baseSvg = {
+      slug: "office-city",
+      chartKind: "pr" as const,
+      width: 1440.345,
+      height: 900.124,
+      title: "P & R",
+      description: "Desc <1>",
+      body: "",
+    };
+    expect(renderChartSvg(baseSvg)).toBe(
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440.35 900.12" width="1440.35" height="900.12"'
+      + ' role="img" aria-labelledby="fig-office-city-pr-title" aria-describedby="fig-office-city-pr-desc"'
+      + ' font-family="var(--st-font-sans, Inter, system-ui, -apple-system, BlinkMacSystemFont,'
+      + " 'Segoe UI', 'DejaVu Sans', sans-serif)\">"
+      + '<title id="fig-office-city-pr-title">P &amp; R</title>'
+      + '<desc id="fig-office-city-pr-desc">Desc &lt;1&gt;</desc>'
+      + `<style>${SVG_THEME_CSS}</style>`
+      + '<rect width="1440.35" height="900.12" fill="var(--st-semantic-surface-default, #ffffff)"/></svg>',
+    );
+    refuse(() => renderChartSvg({ ...baseSvg, slug: "" }), "EMPTY_STRING", "svg.slug");
+    refuse(() => renderChartSvg({ ...baseSvg, chartKind: "unknown" as never }), "BAD_ENUM", "svg.chartKind");
+    refuse(() => renderChartSvg({ ...baseSvg, height: null as never }), "BAD_NUMBER", "svg.height");
+    refuse(() => renderChartSvg({ ...baseSvg, body: null as never }), "WRONG_TYPE", "svg.body");
+    expect(renderSvgText({ x: 12.345, y: -0.001, text: "Astra <v12>", anchor: "start" })).toBe(
+      '<text x="12.35" y="0" font-size="11" font-weight="400"'
+      + ' text-anchor="start" fill="var(--st-semantic-text-primary, #0f172a)">Astra &lt;v12&gt;</text>',
     );
   });
 });
