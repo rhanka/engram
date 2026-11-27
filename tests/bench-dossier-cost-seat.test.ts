@@ -3,6 +3,8 @@ import {
   BenchCostSeatError, computeArmCostAndSeat, computeFromRates, convertCurrency, parseResultsNdjson,
   parseValidatedPriceTable, resolveApiCost, resolveSeat, roundCostNano, summarizeInvocationUsage,
 } from "../src/bench-dossier/cost-seat.js";
+import { validateBenchResultsInvariants } from "../src/bench-dossier/invariants.js";
+import { parseBenchResultsFile } from "../src/bench-dossier/results-contract.js";
 import type { ArmManifestFile } from "../src/bench-dossier/companion-contracts.js";
 
 type CodedError = Error & { code?: string; path?: string };
@@ -799,5 +801,52 @@ describe("BD-4 tree-11: computeArmCostAndSeat full literals and Probe P1 end-to-
         seatPlan: "Pro", seatMonthlyPrice: 277, seatLimitScale: null, seatPlanSource: "inv", seatPlanAsOf: "2026-11-22",
       },
     });
+  });
+});
+
+describe("BD-4 tree-12: BenchResultsFile and invariant round-trip compatibility", () => {
+  it("produces BenchCostBlock accepted by parseBenchResultsFile and validateBenchResultsInvariants", () => {
+    const invariantResult = computeArmCostAndSeat({
+      resultRows: [{ id: "a1" }, {
+        type: "summary", ok: 1, failed: 0, calls_total: 1,
+        tokens: { input: 1000, output: 500, reasoning: 0, total: 1500 },
+        cost: { currency: "USD", api_equivalent: 0.01 },
+      }],
+      arm: makeArm(), currency: "USD",
+    });
+    const zeroInterval = {
+      estimator: "unweighted" as const, method: "none" as const, clustering: "independent_site" as const,
+      valid: false, low: null, high: null,
+    };
+    const sitePresence = {
+      goldPresentSites: 1, goldAbsentSites: 0, unresolvedSites: 0, insufficientSites: 0, tpSites: 1, fnSites: 0,
+      wrongValueOnPresentSites: 0, fpOnAbsentSites: 0, tnSites: 0, failedOnAbsentSites: 0,
+      siteRecall: 1, siteRecallInterval: zeroInterval, siteAbstentionSpecificity: null,
+      siteAbstentionInterval: zeroInterval,
+    };
+    const pointMetrics = {
+      precision: 1, recall: 1, f1: 1, precisionInterval: zeroInterval, recallInterval: zeroInterval,
+    };
+    const benchDoc = parseBenchResultsFile({
+      schemaId: "urn:engram:bench-results:1.0.0", schemaVersion: 1, generatedAt: "2026-11-22T00:00:00Z",
+      campaignId: "bd4", supportFloors: { recallMinPositives: 30, precisionMinPredictions: 30, failureCeiling: 0.05 },
+      corpus: {
+        partition: "eval", primaryEstimator: "unweighted", costBasisLabel: "extracted_packet", currency: "USD",
+        goldenMissionSha256: "a".repeat(64), candidateMissionSha256: "b".repeat(64), fieldShapeVerified: true,
+        goldenSha256: "c".repeat(64), goldenIds: 1, fields: ["city"], annotatorCount: 2,
+        krippendorffAlphaByField: { city: null },
+      },
+      records: [{
+        armId: "arm-a", armMissionSha256: "b".repeat(64), missingDigestAllowed: false, provider: "OpenAI",
+        model: "gpt-6-astra-low", modelLabel: "Astra low", proseName: "OpenAI Astra low", effort: "low",
+        isCascade: false, isHighlighted: false, incomplete: false, field: "city", comparator: "generic",
+        isPrimaryComparator: true, attempted: 1, accepted: 1, failed: 0, failuresByCode: {},
+        unverifiedQuotesNulled: 0, unverifiedWholeRecordsDropped: null, goldPositive: 1, goldAbsent: 0, tp: 1, fp: 0,
+        fpOnPresent: 0, fpOnAbsent: 0, fpElementsOnAbsent: 0, fn: 0, tn: 0, failedOnAbsent: 0, unresolved: 0,
+        insufficient: 0, abstentionSpecificity: null, sitePresence, unweighted: pointMetrics, weighted: null,
+        ...pointMetrics, indeterminate: { precision: true, recall: true, f1: true }, ...invariantResult,
+      }],
+    });
+    expect(validateBenchResultsInvariants(benchDoc).records[0]?.cost.apiEquivalentTotal).toBe(0.01);
   });
 });
