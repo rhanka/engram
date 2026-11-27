@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  BenchInvariantError, compatibleMissionFieldShape, wilson95,
+  BenchInvariantError, compatibleMissionFieldShape, validateProseName, wilson95,
   type BenchInvariantCode,
 } from "../src/bench-dossier/invariants.js";
 import {
@@ -165,6 +165,67 @@ describe("compatibleMissionFieldShape via specsOf", () => {
       const candidate = clone(base);
       mutate(golden, candidate);
       refuse(() => compatibleMissionFieldShape(golden, candidate), invariant, path);
+    }
+  });
+
+  it("accepts non-shape Mission overrides and >1 maxValues differences", () => {
+    const golden = makeMission();
+    const freeVars: ((candidate: any) => void)[] = [
+      (candidate) => { candidate.instruction = "Bounded candidate prompt."; },
+      (candidate) => { candidate.tokenCap = 24000; },
+      (candidate) => { delete candidate.tokenCap; },
+      (candidate) => { candidate.reasoning_budget_tokens = 1000; },
+      (candidate) => { delete candidate.reasoning_budget_tokens; },
+      (candidate) => { candidate.calls_window_minutes = 10080; },
+      (candidate) => { delete candidate.calls_window_minutes; },
+      (candidate) => { delete candidate.price_table; },
+      (candidate) => { candidate.fields[0] = { name: "headline", kind: "scalar", max_values: 1 }; },
+      (candidate) => { candidate.fields[1].fields[0].instruction = "Municipality"; },
+      (candidate) => { delete candidate.fields[1].fields[0].instruction; },
+      (candidate) => { candidate.fields[2] = "overflow_canadian_offices"; },
+    ];
+    for (const mutate of freeVars) {
+      const candidate = clone(golden);
+      mutate(candidate);
+      expect(compatibleMissionFieldShape(golden, candidate).maxValuesChanged).toBe(false);
+    }
+    const maxDiffCandidate = clone(golden) as any;
+    maxDiffCandidate.fields[1].max_values = 2;
+    expect(compatibleMissionFieldShape(golden, maxDiffCandidate).maxValuesChanged).toBe(true);
+    const maxClampGolden = clone(golden) as any;
+    const maxClampCandidate = clone(golden) as any;
+    maxClampGolden.fields[1].max_values = 5;
+    maxClampCandidate.fields[1].max_values = 6;
+    expect(compatibleMissionFieldShape(maxClampGolden, maxClampCandidate).maxValuesChanged).toBe(false);
+  });
+});
+
+describe("validateProseName gates", () => {
+  it("accepts valid prose names, default path, h2a and utf-8 tokens", () => {
+    validateProseName("OpenAI Astra low");
+    for (const ok of [
+      "OpenAI Astra low", "Oracle Matrix Queue", "Alpha hrpn note", "h2a", "H2A", "UTF-8", "utf-8", "\"utf-8,\"",
+    ]) {
+      validateProseName(ok, "$.p");
+    }
+  });
+
+  it("refuses empty strings, punctuation, digits and internal IDs", () => {
+    let emptyErr: unknown;
+    try {
+      validateProseName(" ", "$.p");
+    } catch (caught) {
+      emptyErr = caught;
+    }
+    expect(emptyErr).toBeInstanceOf(BenchResultsValidationError);
+    expect([(emptyErr as BenchResultsValidationError).code, (emptyErr as BenchResultsValidationError).path])
+      .toEqual(["EMPTY_STRING", "$.p"]);
+    refuse(() => validateProseName("Arm 2"), "PROSE_NAME_GATE", "$");
+    for (const bad of [
+      "a;b", "a(b", "a)b", "Arm 2", "GPT-4.1", "h2a2", "utf-8-x", "O001", "A01", "T01", "r1-D1",
+      "J1", "M1", "Q1", "Q-A", "F1", "WP1.2", "D-3", "LOT-4", "AC-1", "rel-1", "hrpn/#5", "PR #6",
+    ]) {
+      refuse(() => validateProseName(bad, "$.p"), "PROSE_NAME_GATE", "$.p");
     }
   });
 });

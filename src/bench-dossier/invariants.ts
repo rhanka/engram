@@ -1,4 +1,5 @@
 import { specsOf, type FieldSpec, type Mission } from "../scrap/extract.js";
+import { nonEmptyString } from "./results-guards.js";
 import { BenchInvariantError, failInv, wilson95, type BenchInvariantCode } from "./invariants-checks.js";
 export { BenchInvariantError, wilson95, type BenchInvariantCode };
 
@@ -44,4 +45,16 @@ export function compatibleMissionFieldShape(golden: Mission, cand: Mission) {
       sub.name !== candField.subFields![subIndex]!.name && failShape(`${fieldPath}.fields[${subIndex}].name`));
   });
   return { maxValuesChanged, goldenSpecs, candidateSpecs } as const;
+}
+
+const INTERNAL_ID_RE = new RegExp(
+  "\\b(?:WP\\d+(?:\\.\\d+)?|D-\\d+|O\\d{3,4}|A\\d{2}|T\\d{2}|r\\d+-D\\d+|"
+  + "J\\d+|M\\d+|Q\\d+|Q-[A-Z]|F\\d+|LOT-\\d+|AC-\\d+|rel-\\d+|PR\\s*#?\\d+|hrpn/#\\d+)\\b");
+/** Reject proseName values violating Focus readability gates (digits, internal IDs, ;, ()). */
+export function validateProseName(proseName: string, path = "$"): void {
+  nonEmptyString(proseName, path);
+  if (/[;()]/.test(proseName) || INTERNAL_ID_RE.test(proseName)) failInv("PROSE_NAME_GATE", path);
+  if ([...(proseName.match(/\b(?!h2a\b)\S*\d\S*\b/gi) ?? [])].some((token) =>
+    token.replace(/^[.,!?:;"'`]+|[.,!?:;"'`]+$/g, "").replace(/^utf-8$/i, "") !== ""))
+    failInv("PROSE_NAME_GATE", path);
 }
