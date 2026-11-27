@@ -1,6 +1,9 @@
-import { EFFORT_LEVELS, type EffortLevel } from "./results-types.js";
+import {
+  EFFORT_LEVELS, SEAT_STATUSES, type BenchCostBlock, type BenchResultRecord, type EffortLevel,
+} from "./results-types.js";
 import {
   failSvg, normalizeProviderKey, requireBool, requireEnum, requireNonEmptyText, requirePlainObj,
+  type GlyphState,
 } from "./svg-tokens.js";
 
 export { GLYPH_STATES, resolveGlyphStyle, type GlyphState, type GlyphStyle } from "./svg-tokens.js";
@@ -13,6 +16,7 @@ export const EFFORT_PROGRESSION_ORDER = [
   "off", "minimal", "low", "medium", "high", "xhigh", "max",
 ] as const satisfies readonly Exclude<EffortLevel, "cascade">[];
 const EFFORT_LEVEL_SET = new Set<string>(EFFORT_LEVELS);
+const SEAT_SET = new Set<string>(SEAT_STATUSES);
 const EFFORT_RANK = new Map<string, number>(EFFORT_PROGRESSION_ORDER.map((effort, index) => [effort, index]));
 /** Return 0..6 progression index for non-cascade EffortLevel, or -1 for "cascade". */
 export function effortProgressionRank(effort: EffortLevel, path = "effort"): number {
@@ -99,3 +103,30 @@ export function buildShapeRegistry(arms: readonly ModelShapeInput[]) {
 }
 export const resolveModelShape = (arm: ModelShapeInput): GlyphShape =>
   (parseModelArm(arm, "arm").isCascade ? "star" : buildShapeRegistry([arm]).shapeFor(arm));
+
+/** Map BD-1a seatStatus to hollow glyph state, failing closed on "unknown". */
+export function resolveSeatGlyphState(
+  seatStatus: BenchCostBlock["seatStatus"], path = "seatStatus",
+): "seat_measured_hollow" | "seat_estimated_hollow_dotted" {
+  const status = requireEnum<BenchCostBlock["seatStatus"]>(seatStatus, SEAT_SET, path);
+  if (status === "unknown") failSvg("SEAT_UNAVAILABLE", path);
+  return status === "measured" ? "seat_measured_hollow" : "seat_estimated_hollow_dotted";
+}
+export interface RecordGlyphStateOptions {
+  readonly costMode?: "api" | "seat";
+  readonly seatStatus?: BenchCostBlock["seatStatus"];
+}
+/** Resolve glyph state for a BD-1a result record in API or seat cost mode. */
+export function resolveRecordGlyphState(
+  arm: Pick<BenchResultRecord, "incomplete" | "isHighlighted">, opts?: RecordGlyphStateOptions,
+): GlyphState {
+  requirePlainObj(arm, "arm");
+  const incomplete = requireBool(arm.incomplete, "arm.incomplete");
+  const highlighted = requireBool(arm.isHighlighted, "arm.isHighlighted");
+  if (opts !== undefined) requirePlainObj(opts, "opts");
+  const costMode = opts?.costMode === undefined ? "api" : opts.costMode;
+  if (costMode !== "api" && costMode !== "seat") failSvg("BAD_ENUM", "opts.costMode");
+  const seatState = costMode === "seat"
+    ? resolveSeatGlyphState(opts!.seatStatus as BenchCostBlock["seatStatus"], "opts.seatStatus") : null;
+  return incomplete ? "incomplete_hollow_dashed" : seatState ?? (highlighted ? "highlighted" : "api_filled");
+}

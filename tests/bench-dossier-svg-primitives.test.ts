@@ -32,6 +32,8 @@ import {
   buildShapeRegistry,
   resolveModelShape,
   type ModelShapeInput,
+  resolveRecordGlyphState,
+  resolveSeatGlyphState,
 } from "../src/bench-dossier/svg-primitives.js";
 
 function parseLeafSvg(xml: string): { tag: string; attrs: Record<string, string>; text?: string } {
@@ -483,5 +485,44 @@ describe("BD-6 DS-token SVG primitives, normalization & 7x5 glyph registry", () 
       "gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-luna", "gpt-6-luna", "gpt-6.2-astra", "gpt-6.2-sol", "gpt-4.1",
     ].map((model) => ({ provider: "OpenAI", model, isCascade: false }));
     refuse(() => buildShapeRegistry(sevenOpenAi), "PROVIDER_SHAPE_OVERFLOW", "arms.openai");
+  });
+
+  it("resolves seat glyph states and record glyph states across all costMode/seatStatus combinations", () => {
+    expect(resolveSeatGlyphState("measured")).toBe("seat_measured_hollow");
+    expect(resolveSeatGlyphState("estimated")).toBe("seat_estimated_hollow_dotted");
+    refuse(() => resolveSeatGlyphState("unknown"), "SEAT_UNAVAILABLE", "seatStatus");
+    refuse(() => resolveSeatGlyphState("unknown", "p.s"), "SEAT_UNAVAILABLE", "p.s");
+    for (const bad of [null, undefined, "bad"]) {
+      refuse(() => resolveSeatGlyphState(bad as never), "BAD_ENUM", "seatStatus");
+    }
+    const plain = { incomplete: false, isHighlighted: false };
+    expect(resolveRecordGlyphState(plain)).toBe("api_filled");
+    expect(resolveRecordGlyphState(plain, undefined)).toBe("api_filled");
+    expect(resolveRecordGlyphState(plain, { costMode: undefined, seatStatus: "unknown" })).toBe("api_filled");
+    expect(resolveRecordGlyphState({ incomplete: false, isHighlighted: true })).toBe("highlighted");
+    expect(resolveRecordGlyphState({ incomplete: true, isHighlighted: false })).toBe("incomplete_hollow_dashed");
+    expect(resolveRecordGlyphState({ incomplete: true, isHighlighted: true })).toBe("incomplete_hollow_dashed");
+    expect(resolveRecordGlyphState(plain, { costMode: "seat", seatStatus: "measured" })).toBe("seat_measured_hollow");
+    expect(resolveRecordGlyphState(plain, { costMode: "seat", seatStatus: "estimated" }))
+      .toBe("seat_estimated_hollow_dotted");
+    expect(resolveRecordGlyphState({ incomplete: false, isHighlighted: true },
+      { costMode: "seat", seatStatus: "measured" })).toBe("seat_measured_hollow");
+    expect(resolveRecordGlyphState({ incomplete: false, isHighlighted: true },
+      { costMode: "seat", seatStatus: "estimated" })).toBe("seat_estimated_hollow_dotted");
+    expect(resolveRecordGlyphState({ incomplete: true, isHighlighted: true },
+      { costMode: "seat", seatStatus: "measured" })).toBe("incomplete_hollow_dashed");
+    refuse(() => resolveRecordGlyphState(null as never), "NOT_OBJECT", "arm");
+    refuse(() => resolveRecordGlyphState({ incomplete: 1 as never, isHighlighted: false }),
+      "WRONG_TYPE", "arm.incomplete");
+    refuse(() => resolveRecordGlyphState({ incomplete: false, isHighlighted: null as never }),
+      "WRONG_TYPE", "arm.isHighlighted");
+    refuse(() => resolveRecordGlyphState(plain, null as never), "NOT_OBJECT", "opts");
+    refuse(() => resolveRecordGlyphState(plain, { costMode: null as never }), "BAD_ENUM", "opts.costMode");
+    refuse(() => resolveRecordGlyphState(plain, { costMode: "unknown" as never }), "BAD_ENUM", "opts.costMode");
+    refuse(() => resolveRecordGlyphState(plain, { costMode: "seat" }), "BAD_ENUM", "opts.seatStatus");
+    refuse(() => resolveRecordGlyphState(plain, { costMode: "seat", seatStatus: "unknown" }),
+      "SEAT_UNAVAILABLE", "opts.seatStatus");
+    refuse(() => resolveRecordGlyphState({ incomplete: true, isHighlighted: false },
+      { costMode: "seat", seatStatus: "unknown" }), "SEAT_UNAVAILABLE", "opts.seatStatus");
   });
 });
