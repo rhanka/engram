@@ -507,4 +507,70 @@ describe("BD-5 tree-10: resolveSealedArmCost price_table, digest & provenance", 
       { ...baseArm, missionSha256: dc }, "USD", dc, undefined, undefined)) as BenchIngestError).code)
       .toBe("MISSION_DIGEST_MISMATCH");
   });
+
+  it("enforces sealed FX/currency (P2), zero-basis (P3/I39), sourceCurrency tiers (I40-I43) & estimated seat", () => {
+    const dc = "c".repeat(64);
+    const toks = { input: 500_000, output: 0, reasoning: 0, cached: 0, total: 500_000 };
+    const seat = {
+      status: "measured" as const, method: "weekly_burn_delta" as const, windowMinutes: 10080 as const,
+      isolatedSeat: true as const, plan: "Pro", planMonthlyPrice: 487, planSource: "s", planAsOf: "2026-11-22",
+      remainingBefore: 0.75, remainingAfter: 0.25, observedItems: 8,
+    };
+    for (const [recPatch, armPatch, cur, rawPt, exSeat] of [
+      [{ calls: 1, costBasisItems: 1, apiEquivalentTotal: 1 },
+        { fx: { from: "USD" as const, to: "USD" as const, rate: 1, source: "b", asOf: "d" } }, "CAD", undefined,
+        undefined],
+      [{ calls: 1, costBasisItems: 1, apiEquivalentTotal: 1 },
+        { fx: { from: "CAD" as const, to: "CAD" as const, rate: 2, source: "b", asOf: "d" } }, "CAD", undefined, seat],
+      [{ calls: 1, costBasisItems: 1 },
+        { tariffOverride: { status: "primary" as const, currency: "USD" as const, source: "s", asOf: "d" } },
+        "CAD", undefined, seat],
+      [{ calls: 1, costBasisItems: 1, apiEquivalentTotal: 1 },
+        { fx, tariffOverride: { status: "primary" as const, currency: "CAD" as const, source: "s", asOf: "d" } },
+        "USD", pt, seat],
+      [{ calls: 1, costBasisItems: 1, apiEquivalentTotal: 1 }, {}, "CAD", pt, seat],
+    ] as const) {
+      const err = catchError(() => resolveSealedArmCost([{ ...baseRec, ...recPatch }],
+        { ...baseArm, ...armPatch }, cur, dc, exSeat, rawPt)) as BenchCostSeatError;
+      expect([err instanceof BenchCostSeatError, err.code]).toEqual([true, "CURRENCY_MISMATCH"]);
+    }
+    for (const [recPatch, exSeat] of [
+      [{ calls: 2 }, seat],
+      [{ apiEquivalentTotal: 1 }, seat],
+      [{ calls: 3, costBasisItems: 0 }, seat],
+    ] as const) {
+      const err = catchError(() => resolveSealedArmCost([{ ...baseRec, ...recPatch }],
+        baseArm, "USD", dc, exSeat, undefined)) as { code?: string };
+      expect([isBenchIngestUsageError(err), err.code]).toEqual([true, "COST_BASIS"]);
+    }
+    const zeroApi = catchError(() => resolveSealedArmCost(
+      [{ ...baseRec, calls: 0, costBasisItems: 0, apiEquivalentTotal: 5 }],
+      baseArm, "USD", dc, seat, undefined)) as BenchCostSeatError;
+    expect([zeroApi instanceof BenchCostSeatError, zeroApi.code]).toEqual([true, "BAD_SHAPE"]);
+    const zeroOk = resolveSealedArmCost(
+      [{ ...baseRec, calls: 0, costBasisItems: 0, apiEquivalentTotal: 0 }], baseArm, "USD", dc, seat, undefined);
+    expect([zeroOk?.callsPerItem, zeroOk?.cost.apiEquivalentTotal, zeroOk?.cost.apiEquivalentPerItem])
+      .toEqual([0, 0, 0]);
+    const ovRate = { status: "primary" as const, source: "ov", asOf: "d", perMillion: { input: 4, output: 0 } };
+    const t40 = resolveSealedArmCost([{ ...baseRec, calls: 1, costBasisItems: 1, tokens: toks }],
+      { ...baseArm, fx, tariffOverride: { ...ovRate, currency: "CAD" } }, "CAD", dc, undefined, pt);
+    const t41 = resolveSealedArmCost([{ ...baseRec, calls: 1, costBasisItems: 1, tokens: toks }],
+      { ...baseArm, fx, tariffOverride: ovRate }, "CAD", dc, undefined, { ...pt, currency: "CAD" });
+    const t42 = resolveSealedArmCost([{ ...baseRec, calls: 1, costBasisItems: 1, tokens: toks }],
+      { ...baseArm, fx, tariffOverride: ovRate }, "CAD", dc, undefined, undefined);
+    const missTok = resolveSealedArmCost([{ ...baseRec, costBasisItems: 1 }],
+      baseArm, "USD", dc, undefined, pt);
+    const estSeat = {
+      status: "estimated" as const, method: "api_cost_proportional" as const, windowMinutes: 10080 as const,
+      plan: "Pro", planMonthlyPrice: 100, planSource: "s", planAsOf: "d", observedApiEquivalent: 10,
+      quotaDeltaFraction: 0.25, basePlanMultiplier: 1, targetPlanMultiplier: 2,
+    };
+    const est = resolveSealedArmCost([{ ...baseRec, costBasisItems: 1, tokens: toks }],
+      baseArm, "USD", dc, estSeat, pt);
+    expect([t40?.cost.apiEquivalentTotal, t41?.cost.apiEquivalentTotal, t42?.cost.apiEquivalentTotal,
+      missTok?.cost.costUnknownReason, est?.calls, est?.callsPerItem, est?.cost.seatStatus,
+      resolveSealedArmCost([], baseArm, "USD", dc, seat, undefined),
+      resolveSealedArmCost([{ ...baseRec }], baseArm, "USD", dc, undefined, undefined),
+    ]).toEqual([2, 2, 4, "missing-usage", "unknown", "unknown", "estimated", undefined, undefined]);
+  });
 });
