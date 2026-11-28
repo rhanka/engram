@@ -8,6 +8,7 @@ import {
   DEFAULT_MARKER_RADIUS, LABEL_TIE_DELTA_PX, LABEL_TIE_INLINE_CAP, mergeCoincidentTies,
 } from "../src/bench-dossier/label-ties.js";
 import type { LabelPointInput } from "../src/bench-dossier/label-types.js";
+import { boxOverlapArea, computeLeader, markerBox, sampleSegmentBoxes } from "../src/bench-dossier/label-geometry.js";
 
 function refuse(fn: () => unknown, code: string, path: string): void {
   let caught: unknown;
@@ -132,5 +133,41 @@ describe("BD-7 text-width model, capped tie-merging and dynamic column fallback"
     ] as const) {
       refuse(() => mergeCoincidentTies(bad), code, path);
     }
+  });
+
+  it("computes box overlap, marker boxes, diagonal leaders and diagonal segment boxes", () => {
+    const boxA = { x1: 10, y1: 20, x2: 30, y2: 40 };
+    expect(boxOverlapArea(boxA, { x1: 30, y1: 20, x2: 50, y2: 40 })).toBe(0);
+    expect(boxOverlapArea(boxA, { x1: 26, y1: 37, x2: 40, y2: 50 })).toBe(12);
+    expect(markerBox(100, 50, 6)).toEqual({ x1: 94, y1: 44, x2: 106, y2: 56 });
+    expect(computeLeader(100, 100, 6, { x1: 110, y1: 95, x2: 130, y2: 105 })).toBeNull();
+    expect(computeLeader(100, 100, 6, { x1: 111, y1: 93, x2: 128.2, y2: 107 })).toEqual({
+      sx: 107.5, sy: 100, tx: 111, ty: 100, length: 11,
+    });
+    expect(computeLeader(100, 100, 6, { x1: 112, y1: 107, x2: 132, y2: 121 })).toEqual({
+      sx: 106, sy: 104.5, tx: 112, ty: 109, length: 15,
+    });
+    expect(computeLeader(100, 125, 6, { x1: 112, y1: 97, x2: 132, y2: 111 })).toEqual({
+      sx: 104.5, sy: 119, tx: 112, ty: 109, length: 20,
+    });
+    expect(computeLeader(140, 100, 6, { x1: 112, y1: 95, x2: 128, y2: 105 })).toEqual({
+      sx: 132.5, sy: 100, tx: 128, ty: 100, length: 12,
+    });
+    expect(sampleSegmentBoxes(0, 0, 0, 0)).toEqual([
+      { x1: -1.5, y1: -1.5, x2: 1.5, y2: 1.5 },
+      { x1: -1.5, y1: -1.5, x2: 1.5, y2: 1.5 },
+    ]);
+    expect(sampleSegmentBoxes(0, 0, 6, 8, 5)).toEqual([
+      { x1: -1.5, y1: -1.5, x2: 1.5, y2: 1.5 },
+      { x1: 1.5, y1: 2.5, x2: 4.5, y2: 5.5 },
+      { x1: 4.5, y1: 6.5, x2: 7.5, y2: 9.5 },
+    ]);
+    expect(sampleSegmentBoxes(0, 0, 12, 16)).toEqual([
+      { x1: -1.5, y1: -1.5, x2: 1.5, y2: 1.5 },
+      { x1: 1.5, y1: 2.5, x2: 4.5, y2: 5.5 },
+      { x1: 4.5, y1: 6.5, x2: 7.5, y2: 9.5 },
+      { x1: 7.5, y1: 10.5, x2: 10.5, y2: 13.5 },
+      { x1: 10.5, y1: 14.5, x2: 13.5, y2: 17.5 },
+    ]);
   });
 });

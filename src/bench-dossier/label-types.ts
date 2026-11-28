@@ -36,3 +36,49 @@ export interface LabelTieFootnote {
   readonly items: readonly LabelPart[];
   readonly text: string;
 }
+
+export interface LabelBox {
+  readonly x1: number;
+  readonly y1: number;
+  readonly x2: number;
+  readonly y2: number;
+}
+
+export interface LeaderSegment {
+  readonly sx: number;
+  readonly sy: number;
+  readonly tx: number;
+  readonly ty: number;
+  readonly length: number;
+}
+
+export interface LabelLayout {
+  readonly ml: number;
+  readonly mt: number;
+  readonly baseIw: number;
+  readonly baseIh: number;
+  readonly baseMr: number;
+}
+
+export interface GreedyCandidate {
+  readonly box: LabelBox;
+  readonly distance: number;
+  readonly angleIndex: number;
+  readonly cost: number;
+  readonly leader: LeaderSegment | null;
+}
+
+export interface GreedySearchContext {
+  readonly x: number;
+  readonly y: number;
+  readonly radius: number;
+  readonly width: number;
+  readonly height: number;
+  readonly ownMarkerIndex: number;
+  readonly frame: LabelBox;
+  readonly placedBoxes: readonly LabelBox[];
+  readonly markerBoxes: readonly LabelBox[];
+  readonly haloBoxes: readonly (LabelBox | null)[];
+  readonly lineDots: readonly LabelBox[];
+  readonly leaderDots: readonly LabelBox[];
+}
