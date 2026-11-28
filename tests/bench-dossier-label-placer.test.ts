@@ -82,4 +82,55 @@ describe("BD-7 text-width model, capped tie-merging and dynamic column fallback"
         text: "#2: B1 / B2 / B3 / B4 / B5" },
     ]);
   });
+
+  it("validates mergeCoincidentTies boundaries, 4-form defaults, tie-breakers and path prefixes", () => {
+    expect([DEFAULT_MARKER_RADIUS, LABEL_TIE_INLINE_CAP, LABEL_TIE_DELTA_PX]).toEqual([6, 3, 1]);
+    const pt = (text: string, x = 10, y = 20, extra: Partial<LabelPointInput> = {}): LabelPointInput =>
+      ({ x, y, text, color: "#4E79A7", ...extra });
+    expect(mergeCoincidentTies([pt("A", 100, 200), pt("B", 100.99, 199.01)]).clusters[0]).toEqual({
+      clusterIndex: 0, x: 100, y: 200, color: "#4E79A7", highlighted: false, radius: 6, priority: 0,
+      displayText: "A / B", parts: [{ text: "A", color: "#4E79A7", highlighted: false },
+        { text: "B", color: "#4E79A7", highlighted: false }], tieCount: 2, tieFootnoteId: null, tieNoteSuffix: null,
+    });
+    const bound = mergeCoincidentTies([pt("A", 10, 20), pt("X1", 11, 20), pt("Y1", 10, 21),
+      pt("XNeg", 9, 20), pt("YNeg", 10, 19), pt("Chain", 10.6, 20), pt("Far", 11.2, 20)]);
+    expect(bound.clusters.map((item) => item.displayText)).toEqual(["A / Chain", "X1 / Far", "Y1", "XNeg", "YNeg"]);
+    const tieSort = mergeCoincidentTies([
+      pt("H1", 10, 20, { color: "#111", highlighted: true }),
+      pt("H2", 10, 20, { color: "#222", highlighted: true }),
+      pt("P0", 10, 20, { color: "#333", highlighted: false }),
+    ]);
+    expect(tieSort.clusters[0]?.parts.map((part) => part.text)).toEqual(["H1", "H2", "P0"]);
+    const forms = mergeCoincidentTies([
+      pt("Absent", 10, 20),
+      pt("Undef", 30, 40, { highlighted: undefined, radius: undefined, priority: undefined }),
+      pt("Explicit", 50, 60, { highlighted: true, radius: 11, priority: 4 }),
+    ]);
+    expect(forms.clusters.map((c) => [c.highlighted, c.radius, c.priority])).toEqual([
+      [false, 6, 0], [false, 6, 0], [true, 11, 4],
+    ]);
+    refuse(() => mergeCoincidentTies(null as never), "NOT_ARRAY", "points");
+    refuse(() => mergeCoincidentTies("unknown" as never), "NOT_ARRAY", "points");
+    refuse(() => mergeCoincidentTies(null as never, "custom.points"), "NOT_ARRAY", "custom.points");
+    refuse(() => mergeCoincidentTies([null as never]), "NOT_OBJECT", "points[0]");
+    refuse(() => mergeCoincidentTies([pt("Ok"), null as never]), "NOT_OBJECT", "points[1]");
+    refuse(() => mergeCoincidentTies([pt("A", Number.NaN, 1)], "custom.points"), "BAD_NUMBER", "custom.points[0].x");
+    for (const [bad, code, path] of [
+      [[pt("A", Number.NaN, 1)], "BAD_NUMBER", "points[0].x"],
+      [[pt("Ok"), pt("A", Number.NaN, 1)], "BAD_NUMBER", "points[1].x"],
+      [[pt("A", 1, Number.POSITIVE_INFINITY)], "BAD_NUMBER", "points[0].y"],
+      [[pt("", 1, 2)], "EMPTY_STRING", "points[0].text"],
+      [[pt("A", 1, 2, { color: "" })], "EMPTY_STRING", "points[0].color"],
+      [[pt("A", 1, 2, { highlighted: null as never })], "WRONG_TYPE", "points[0].highlighted"],
+      [[pt("A", 1, 2, { highlighted: "unknown" as never })], "WRONG_TYPE", "points[0].highlighted"],
+      [[pt("A", 1, 2, { radius: 0 })], "NON_POSITIVE", "points[0].radius"],
+      [[pt("A", 1, 2, { radius: null as never })], "BAD_NUMBER", "points[0].radius"],
+      [[pt("A", 1, 2, { radius: "unknown" as never })], "BAD_NUMBER", "points[0].radius"],
+      [[pt("A", 1, 2, { priority: Number.NaN })], "BAD_NUMBER", "points[0].priority"],
+      [[pt("A", 1, 2, { priority: null as never })], "BAD_NUMBER", "points[0].priority"],
+      [[pt("A", 1, 2, { priority: "unknown" as never })], "BAD_NUMBER", "points[0].priority"],
+    ] as const) {
+      refuse(() => mergeCoincidentTies(bad), code, path);
+    }
+  });
 });
