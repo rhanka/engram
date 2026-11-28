@@ -15,7 +15,7 @@ import { checkOptionalMission, loadArmBundles, readCaptureStats } from "../src/b
 import {
   buildImportedArmInputs, normalizeMetricsDigests, resolveSealedArmCost,
 } from "../src/bench-dossier/ingest-sealed.js";
-import { BenchInvariantError, compatibleMissionFieldShape, wilson95 } from "../src/bench-dossier/invariants.js";
+import { BenchInvariantError, compatibleMissionFieldShape } from "../src/bench-dossier/invariants.js";
 import { readBenchResultsFile } from "../src/bench-dossier/results-contract.js";
 import { BenchResultsValidationError } from "../src/bench-dossier/results-guards.js";
 import { runConverge } from "../src/scrap/converge.js";
@@ -23,6 +23,15 @@ import { runConverge } from "../src/scrap/converge.js";
 function catchError(action: () => unknown): unknown {
   try {
     action();
+    return undefined;
+  } catch (err) {
+    return err;
+  }
+}
+
+async function catchAsync(action: () => Promise<unknown>): Promise<unknown> {
+  try {
+    await action();
     return undefined;
   } catch (err) {
     return err;
@@ -69,7 +78,8 @@ describe("BD-5 tree-01: BenchIngestError, exit-2 guard & digest/IO loaders", () 
     try {
       const raw = JSON.stringify({ instruction: "x", fields: ["city"] });
       writeFileSync(join(dir, "m.json"), raw);
-      expect(loadCheckedMission(join(dir, "m.json")).digest).toBe(sha256Hex(Buffer.from(raw, "utf8")));
+      expect(loadCheckedMission(join(dir, "m.json")).digest)
+        .toBe("e7e93786ee7dda394e269bff8c8cf9d9080cef9b5c3f4df201f3fdd054959deb");
       writeFileSync(join(dir, "bad.json"), "{bad");
       const badMissionErr = catchError(() => loadCheckedMission(join(dir, "bad.json"))) as BenchIngestError;
       expect([badMissionErr instanceof BenchIngestError, badMissionErr.code]).toEqual([true, "BAD_MISSION"]);
@@ -355,7 +365,8 @@ describe("BD-5 tree-07: readConvergeGolden digest, #509 stats, fields & refusals
       writeFileSync(gPath, text);
       const out = readConvergeGolden(gPath, digest, ["office.zip", "city", "toString"], specs);
       expect([out.fields, out.annotatorCount, out.missingDigestRuns, out.goldenSha256]).toEqual([
-        ["office.zip", "city", "toString"], 2, ["r1"], sha256Hex(Buffer.from(text)),
+        ["office.zip", "city", "toString"], 2, ["r1"],
+        "8e72948af10ab7857e2b8b8e1e7e7a8d922edb96c51f8f0759a7a903c1dce233",
       ]);
       expect(out.krippendorffAlphaByField).toEqual({ "office.zip": 0.625, city: 0.75, toString: null });
       expect(out.annotatorRunStats).toEqual({ r1: { answered: 1, failed: 0, missing: 0 } });
@@ -750,12 +761,12 @@ describe("BD-5 tree-13: runScrapScore e2e literal campaign & #509 corpus project
         resDef.corpus.missingDigestRuns, resDef.corpus.annotatorRunStats, resDef.corpus.krippendorffAlphaByField,
         resDef.supportFloors, resDef.records[0]?.precisionInterval, resDef.records[1]?.precisionInterval.method,
         resDef.records.map((r) => [r.field, r.tp, r.tn, r.insufficient, r.precision, r.cost.apiEquivalentTotal]),
-      ]).toEqual(["2026-11-27T12:34:56Z", "eval", "extracted_packet", "USD", undefined, sha256Hex(Buffer.from(gText)),
-        2, gd, cd,
+      ]).toEqual(["2026-11-27T12:34:56Z", "eval", "extracted_packet", "USD", undefined,
+        "b31c453f86fe0099045e170ecdbb075bbc37384b2f492670f202f7101ba50cdf", 2, gd, cd,
         2, 2, 1, ["r1"], { r1: { answered: 2, failed: 1, missing: 0 } }, { city: 1, "office.postal_code": 0.8 },
         { recallMinPositives: 30, precisionMinPredictions: 30, failureCeiling: 0.05 },
         { estimator: "unweighted", method: "wilson_95_unweighted", clustering: "independent_site", valid: true,
-          ...wilson95(1, 1) }, "none",
+          low: 0.20654931437723745, high: 1 }, "none",
         [["city", 1, 1, 1, 1, 0.5], ["office.postal_code", 1, 1, 1, 1, 0.5]]]);
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });
@@ -831,11 +842,10 @@ describe("BD-5 tree-13: runScrapScore e2e literal campaign & #509 corpus project
         "--out", join(tmpDir, "mv.json"), "--campaign-id", "lotb",
       ]));
       expect([resMv.corpus.maxValuesChanged, resMv.corpus.annotatorCount]).toEqual([true, 2]);
-      let shapeErr: unknown;
-      try {
-        await runScrapScore({ golden: gOut, goldenMission: mg!, candidateMission: mb!, arms: [armMv!],
-          out: join(tmpDir, "bad.json"), campaignId: "lotb" });
-      } catch (err) { shapeErr = err; }
+      const shapeErr = await catchAsync(() => runScrapScore({
+        golden: gOut, goldenMission: mg!, candidateMission: mb!, arms: [armMv!], out: join(tmpDir, "bad.json"),
+        campaignId: "lotb",
+      }));
       expect((shapeErr as BenchInvariantError).invariant).toBe("MISSION_FIELD_SHAPE");
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });
@@ -905,7 +915,7 @@ describe("BD-5 tree-16: importCampaignMetrics weighted import, digests & options
         .map((n) => join(tmp, n)) as string[];
       writeFileSync(gp!, "{\"id\":\"1\"}\n");
       writeFileSync(badG!, "{\"id\":\"2\"}\n");
-      const goldSha = sha256Hex(Buffer.from("{\"id\":\"1\"}\n"));
+      const goldSha = "e81e0aa57be1f0ad8b210b3e6348740e38a380365692b6d6129c53a84264ac1d";
       mkdirSync(a1!);
       writeFileSync(join(a1!, "arm.json"), JSON.stringify({ schemaId: "urn:engram:bench-arm-manifest:1.0.0",
         armId: "arm-a", provider: "OpenAI", model: "gpt-6-astra", modelLabel: "Astra", proseName: "OpenAI Astra",
@@ -916,7 +926,7 @@ describe("BD-5 tree-16: importCampaignMetrics weighted import, digests & options
         + `${JSON.stringify({ type: "summary", ok: 2, failed: 0, calls_total: 2, mission_digest: cd,
           tokens: { input: 500_000, output: 0, reasoning: 0, total: 500_000 } })}\n`);
       const iv = { estimator: "unweighted", method: "wilson_95_unweighted", clustering: "independent_site",
-        valid: true, ...wilson95(1, 1) };
+        valid: true, low: 0.20654931437723745, high: 1 };
       const wv = { estimator: "weighted", method: "design_bootstrap_95", clustering: "group_resampled",
         valid: true, low: 0.75, high: 0.99 };
       const rec = { armId: "arm-a", field: "city", comparator: "lotb_ca_post_v1", isPrimaryComparator: true,
@@ -945,10 +955,11 @@ describe("BD-5 tree-16: importCampaignMetrics weighted import, digests & options
       expect(readBenchResultsFile(outP!)).toEqual(nonRes);
       expect([nonRes.generatedAt, nonRes.corpus.currency, nonRes.corpus.costBasisLabel, nonRes.corpus.maxValuesChanged,
         nonRes.records[0]?.cost.currency]).toEqual(["2026-11-27T12:00:00Z", "CAD", "supplied_id", true, "CAD"]);
-      let badErr: unknown;
-      try { await importCampaignMetrics({ metrics: mp!, arms: [a1!], golden: badG! }); } catch (e) { badErr = e; }
+      const badErr = await catchAsync(() => importCampaignMetrics({ metrics: mp!, arms: [a1!], golden: badG! }));
       expect((badErr as BenchIngestError).code).toBe("GOLDEN_DIGEST_MISMATCH");
-    } finally { rmSync(tmp, { recursive: true, force: true }); }
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
   });
 });
 
@@ -987,7 +998,7 @@ describe("BD-5 tree-17: importCampaignMetrics mission digests, shape, G33/G37 & 
         mkArm(aGold!, { armId: "arm-g", missionPath: "../m0.json" }, dg!);
         mkArm(aDot!, { missionPath: "../m4.json" }, ddot!);
         const iv = { estimator: "unweighted", method: "wilson_95_unweighted", clustering: "independent_site",
-          valid: true, ...wilson95(1, 1) };
+          valid: true, low: 0.20654931437723745, high: 1 };
         const none = { ...iv, method: "none", clustering: "clustered_record_invalid", valid: false,
           low: null, high: null };
         const rec = (bad = false) => ({ armId: "arm-a", field: "city", comparator: "generic",
@@ -998,7 +1009,7 @@ describe("BD-5 tree-17: importCampaignMetrics mission digests, shape, G33/G37 & 
           sitePresence: { goldPresentSites: 1, goldAbsentSites: 1, unresolvedSites: 0, insufficientSites: 0, tpSites: 1,
             fnSites: 0, wrongValueOnPresentSites: 0, fpOnAbsentSites: bad ? 1 : 0, tnSites: bad ? 0 : 1,
             failedOnAbsentSites: 0, siteRecall: 1, siteRecallInterval: iv, siteAbstentionSpecificity: bad ? 0 : 1,
-            siteAbstentionInterval: bad ? { ...iv, ...wilson95(0, 1) } : iv },
+            siteAbstentionInterval: bad ? { ...iv, low: 0, high: 0.7934506856227626 } : iv },
           unweighted: { precision: bad ? 1 / 3 : 1, recall: 1, f1: bad ? 0.5 : 1,
             precisionInterval: bad ? none : iv, recallInterval: bad ? none : iv }, weighted: null });
         let mi = 0;
@@ -1035,8 +1046,7 @@ describe("BD-5 tree-17: importCampaignMetrics mission digests, shape, G33/G37 & 
           [{ metrics: m0!, arms: [a3!], goldenMission: mg!, maxValuesChanged: false }, "MAX_VALUES_CONFLICT"],
           [{ metrics: m0!, arms: [aGold!, a3!], maxValuesChanged: false }, "MAX_VALUES_CONFLICT"],
         ] as const) {
-          let err: unknown;
-          try { await importCampaignMetrics(opts); } catch (e) { err = e; }
+          const err = await catchAsync(() => importCampaignMetrics(opts));
           expect((err as BenchIngestError).code).toBe(code);
         }
         for (const [opts, inv] of [
@@ -1050,11 +1060,12 @@ describe("BD-5 tree-17: importCampaignMetrics mission digests, shape, G33/G37 & 
           [{ metrics: badM!, arms: [a1!], goldenMission: mg! }, "COUNT_IDENTITY"],
           [{ metrics: badM!, arms: [a1!], candidateMission: mc! }, "COUNT_IDENTITY"],
         ] as const) {
-          let err: unknown;
-          try { await importCampaignMetrics(opts); } catch (e) { err = e; }
+          const err = await catchAsync(() => importCampaignMetrics(opts));
           expect((err as BenchInvariantError).invariant).toBe(inv);
         }
-      } finally { rmSync(tmp, { recursive: true, force: true }); }
+      } finally {
+        rmSync(tmp, { recursive: true, force: true });
+      }
     });
 });
 
@@ -1104,7 +1115,7 @@ describe("BD-5 tree-18: importCampaignMetrics sealed probes P1-P6, G22/G26, seat
         writeFileSync(seatP, JSON.stringify({ schemaId: "urn:engram:seat-observation:1.0.0",
           observations: { "arm-a": seatObs, "arm-b": seatObs, "arm-p4a": seatObs, "arm-p4c": seatObs } }));
         const iv = { estimator: "unweighted", method: "wilson_95_unweighted", clustering: "independent_site",
-          valid: true, ...wilson95(1, 1) };
+          valid: true, low: 0.20654931437723745, high: 1 };
         const mkRec = (armId: string, ex: Record<string, unknown> = {}) => ({ armId, field: "city",
           comparator: "generic", isPrimaryComparator: true, failuresByCode: {}, attempted: 2, accepted: 2, failed: 0,
           unverifiedQuotesNulled: 0, goldPositive: 1, unverifiedWholeRecordsDropped: null, goldAbsent: 1, tp: 1,
@@ -1118,7 +1129,7 @@ describe("BD-5 tree-18: importCampaignMetrics sealed probes P1-P6, G22/G26, seat
         let mi = 0;
         const gPath = join(tmp, "g.ndjson");
         writeFileSync(gPath, "{\"id\":\"1\"}\n");
-        const goldSha = sha256Hex(Buffer.from("{\"id\":\"1\"}\n"));
+        const goldSha = "e81e0aa57be1f0ad8b210b3e6348740e38a380365692b6d6129c53a84264ac1d";
         const mkM = (recs: unknown[], cur?: "CAD", floors?: Record<string, number>) => {
           const p = join(tmp, `m${++mi}.json`);
           writeFileSync(p, JSON.stringify({ schemaId: "urn:engram:bench-metrics-import:1.0.0", campaignId: "lotb",
@@ -1169,11 +1180,13 @@ describe("BD-5 tree-18: importCampaignMetrics sealed probes P1-P6, G22/G26, seat
             "CAD", "CURRENCY_MISMATCH"],
           [[mkRec("arm-p4c", { calls: 3, costBasisItems: 0 })], [aP4c!], "CAD", "COST_BASIS"],
         ] as const) {
-          let err: unknown;
-          try { await importCampaignMetrics({ metrics: mkM([...recs], cur), arms: [...arms], candidateMission: mc! });
-          } catch (e) { err = e; }
+          const err = await catchAsync(() => importCampaignMetrics({
+            metrics: mkM([...recs], cur), arms: [...arms], candidateMission: mc!,
+          }));
           expect((err as { code?: string }).code).toBe(code);
         }
-      } finally { rmSync(tmp, { recursive: true, force: true }); }
+      } finally {
+        rmSync(tmp, { recursive: true, force: true });
+      }
     });
 });
