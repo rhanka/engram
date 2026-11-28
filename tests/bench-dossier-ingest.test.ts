@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { BenchCostSeatError } from "../src/bench-dossier/cost-seat.js";
 import {
-  parseImportMetricsOptions, parseScrapScoreOptions,
+  parseImportMetricsArgv, parseImportMetricsOptions, parseScrapScoreArgv, parseScrapScoreOptions,
 } from "../src/bench-dossier/ingest-cli.js";
 import {
   BenchIngestError, isBenchIngestUsageError, loadCheckedMission,
@@ -140,6 +140,52 @@ describe("BD-5 tree-02: parseScrapScoreOptions & parseImportMetricsOptions posit
       { golden: null }, { goldenMission: "" }, { candidateMission: " " }, { maxValuesChanged: "true" },
       { maxValuesChanged: null }]) {
       const err = catchError(() => parseImportMetricsOptions({ ...baseImport, ...patch })) as BenchIngestError;
+      expect([err instanceof BenchIngestError, err.code]).toEqual([true, "BAD_USAGE"]);
+    }
+  });
+});
+
+describe("BD-5 tree-04: CLI argv option parsers", () => {
+  it("parses space-separated, =, and repeated multi-value flags for score and import argv", () => {
+    expect(parseScrapScoreArgv([
+      "--golden=g.ndjson", "--golden-mission", "mg.json", "--candidate-mission", "mc.json",
+      "--arms", "a1", "a2", "--arms=a3", "--out", "o.json", "--campaign-id", "c1", "--partition", "pilot",
+      "--golden-label", "p1", "--capture-dir", "cap", "--currency", "CAD", "--cost-basis", "attempted_id",
+      "--seat-observations", "s.json", "--fields", "f1", "f2", "--recall-floor", "4",
+      "--precision-floor=6", "--failure-ceiling", "0.2",
+    ])).toEqual({
+      golden: "g.ndjson", goldenMission: "mg.json", candidateMission: "mc.json", arms: ["a1", "a2", "a3"],
+      out: "o.json", campaignId: "c1", partition: "pilot", goldenLabel: "p1", captureDir: "cap",
+      currency: "CAD", costBasis: "attempted_id", seatObservations: "s.json", fields: ["f1", "f2"],
+      recallFloor: 4, precisionFloor: 6, failureCeiling: 0.2, generatedAt: undefined, fieldLabels: undefined,
+    });
+    expect(parseImportMetricsArgv(["--metrics", "m.json", "--arms", "a1", "--out", "o.json"])).toEqual({
+      metrics: "m.json", arms: ["a1"], out: "o.json", golden: undefined, goldenMission: undefined,
+      candidateMission: undefined, captureDir: undefined, currency: undefined, costBasis: undefined,
+      seatObservations: undefined, recallFloor: undefined, precisionFloor: undefined, failureCeiling: undefined,
+      generatedAt: undefined, fieldLabels: undefined, maxValuesChanged: undefined,
+    });
+  });
+
+  it("refuses malformed, duplicate, unknown, empty-multi, positional, and flag-swallow argv tokens", () => {
+    const base = ["--golden", "g", "--golden-mission", "mg", "--candidate-mission", "mc",
+      "--arms", "a1", "--out", "o", "--campaign-id", "c"];
+    for (const bad of [
+      "bad" as unknown as string[], [123 as unknown as string], ["xxgolden", "g", ...base.slice(2)],
+      ["--golden", "g", "--golden-mission", "mg", "--candidate-mission", "mc",
+        "--arms", "a1", "--out", "o", "--campaignId", "c"],
+      [...base, "--unknown", "x"], [...base, "--generated-at", "2026-11-27"],
+      [...base, "--golden", "g2"], [...base, "--golden-label", "--partition"], [...base, "--golden-label"],
+      [...base, "--arms"],
+    ]) {
+      const err = catchError(() => parseScrapScoreArgv(bad)) as BenchIngestError;
+      expect([err instanceof BenchIngestError, err.code]).toEqual([true, "BAD_USAGE"]);
+    }
+    for (const bad of [
+      ["--metrics", "m", "--arms", "a1", "--fields", "f1"],
+      ["--metrics", "m", "--arms", "a1", "--max-values-changed", "true"],
+    ]) {
+      const err = catchError(() => parseImportMetricsArgv(bad)) as BenchIngestError;
       expect([err instanceof BenchIngestError, err.code]).toEqual([true, "BAD_USAGE"]);
     }
   });

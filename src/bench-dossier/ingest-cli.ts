@@ -2,36 +2,24 @@ import * as R from "./results-contract.js";
 import { nonEmptyString, objectSchema, stringMapOf } from "./results-guards.js";
 import { BenchIngestError } from "./ingest-golden.js";
 
-export interface SharedIngestOptions {
+export interface SharedIngestOptions extends
+  Partial<Pick<R.BenchResultsFile["corpus"], "currency" | "fieldLabels">>,
+  Partial<Readonly<Record<"captureDir" | "seatObservations" | "generatedAt", string>>>,
+  Partial<Readonly<Record<"recallFloor" | "precisionFloor" | "failureCeiling", number>>> {
   readonly arms: readonly string[];
-  readonly captureDir?: string;
-  readonly currency?: R.CurrencyCode;
   readonly costBasis?: R.CostBasisKind;
-  readonly seatObservations?: string;
-  readonly recallFloor?: number;
-  readonly precisionFloor?: number;
-  readonly failureCeiling?: number;
-  readonly generatedAt?: string;
-  readonly fieldLabels?: R.BenchResultsFile["corpus"]["fieldLabels"];
 }
 
-export interface ScrapScoreOptions extends SharedIngestOptions {
-  readonly golden: string;
-  readonly goldenMission: string;
-  readonly candidateMission: string;
-  readonly out: string;
-  readonly campaignId: string;
+export interface ScrapScoreOptions extends SharedIngestOptions,
+  Readonly<Record<"golden" | "goldenMission" | "candidateMission" | "out" | "campaignId", string>> {
   readonly partition?: R.PartitionKind;
   readonly goldenLabel?: string;
   readonly fields?: readonly string[];
 }
 
-export interface ImportCampaignMetricsOptions extends SharedIngestOptions {
+export interface ImportCampaignMetricsOptions extends SharedIngestOptions,
+  Partial<Pick<ScrapScoreOptions, "out" | "golden" | "goldenMission" | "candidateMission">> {
   readonly metrics: string;
-  readonly out?: string;
-  readonly golden?: string;
-  readonly goldenMission?: string;
-  readonly candidateMission?: string;
   readonly maxValuesChanged?: boolean;
 }
 
@@ -94,9 +82,34 @@ function parseOptions<T>(raw: unknown, spec: Record<string, FieldParser>): T {
   for (const key of Object.keys(obj)) if (!Object.hasOwn(spec, key)) failUsage(`unknown option: ${key}`);
   return Object.fromEntries(Object.keys(spec).map((key) => [key, spec[key]!(obj[key], key)])) as T;
 }
-
-/** Validate programmatic options for `runScrapScore`. */
+const PROG_ONLY = new Set(["generatedAt", "fieldLabels", "maxValuesChanged"]);
+const MULTI_FLAGS = new Set(["arms", "fields"]);
+function parseArgvObj(argv: readonly string[], spec: Record<string, FieldParser>) {
+  if (!Array.isArray(argv) || argv.some((item) => typeof item !== "string")) failUsage("argv must be string array");
+  const out: Record<string, unknown> = Object.create(null);
+  for (let idx = 0; idx < argv.length;) {
+    const tok = argv[idx++]!;
+    const eq = tok.indexOf("=");
+    const flag = eq < 0 ? tok.slice(2) : tok.slice(2, eq);
+    const key = tok.startsWith("--") && /^[a-z]+(?:-[a-z]+)*$/.test(flag)
+      ? flag.replace(/-([a-z])/g, (_, ch: string) => ch.toUpperCase())
+      : failUsage(`bad arg: ${tok}`);
+    if (!Object.hasOwn(spec, key) || PROG_ONLY.has(key)) failUsage(`unknown flag: --${flag}`);
+    if (MULTI_FLAGS.has(key)) {
+      const list = (out[key] as string[] | undefined) ?? (out[key] = []);
+      const start = list.length;
+      if (eq >= 0) list.push(tok.slice(eq + 1));
+      else while (idx < argv.length && !argv[idx]!.startsWith("--")) list.push(argv[idx++]!);
+      if (list.length === start) failUsage(`--${flag} requires value`);
+    } else if (Object.hasOwn(out, key)) failUsage(`duplicate --${flag}`);
+    else out[key] = eq >= 0 ? tok.slice(eq + 1)
+      : idx < argv.length && !argv[idx]!.startsWith("--") ? argv[idx++]! : failUsage(`--${flag} requires value`);
+  }
+  return out;
+}
+/** Validate programmatic and CLI `argv` options for `runScrapScore` and `importCampaignMetrics`. */
 export const parseScrapScoreOptions = (raw: unknown) => parseOptions<ScrapScoreOptions>(raw, SCORE_SPEC);
-
-/** Validate programmatic options for `importCampaignMetrics`. */
 export const parseImportMetricsOptions = (raw: unknown) => parseOptions<ImportCampaignMetricsOptions>(raw, IMPORT_SPEC);
+export const parseScrapScoreArgv = (argv: readonly string[]) => parseScrapScoreOptions(parseArgvObj(argv, SCORE_SPEC));
+export const parseImportMetricsArgv = (argv: readonly string[]) =>
+  parseImportMetricsOptions(parseArgvObj(argv, IMPORT_SPEC));
