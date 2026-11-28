@@ -11,6 +11,7 @@ import {
   normalizeDigest, readCheckedBuf, readConvergeGolden, sha256Hex,
 } from "../src/bench-dossier/ingest-golden.js";
 import { loadArmBundles, readCaptureStats } from "../src/bench-dossier/ingest-io.js";
+import { resolveSealedArmCost } from "../src/bench-dossier/ingest-sealed.js";
 import { BenchInvariantError, compatibleMissionFieldShape } from "../src/bench-dossier/invariants.js";
 import { BenchResultsValidationError } from "../src/bench-dossier/results-guards.js";
 
@@ -445,5 +446,65 @@ describe("BD-5 tree-09: readCaptureStats latest-status merge & guards", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("BD-5 tree-10: resolveSealedArmCost price_table, digest & provenance", () => {
+  const iv = {
+    estimator: "unweighted" as const, method: "wilson_95_unweighted" as const,
+    clustering: "independent_site" as const, valid: true, low: 0.2, high: 0.9,
+  };
+  const sp = {
+    goldPresentSites: 1, goldAbsentSites: 1, unresolvedSites: 0, insufficientSites: 0, tpSites: 1, fnSites: 0,
+    wrongValueOnPresentSites: 0, fpOnAbsentSites: 0, tnSites: 1, failedOnAbsentSites: 0, siteRecall: 1,
+    siteRecallInterval: iv, siteAbstentionSpecificity: 1, siteAbstentionInterval: iv,
+  };
+  const baseRec = {
+    armId: "arm-s", field: "city", comparator: "generic", isPrimaryComparator: true, failuresByCode: {},
+    attempted: 2, accepted: 2, failed: 0, unverifiedQuotesNulled: 0, unverifiedWholeRecordsDropped: null,
+    goldPositive: 1, goldAbsent: 1, tp: 1, fp: 0, fpOnPresent: 0, fpOnAbsent: 0, fpElementsOnAbsent: 0,
+    fn: 0, tn: 1, failedOnAbsent: 0, unresolved: 0, insufficient: 0, sitePresence: sp, weighted: null,
+    unweighted: { precision: 1, recall: 1, f1: 1, precisionInterval: iv, recallInterval: iv },
+  };
+  const baseArm = {
+    schemaId: "urn:engram:bench-arm-manifest:1.0.0" as const, armId: "arm-s", provider: "OpenAI",
+    model: "gpt-6-astra", modelLabel: "Astra", proseName: "OpenAI Astra", effort: "low" as const, isCascade: false,
+  };
+  const pt = { source: "pt-src", as_of: "2026-11-22", currency: "USD" as const, status: "primary" as const,
+    per_million: { input: 4, output: 0 } };
+  const fx = { from: "USD" as const, to: "CAD" as const, rate: 2, source: "boc", asOf: "2026-11-22" };
+
+  it("prices via price_table without seat, honors unpinned armMissionSha256, and stamps tariff/FX", () => {
+    const [dc, other] = ["c".repeat(64), "d".repeat(64)];
+    const toks = { input: 500_000, output: 0, reasoning: 0, cached: "unknown" as const, total: 500_000 };
+    const priced = resolveSealedArmCost([{ ...baseRec, calls: 2, costBasisItems: 2, tokens: toks }],
+      { ...baseArm, tariffStatus: "secondary_unverified", fx }, "CAD", dc, undefined, pt);
+    expect([priced?.cost.apiEquivalentTotal, priced?.cost.apiEquivalentPerItem, priced?.cost.costUnknownReason,
+      priced?.cost.tariffStatus, priced?.cost.tariffSource, priced?.cost.tariffAsOf, priced?.cost.fxApplied])
+      .toEqual([4, 2, null, "secondary_unverified", "pt-src", "2026-11-22", fx]);
+    const over = resolveSealedArmCost([{ ...baseRec, calls: 2, costBasisItems: 2, apiEquivalentTotal: 1 }],
+      { ...baseArm, tariffStatus: "secondary_unverified", fx,
+        tariffOverride: { status: "unknown", currency: "USD", source: "ov", asOf: "2026-11-23" } },
+      "CAD", dc, undefined, pt);
+    expect([over?.cost.apiEquivalentTotal, over?.cost.tariffStatus, over?.cost.tariffSource, over?.cost.tariffAsOf])
+      .toEqual([1, "unknown", "ov", "2026-11-23"]);
+    const seat = {
+      status: "measured" as const, method: "weekly_burn_delta" as const, windowMinutes: 10080 as const,
+      isolatedSeat: true as const, plan: "Pro", planMonthlyPrice: 487, planSource: "s", planAsOf: "2026-11-22",
+      remainingBefore: 0.75, remainingAfter: 0.25, observedItems: 8,
+    };
+    const unpinned = resolveSealedArmCost([
+      { ...baseRec, armMissionSha256: other, calls: 1, costBasisItems: 1, tokens: toks },
+      { ...baseRec, field: "zip", armMissionSha256: `SHA256:${other.toUpperCase()}`, calls: 1, costBasisItems: 1,
+        tokens: toks },
+    ], baseArm, "USD", dc, seat, pt);
+    expect([unpinned?.armMissionSha256, unpinned?.cost.apiEquivalentTotal, unpinned?.cost.costUnknownReason,
+      unpinned?.cost.seatCostPerItem]).toEqual([other, "unknown", "unpriced-mission", 7]);
+    const badPt = { ...pt, currency: "EUR" as unknown as "USD" };
+    expect((catchError(() => resolveSealedArmCost([], baseArm, "USD", dc, undefined, badPt)) as BenchCostSeatError)
+      .code).toBe("BAD_ENUM");
+    expect((catchError(() => resolveSealedArmCost([{ ...baseRec, armMissionSha256: other }],
+      { ...baseArm, missionSha256: dc }, "USD", dc, undefined, undefined)) as BenchIngestError).code)
+      .toBe("MISSION_DIGEST_MISMATCH");
   });
 });
