@@ -50,7 +50,7 @@ const INPUT_OPT: Record<string, Validator<unknown>> = {
   missionSpecs: arrayOf(validateFieldSpec),
 };
 
-const tokensEqual = (left: contract.BenchResultRecord["tokens"], right: contract.BenchResultRecord["tokens"]) =>
+export const tokensEqual = (left: contract.BenchResultRecord["tokens"], right: contract.BenchResultRecord["tokens"]) =>
   left === right || (typeof left === "object" && typeof right === "object" && left.input === right.input
     && left.output === right.output && left.reasoning === right.reasoning
     && left.cached === right.cached && left.total === right.total);
