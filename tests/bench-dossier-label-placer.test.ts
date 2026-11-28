@@ -293,4 +293,63 @@ describe("BD-7 text-width model, capped tie-merging and dynamic column fallback"
       expect([placed?.distance, placed?.angleIndex, placed?.box.x1]).toEqual([expectedDist, 0, expectedX1]);
     }
   });
+
+  it("enforces all 4 frame edges, cos/sin centering, hard skips and d=96/k=23 limits", () => {
+    const baseCtx = {
+      x: 200, y: 200, radius: 6, width: 20, height: 14, ownMarkerIndex: 0,
+      markerBoxes: [markerBox(200, 200, 6)], haloBoxes: [null], lineDots: [], leaderDots: [],
+    };
+    const leftEdge = findBestGreedyPlacement({
+      ...baseCtx, frame: { x1: 190, y1: 170, x2: 240, y2: 230 },
+      placedBoxes: [{ x1: 211, y1: 170, x2: 240, y2: 230 }],
+    });
+    expect([leftEdge?.distance, leftEdge?.angleIndex, leftEdge?.box]).toEqual([
+      5, 6, { x1: 190, y1: 211, x2: 210, y2: 225 },
+    ]);
+    const rightEdge = findBestGreedyPlacement({
+      ...baseCtx, frame: { x1: 170, y1: 170, x2: 215, y2: 230 }, placedBoxes: [],
+    });
+    expect([rightEdge?.distance, rightEdge?.angleIndex]).toEqual([5, 5]);
+    const topEdge = findBestGreedyPlacement({
+      ...baseCtx, frame: { x1: 170, y1: 195, x2: 240, y2: 230 },
+      placedBoxes: [{ x1: 208, y1: 190, x2: 240, y2: 230 }],
+    });
+    expect([topEdge?.distance, topEdge?.angleIndex]).toEqual([5, 7]);
+    const bottomEdge = findBestGreedyPlacement({
+      ...baseCtx, frame: { x1: 170, y1: 170, x2: 240, y2: 205 },
+      placedBoxes: [{ x1: 208, y1: 170, x2: 240, y2: 205 }],
+    });
+    expect([bottomEdge?.distance, bottomEdge?.angleIndex]).toEqual([5, 14]);
+    const ringCtx = (obsRadius: number) => ({
+      x: 110, y: 45, radius: 6, width: 20, height: 14, ownMarkerIndex: 0,
+      frame: { x1: 100, y1: 30, x2: 300, y2: 60 }, placedBoxes: [],
+      markerBoxes: [markerBox(110, 45, 6), markerBox(158, 45, obsRadius)],
+      haloBoxes: [null, null], lineDots: [], leaderDots: [],
+    });
+    expect(findBestGreedyPlacement(ringCtx(45))).toEqual({
+      box: { x1: 212, y1: 38, x2: 232, y2: 52 }, distance: 96, angleIndex: 0, cost: 2077.65,
+      leader: { sx: 117.5, sy: 45, tx: 212, ty: 45, length: 102 },
+    });
+    expect(findBestGreedyPlacement(ringCtx(55))).toBeNull();
+    const angCtx = (x2: number) => ({
+      x: 200, y: 200, radius: 6, width: 12, height: 14, ownMarkerIndex: 0,
+      frame: { x1: 190, y1: 188, x2, y2: 205 }, placedBoxes: [],
+      markerBoxes: [markerBox(200, 200, 6)], haloBoxes: [null], lineDots: [], leaderDots: [],
+    });
+    expect([findBestGreedyPlacement(angCtx(222.8))?.distance, findBestGreedyPlacement(angCtx(222.8))?.angleIndex])
+      .toEqual([5, 23]);
+    expect(findBestGreedyPlacement(angCtx(222.5))).toBeNull();
+    expect(findBestGreedyPlacement({
+      x: 200, y: 200, radius: 6, width: 20, height: 14, ownMarkerIndex: 0,
+      frame: { x1: 195, y1: 190, x2: 240, y2: 215 }, placedBoxes: [{ x1: 210, y1: 190, x2: 240, y2: 215 }],
+      markerBoxes: [markerBox(200, 200, 6)], haloBoxes: [null], lineDots: [], leaderDots: [],
+    })).toBeNull();
+    const k5 = findBestGreedyPlacement({
+      x: 200, y: 200, radius: 6, width: 12, height: 14, ownMarkerIndex: 0,
+      frame: { x1: 195, y1: 195, x2: 211, y2: 235 }, placedBoxes: [],
+      markerBoxes: [markerBox(200, 200, 6)], haloBoxes: [null], lineDots: [], leaderDots: [],
+    });
+    expect(k5?.angleIndex).toBe(5);
+    expect(k5?.box.x1).toBeCloseTo(196.847, 2);
+  });
 });
