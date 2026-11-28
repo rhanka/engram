@@ -16,6 +16,7 @@ import { resolveSealedArmCost } from "../src/bench-dossier/ingest-sealed.js";
 import { BenchInvariantError, compatibleMissionFieldShape, wilson95 } from "../src/bench-dossier/invariants.js";
 import { readBenchResultsFile } from "../src/bench-dossier/results-contract.js";
 import { BenchResultsValidationError } from "../src/bench-dossier/results-guards.js";
+import { runConverge } from "../src/scrap/converge.js";
 
 function catchError(action: () => unknown): unknown {
   try {
@@ -672,6 +673,86 @@ describe("BD-5 tree-13: runScrapScore e2e literal campaign & #509 corpus project
         { estimator: "unweighted", method: "wilson_95_unweighted", clustering: "independent_site", valid: true,
           ...wilson95(1, 1) }, "none",
         [["city", 1, 1, 1, 1, 0.5], ["office.postal_code", 1, 1, 1, 1, 0.5]]]);
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("handles non-default options, G09 mv mismatch, runConverge e2e (P9), CLI argv & shape refusal", async () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "bd5-s2-"));
+    try {
+      const mObj = (ins: string, mv: number, inRate?: number) => ({ instruction: ins,
+        fields: ["city", { name: "office", kind: "record", max_values: mv, fields: [{ name: "postal_code" }] }],
+        ...(inRate !== undefined ? { price_table: { source: "pt", as_of: "2026-11-22", currency: "USD",
+          status: "primary", per_million: { input: inRate, output: 0 } } } : {}) });
+      const [mg, mc, mcMv, ma, mb, mu] = ["mg", "mc", "mcMv", "ma", "mb", "mu"]
+        .map((n) => join(tmpDir, `${n}.json`)) as string[];
+      writeFileSync(mg!, JSON.stringify(mObj("g", 2, 1)));
+      writeFileSync(mc!, JSON.stringify(mObj("c", 2, 1)));
+      writeFileSync(mcMv!, JSON.stringify(mObj("cmv", 3, 1)));
+      writeFileSync(ma!, JSON.stringify(mObj("a", 3, 4)));
+      writeFileSync(mb!, JSON.stringify(mObj("b", 1, 1)));
+      writeFileSync(mu!, JSON.stringify(mObj("u", 2)));
+      const [gd, cd, cdMv, ad, ud] = [mg!, mc!, mcMv!, ma!, mu!].map((p) => loadCheckedMission(p).digest) as string[];
+      const [r1, r2, gDir, aPath, armMv, armUnp] = ["r1", "r2", "conv", "a", "amv", "au"]
+        .map((n) => join(tmpDir, n)) as string[];
+      const mkRun = (dir: string, md: string | undefined, cityVal: string | null) => {
+        mkdirSync(dir, { recursive: true });
+        const rows = [
+          { id: "1", fields: { city: { value: cityVal, quote: cityVal },
+            office: { values: [{ postal_code: { value: "H2Y 1S1", quote: "H2Y 1S1" } }] } } },
+          { id: "2", fields: { city: { value: null, quote: null }, office: { values: [] } } },
+          { type: "summary", ok: 2, failed: 0, calls_total: 2, ...(md ? { mission_digest: md } : {}),
+            tokens: { input: 500_000, output: 0, reasoning: 0, total: 500_000 } },
+        ];
+        writeFileSync(join(dir, "results.ndjson"), `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+      };
+      mkRun(r1!, gd!, "MTL");
+      mkRun(r2!, gd!, "MTL");
+      await runConverge({ runs: [r1!, r2!], mission: mg!, out: gDir! });
+      const gOut = join(gDir!, "converge.ndjson");
+      const mkArm = (dir: string, id: string, pn: string, ex: Record<string, unknown>, md?: string) => {
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(join(dir, "arm.json"), JSON.stringify({ schemaId: "urn:engram:bench-arm-manifest:1.0.0",
+          armId: id, provider: "OpenAI", model: "gpt-6-astra", modelLabel: "Astra", proseName: pn,
+          effort: "low", isCascade: false, ...ex }));
+        mkRun(dir, md, "mtl");
+      };
+      mkArm(aPath!, "arm-b", "OpenAI Astra Alt", { missionPath: "../ma.json", allowLegacyMissingMissionDigest: true,
+        isHighlighted: true, incomplete: true, fx: { from: "USD", to: "CAD", rate: 2, source: "boc", asOf: "d" } });
+      mkArm(armMv!, "arm-mv", "OpenAI Astra Mv", {}, cdMv);
+      mkArm(armUnp!, "arm-u", "OpenAI Astra Unp", { missionPath: "../mu.json" }, ud);
+      const seatP = join(tmpDir, "seats.json");
+      writeFileSync(seatP, JSON.stringify({ schemaId: "urn:engram:seat-observation:1.0.0",
+        observations: { "arm-b": { status: "unknown", reason: "shared-seat-concurrent" } } }));
+      const resNon = await runScrapScore({
+        golden: gOut, goldenMission: mg!, candidateMission: mc!, arms: [aPath!, armUnp!],
+        out: join(tmpDir, "non.json"), campaignId: "lotb", partition: "sealed", goldenLabel: "pass2",
+        currency: "CAD", costBasis: "supplied_id", seatObservations: seatP, fields: ["office.postal_code"],
+        recallFloor: 0, precisionFloor: 0, failureCeiling: 0, generatedAt: "2025-01-02T03:04:05Z",
+        fieldLabels: { "office.postal_code": { en: "zip", fr: "cp" } },
+      });
+      expect([resNon.generatedAt, resNon.corpus.partition, resNon.corpus.goldenLabel, resNon.corpus.costBasisLabel,
+        resNon.corpus.currency, resNon.corpus.maxValuesChanged, resNon.corpus.fields, resNon.corpus.fieldLabels,
+        resNon.supportFloors, resNon.records.map((r) => [r.armId, r.armMissionSha256, r.missingDigestAllowed,
+          r.isHighlighted, r.incomplete, r.cost.apiEquivalentTotal, r.cost.costUnknownReason,
+          r.cost.seatUnknownReason]),
+      ]).toEqual(["2025-01-02T03:04:05Z", "sealed", "pass2", "supplied_id", "CAD", true, ["office.postal_code"],
+        { "office.postal_code": { en: "zip", fr: "cp" } },
+        { recallMinPositives: 0, precisionMinPredictions: 0, failureCeiling: 0 },
+        [["arm-b", ad, true, true, true, 4, null, "shared-seat-concurrent"],
+          ["arm-u", ud, false, false, false, "unknown", "unpriced-mission", "missing-observation"]]]);
+      const resMv = await runScrapScore(parseScrapScoreArgv([
+        "--golden", gOut, "--golden-mission", mg!, "--candidate-mission", mcMv!, "--arms", armMv!,
+        "--out", join(tmpDir, "mv.json"), "--campaign-id", "lotb",
+      ]));
+      expect([resMv.corpus.maxValuesChanged, resMv.corpus.annotatorCount]).toEqual([true, 2]);
+      let shapeErr: unknown;
+      try {
+        await runScrapScore({ golden: gOut, goldenMission: mg!, candidateMission: mb!, arms: [armMv!],
+          out: join(tmpDir, "bad.json"), campaignId: "lotb" });
+      } catch (err) { shapeErr = err; }
+      expect((shapeErr as BenchInvariantError).invariant).toBe("MISSION_FIELD_SHAPE");
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });
     }
