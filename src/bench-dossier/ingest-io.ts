@@ -1,5 +1,5 @@
 import { existsSync, realpathSync } from "node:fs";
-import { isAbsolute, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import type { LoadedMission, Mission } from "../scrap/extract.js";
 import * as companion from "./companion-contracts.js";
 import { computeArmCostAndSeat, parseResultsNdjson, summarizeInvocationUsage } from "./cost-seat.js";
@@ -40,6 +40,7 @@ export function loadArmBundles(input: LoadArmsInput) {
   const seenDirs = new Set<string>();
   const seenIds = new Set<string>();
   const bundles: LoadedArmBundle[] = [];
+  let refMission = input.refMission;
   let maxValuesChanged = false;
   for (const armDir of input.armDirs) {
     const canon = canonicalPath(armDir);
@@ -48,11 +49,12 @@ export function loadArmBundles(input: LoadArmsInput) {
     const arm = companion.readArmManifest(join(armDir, "arm.json"));
     if (seenIds.has(arm.armId)) throw new BenchIngestError("DUPLICATE_ARM_ID", arm.armId);
     seenIds.add(arm.armId);
-    const armMission = arm.missionPath
-      ? loadCheckedMission(isAbsolute(arm.missionPath) ? arm.missionPath : resolve(armDir, arm.missionPath))
-      : undefined;
-    if (armMission && input.refMission && compatibleMissionFieldShape(input.refMission.mission,
-      armMission.mission).maxValuesChanged) maxValuesChanged = true;
+    const armMission = arm.missionPath ? loadCheckedMission(resolve(armDir, arm.missionPath)) : undefined;
+    if (armMission) {
+      const shape = compatibleMissionFieldShape((refMission ?? armMission).mission, armMission.mission);
+      maxValuesChanged ||= shape.maxValuesChanged;
+      refMission ??= armMission;
+    }
     const armSha = arm.missionSha256 !== undefined ? normalizeDigest(arm.missionSha256) : undefined;
     const expectedDigest = armMission?.digest
       ?? (input.requireResults ? input.defaultMission!.digest : armSha ?? input.defaultDigest!);

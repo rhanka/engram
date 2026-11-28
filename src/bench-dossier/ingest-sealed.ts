@@ -60,7 +60,7 @@ export function resolveSealedArmCost(
   if (pinned && firstSha !== undefined && firstSha !== digest) {
     throw new BenchIngestError("MISSION_DIGEST_MISMATCH", arm.armId);
   }
-  const effectivePriceTable = pinned || firstSha === undefined || firstSha === digest ? priceTable : null;
+  const effectivePriceTable = firstSha === undefined || firstSha === digest ? priceTable : null;
   const seat = externalSeat ?? arm.seat;
   const override = arm.tariffOverride;
   if (

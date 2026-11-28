@@ -1,7 +1,7 @@
 import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { BenchCostSeatError } from "../src/bench-dossier/cost-seat.js";
 import {
   parseImportMetricsArgv, parseImportMetricsOptions, parseScrapScoreArgv, parseScrapScoreOptions,
@@ -11,7 +11,7 @@ import {
   normalizeDigest, readCheckedBuf, readConvergeGolden, sha256Hex,
 } from "../src/bench-dossier/ingest-golden.js";
 import { importCampaignMetrics, runScrapScore } from "../src/bench-dossier/ingest.js";
-import { loadArmBundles, readCaptureStats } from "../src/bench-dossier/ingest-io.js";
+import { checkOptionalMission, loadArmBundles, readCaptureStats } from "../src/bench-dossier/ingest-io.js";
 import {
   buildImportedArmInputs, normalizeMetricsDigests, resolveSealedArmCost,
 } from "../src/bench-dossier/ingest-sealed.js";
@@ -53,6 +53,8 @@ describe("BD-5 tree-01: BenchIngestError, exit-2 guard & digest/IO loaders", () 
       [Object.assign(new RangeError("big"), { code: "ERR_FS_FILE_TOO_LARGE" }), false],
       [Object.assign(new Error("io"), { code: "EACCES", syscall: "open" }), false],
       [Object.assign(new Error("fs"), { code: "BAD_CODE", syscall: "open" }), false],
+      [Object.assign(new Error("io"), { code: "EACCES" }), false],
+      [Object.assign(new Error("bad"), { code: "bad_code" }), false],
       [{ code: "BAD_CODE" }, false],
       [new Error("unexpected"), false],
       [null, false],
@@ -179,6 +181,7 @@ describe("BD-5 tree-04: CLI argv option parsers", () => {
       "--arms", "a1", "--out", "o", "--campaign-id", "c"];
     for (const bad of [
       "bad" as unknown as string[], [123 as unknown as string], ["xxgolden", "g", ...base.slice(2)],
+      ["-agolden", "g", ...base.slice(2)],
       ["--golden", "g", "--golden-mission", "mg", "--candidate-mission", "mc",
         "--arms", "a1", "--out", "o", "--campaignId", "c"],
       [...base, "--unknown", "x"], [...base, "--generated-at", "2026-11-27"],
@@ -264,6 +267,14 @@ describe("BD-5 tree-05: loadArmBundles missionPath, price_table & digest normali
       }));
       expect(loadSeatMap(seatPath).get("toString")).toEqual({ status: "unknown", reason: "shared-seat-concurrent" });
       expect((catchError(() => loadSeatMap("")) as BenchResultsValidationError).errno).toBe("ENOENT");
+      expect(checkOptionalMission(undefined, "a".repeat(64), "GOLDEN_MISSION_DIGEST_MISMATCH")).toBeUndefined();
+      const optErr = catchError(() => checkOptionalMission("", "a".repeat(64), "GOLDEN_MISSION_DIGEST_MISMATCH"));
+      expect((optErr as BenchResultsValidationError).errno).toBe("ENOENT");
+      const noArmErr = catchError(() => loadArmBundles({
+        armDirs: [join(dir, "missing-arm")], requireResults: false, currency: "USD", seatMap: new Map(),
+      })) as BenchResultsValidationError;
+      expect([noArmErr instanceof BenchResultsValidationError, noArmErr.code, noArmErr.errno,
+        isBenchIngestUsageError(noArmErr)]).toEqual([true, "IO_ERROR", "ENOENT", true]);
       const refM = mkM(join(dir, "gold.json"), 2, 1);
       const defM = mkM(join(dir, "cand.json"), 2, 1);
       const badShape = mkM(join(dir, "badshape.json"), 1, 1);
@@ -299,6 +310,7 @@ describe("BD-5 tree-05: loadArmBundles missionPath, price_table & digest normali
       for (const [arm, rows, code] of [
         [{ armId: "x", missionSha256: "f".repeat(64) }, rowOk("f".repeat(64)), "MISSION_DIGEST_MISMATCH"],
         [{ armId: "x", missionSha256: "f".repeat(64) }, rowOk(defM.digest), "MISSION_DIGEST_MISMATCH"],
+        [{ armId: "x", missionPath: "../gold.json" }, rowOk("0".repeat(64)), "MISSION_DIGEST_MISMATCH"],
         [{ armId: "x" }, [{ id: "1" }], "MISSING_ARM_DIGEST"],
         [{ armId: "x", allowLegacyMissingMissionDigest: false }, rowOk(), "MISSING_ARM_DIGEST"],
         [{ armId: "x", allowLegacyMissingMissionDigest: true }, rowOk("0".repeat(64)), "MISSION_DIGEST_MISMATCH"],
@@ -358,6 +370,12 @@ describe("BD-5 tree-07: readConvergeGolden digest, #509 stats, fields & refusals
         annotatorCount: 2, goldenRows: [],
       });
       expect(minOut.krippendorffAlphaByField).toEqual({ city: null, toString: null, "office.zip": null });
+      const omitAlphaPath = join(dir, "omit-alpha.ndjson");
+      writeFileSync(omitAlphaPath, `${JSON.stringify({
+        type: "summary", runs: ["r1"], missionDigest: digest, fields: { city: {}, office: {} },
+      })}\n`);
+      expect(readConvergeGolden(omitAlphaPath, digest, undefined, specs).krippendorffAlphaByField)
+        .toEqual({ city: null, toString: null, "office.zip": null });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -392,6 +410,8 @@ describe("BD-5 tree-07: readConvergeGolden digest, #509 stats, fields & refusals
         [{ run_stats: { r1: { answered: 0, failed: 0, missing: 0,
           failed_by_code: { llm_error: -1 } } } }, "BAD_COUNT"],
         [{ run_stats: null }, "NOT_OBJECT"], [{ fields: null }, "NOT_OBJECT"],
+        [{ fields: { city: null } }, "NOT_OBJECT"], [{ fields: { office: { subfields: null } } }, "NOT_OBJECT"],
+        [{ fields: { office: { subfields: { zip: null } } } }, "NOT_OBJECT"],
         [{ fields: { city: { krippendorff_alpha: "nan" } } }, "WRONG_TYPE"],
       ] as const) {
         const err = catchError(() => runGolden([{ ...okSum, ...patch }])) as BenchResultsValidationError;
@@ -573,10 +593,50 @@ describe("BD-5 tree-10: resolveSealedArmCost price_table, digest & provenance", 
     const est = resolveSealedArmCost([{ ...baseRec, costBasisItems: 1, tokens: toks }],
       baseArm, "USD", dc, estSeat, pt);
     expect([t40?.cost.apiEquivalentTotal, t41?.cost.apiEquivalentTotal, t42?.cost.apiEquivalentTotal,
-      missTok?.cost.costUnknownReason, est?.calls, est?.callsPerItem, est?.cost.seatStatus,
+      missTok?.cost.costUnknownReason, est?.armMissionSha256, est?.calls, est?.callsPerItem, est?.cost.seatStatus,
       resolveSealedArmCost([], baseArm, "USD", dc, seat, undefined),
       resolveSealedArmCost([{ ...baseRec }], baseArm, "USD", dc, undefined, undefined),
-    ]).toEqual([2, 2, 4, "missing-usage", "unknown", "unknown", "estimated", undefined, undefined]);
+    ]).toEqual([2, 2, 4, "missing-usage", dc, "unknown", "unknown", "estimated", undefined, undefined]);
+    const armSeatOnly = resolveSealedArmCost([{ ...baseRec }], { ...baseArm, seat }, "USD", dc, undefined, undefined);
+    const extUnk = resolveSealedArmCost([{ ...baseRec }], { ...baseArm, seat }, "USD", dc,
+      { status: "unknown", reason: "shared-seat-concurrent" }, undefined);
+    const extUnkAlone = resolveSealedArmCost([{ ...baseRec }], baseArm, "USD", dc,
+      { status: "unknown", reason: "shared-seat-concurrent" }, undefined);
+    const ovOnly = resolveSealedArmCost([{ ...baseRec, costBasisItems: 1, tokens: toks }],
+      { ...baseArm, tariffOverride: ovRate }, "USD", dc, undefined, undefined);
+    const ovCad = resolveSealedArmCost([{ ...baseRec, calls: 2, costBasisItems: 2, apiEquivalentTotal: 1 }],
+      { ...baseArm, tariffOverride: { ...ovRate, currency: "CAD" } }, "CAD", dc, undefined, pt);
+    expect([armSeatOnly?.calls, armSeatOnly?.callsPerItem, armSeatOnly?.cost.costBasisItems,
+      armSeatOnly?.cost.seatStatus, armSeatOnly?.cost.seatCostPerItem, extUnk?.cost.seatStatus,
+      extUnk?.cost.seatUnknownReason, extUnkAlone?.cost.seatUnknownReason, ovOnly?.cost.apiEquivalentTotal,
+      ovOnly?.cost.apiEquivalentPerItem, ovCad?.cost.currency, ovCad?.cost.apiEquivalentTotal,
+      ovCad?.cost.apiEquivalentPerItem,
+      resolveSealedArmCost([{ ...baseRec }], { ...baseArm, seat: { status: "unknown", reason: "no-quota-delta" } },
+        "USD", dc, undefined, undefined),
+    ]).toEqual(["unknown", "unknown", 0, "measured", 7, "unknown", "shared-seat-concurrent",
+      "shared-seat-concurrent", 2, 2, "CAD", 1, 0.5, undefined]);
+    for (const [recP, armP, rawPt, errCtor, code] of [
+      [{ calls: 2, costBasisItems: 2, apiEquivalentTotal: 1 }, { tariffOverride: ovRate }, pt,
+        BenchCostSeatError, "CURRENCY_MISMATCH"],
+      [{ calls: 1, costBasisItems: 1, apiEquivalentTotal: 1 },
+        { fx, tariffOverride: { status: "primary" as const, currency: "CAD" as const, source: "s", asOf: "d" } },
+        pt, BenchCostSeatError, "CURRENCY_MISMATCH"],
+      [{ calls: 1, costBasisItems: 1 },
+        { tariffOverride: { status: "primary" as const, currency: "USD" as const, source: "s", asOf: "d" } },
+        undefined, BenchCostSeatError, "CURRENCY_MISMATCH"],
+      [{ calls: 1, costBasisItems: 1, apiEquivalentTotal: 1 },
+        { tariffOverride: { status: "primary" as const, currency: "USD" as const, source: "s", asOf: "d" } },
+        undefined, BenchCostSeatError, "CURRENCY_MISMATCH"],
+      [{ armMissionSha256: "d".repeat(64) }, { missionPath: "m.json" }, undefined,
+        BenchIngestError, "MISSION_DIGEST_MISMATCH"],
+    ] as const) {
+      const err = catchError(() => resolveSealedArmCost([{ ...baseRec, ...recP }],
+        { ...baseArm, ...armP }, "CAD", dc, undefined, rawPt)) as { code?: string };
+      expect([err instanceof errCtor, err.code]).toEqual([true, code]);
+    }
+    const c0Err = catchError(() => resolveSealedArmCost([{ ...baseRec, calls: 0 }],
+      baseArm, "USD", dc, seat, undefined)) as { code?: string };
+    expect([isBenchIngestUsageError(c0Err), c0Err.code]).toEqual([true, "COST_BASIS"]);
   });
 
   it("enforces multi-record COST_CONFLICT per field and per tokensEqual key (I29-I32)", () => {
@@ -590,8 +650,22 @@ describe("BD-5 tree-10: resolveSealedArmCost price_table, digest & provenance", 
     };
     const ok = resolveSealedArmCost([rec, { ...rec, field: "zip", armMissionSha256: dc, tokens: tokB }],
       baseArm, "USD", dc, undefined, pt);
-    expect([ok?.calls, ok?.callsPerItem, ok?.tokens, ok?.cost.apiEquivalentTotal, ok?.cost.apiEquivalentPerItem])
-      .toEqual([4, 2, tokA, 1, 0.5]);
+    const recNoTok = { ...baseRec, calls: 2, costBasisItems: 2, apiEquivalentTotal: 1 };
+    const okNoTok = resolveSealedArmCost([recNoTok, { ...recNoTok, field: "zip" }],
+      baseArm, "USD", dc, undefined, pt);
+    const okUnkTok = resolveSealedArmCost([{ ...recNoTok, tokens: "unknown" },
+      { ...recNoTok, field: "zip", tokens: "unknown" }], baseArm, "USD", dc, undefined, pt);
+    expect([ok?.calls, ok?.callsPerItem, ok?.tokens, ok?.cost.apiEquivalentTotal, ok?.cost.apiEquivalentPerItem,
+      okNoTok?.tokens, okUnkTok?.tokens])
+      .toEqual([4, 2, tokA, 1, 0.5, "unknown", "unknown"]);
+    for (const [r0, r1] of [
+      [recNoTok, { ...recNoTok, field: "zip", tokens: "unknown" as const }],
+      [{ ...recNoTok, tokens: "unknown" as const }, { ...recNoTok, field: "zip" }],
+    ] as const) {
+      const err = catchError(() => resolveSealedArmCost([r0, r1],
+        baseArm, "USD", dc, undefined, pt)) as BenchIngestError;
+      expect([err instanceof BenchIngestError, err.code]).toEqual([true, "COST_CONFLICT"]);
+    }
     for (const conflictPatch of [
       { calls: 5 },
       { costBasisItems: 3 },
@@ -657,19 +731,27 @@ describe("BD-5 tree-13: runScrapScore e2e literal campaign & #509 corpus project
       ];
       writeFileSync(join(arm1!, "results.ndjson"), `${aRows.map((row) => JSON.stringify(row)).join("\n")}\n`);
       const outDef = join(tmpDir, "sub/def.json");
-      const resDef = await runScrapScore({
-        golden: gPath!, goldenMission: mg!, candidateMission: mc!, arms: [arm1!], out: outDef, campaignId: "lotb",
-        captureDir: capDir!,
-      });
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-11-27T12:34:56.000Z"));
+      let resDef: Awaited<ReturnType<typeof runScrapScore>>;
+      try {
+        resDef = await runScrapScore({
+          golden: gPath!, goldenMission: mg!, candidateMission: mc!, arms: [arm1!], out: outDef, campaignId: "lotb",
+          captureDir: capDir!,
+        });
+      } finally {
+        vi.useRealTimers();
+      }
       expect(readBenchResultsFile(outDef)).toEqual(resDef);
-      expect([resDef.generatedAt.endsWith(".000Z"), resDef.corpus.partition, resDef.corpus.costBasisLabel,
+      expect([resDef.generatedAt, resDef.corpus.partition, resDef.corpus.costBasisLabel,
         resDef.corpus.currency, resDef.corpus.maxValuesChanged, resDef.corpus.goldenSha256,
         resDef.corpus.annotatorCount, resDef.corpus.goldenMissionSha256, resDef.corpus.candidateMissionSha256,
         resDef.corpus.captureSuppliedIds, resDef.corpus.captureAttemptedIds, resDef.corpus.captureOkIds,
         resDef.corpus.missingDigestRuns, resDef.corpus.annotatorRunStats, resDef.corpus.krippendorffAlphaByField,
         resDef.supportFloors, resDef.records[0]?.precisionInterval, resDef.records[1]?.precisionInterval.method,
         resDef.records.map((r) => [r.field, r.tp, r.tn, r.insufficient, r.precision, r.cost.apiEquivalentTotal]),
-      ]).toEqual([false, "eval", "extracted_packet", "USD", undefined, sha256Hex(Buffer.from(gText)), 2, gd, cd,
+      ]).toEqual(["2026-11-27T12:34:56Z", "eval", "extracted_packet", "USD", undefined, sha256Hex(Buffer.from(gText)),
+        2, gd, cd,
         2, 2, 1, ["r1"], { r1: { answered: 2, failed: 1, missing: 0 } }, { city: 1, "office.postal_code": 0.8 },
         { recallMinPositives: 30, precisionMinPredictions: 30, failureCeiling: 0.05 },
         { estimator: "unweighted", method: "wilson_95_unweighted", clustering: "independent_site", valid: true,
@@ -896,11 +978,14 @@ describe("BD-5 tree-17: importCampaignMetrics mission digests, shape, G33/G37 & 
             + `${JSON.stringify({ type: "summary", ok: 2, failed: 0, calls_total: 2, mission_digest: sha,
               tokens: { input: 500_000, output: 0, reasoning: 0, total: 500_000 } })}\n`);
         };
-        const [a1, a3, a4, aBad] = ["a1", "a3", "a4", "aBad"].map((n) => join(tmp, n)) as string[];
+        const [a1, a3, a4, aBad, aGold, aDot] = ["a1", "a3", "a4", "aBad", "aGold", "aDot"]
+          .map((n) => join(tmp, n)) as string[];
         mkArm(a1!, {}, dc!);
         mkArm(a3!, { missionPath: "../m2.json" }, dd!);
         mkArm(a4!, {}, dd!);
         mkArm(aBad!, { missionPath: "../m3.json" }, db!);
+        mkArm(aGold!, { armId: "arm-g", missionPath: "../m0.json" }, dg!);
+        mkArm(aDot!, { missionPath: "../m4.json" }, ddot!);
         const iv = { estimator: "unweighted", method: "wilson_95_unweighted", clustering: "independent_site",
           valid: true, ...wilson95(1, 1) };
         const none = { ...iv, method: "none", clustering: "clustered_record_invalid", valid: false,
@@ -936,9 +1021,10 @@ describe("BD-5 tree-17: importCampaignMetrics mission digests, shape, G33/G37 & 
           metrics: mdM!, arms: [a4!], goldenMission: mg!, candidateMission: md!,
         });
         const rArmChg = await importCampaignMetrics({ metrics: m0!, arms: [a3!], goldenMission: mg! });
+        const rTwoArm = await importCampaignMetrics({ metrics: m0!, arms: [aGold!, a3!] });
         expect([rEq.corpus.maxValuesChanged, rEq.records[0]?.cost.apiEquivalentTotal, rDf.corpus.maxValuesChanged,
-          rDf.records[0]?.cost.apiEquivalentTotal, rArmChg.corpus.maxValuesChanged])
-          .toEqual([undefined, 0.5, true, 2, true]);
+          rDf.records[0]?.cost.apiEquivalentTotal, rArmChg.corpus.maxValuesChanged, rTwoArm.corpus.maxValuesChanged])
+          .toEqual([undefined, 0.5, true, 2, true, true]);
         for (const [opts, code] of [
           [{ metrics: m0!, arms: [a1!], goldenMission: md! }, "GOLDEN_MISSION_DIGEST_MISMATCH"],
           [{ metrics: m0!, arms: [a1!], candidateMission: mg! }, "CANDIDATE_MISSION_DIGEST_MISMATCH"],
@@ -947,6 +1033,7 @@ describe("BD-5 tree-17: importCampaignMetrics mission digests, shape, G33/G37 & 
           [{ metrics: mdM!, arms: [a4!], goldenMission: mg!, candidateMission: md!, maxValuesChanged: false },
             "MAX_VALUES_CONFLICT"],
           [{ metrics: m0!, arms: [a3!], goldenMission: mg!, maxValuesChanged: false }, "MAX_VALUES_CONFLICT"],
+          [{ metrics: m0!, arms: [aGold!, a3!], maxValuesChanged: false }, "MAX_VALUES_CONFLICT"],
         ] as const) {
           let err: unknown;
           try { await importCampaignMetrics(opts); } catch (e) { err = e; }
@@ -956,6 +1043,8 @@ describe("BD-5 tree-17: importCampaignMetrics mission digests, shape, G33/G37 & 
           [{ metrics: mbM!, arms: [a1!], goldenMission: mg!, candidateMission: mb! }, "MISSION_FIELD_SHAPE"],
           [{ metrics: m0!, arms: [aBad!], goldenMission: mg! }, "MISSION_FIELD_SHAPE"],
           [{ metrics: m0!, arms: [aBad!], candidateMission: mc! }, "MISSION_FIELD_SHAPE"],
+          [{ metrics: m0!, arms: [aGold!, aBad!] }, "MISSION_FIELD_SHAPE"],
+          [{ metrics: m0!, arms: [aDot!] }, "FIELD_NAME_DOT"],
           [{ metrics: gDotM!, arms: [a1!], goldenMission: mdot! }, "FIELD_NAME_DOT"],
           [{ metrics: cDotM!, arms: [a1!], candidateMission: mdot! }, "FIELD_NAME_DOT"],
           [{ metrics: badM!, arms: [a1!], goldenMission: mg! }, "COUNT_IDENTITY"],
@@ -1073,6 +1162,7 @@ describe("BD-5 tree-18: importCampaignMetrics sealed probes P1-P6, G22/G26, seat
         ]);
         for (const [recs, arms, cur, code] of [
           [[mkRec("arm-b", { armMissionSha256: dc })], [a2!], "CAD", "MISSION_DIGEST_MISMATCH"],
+          [[mkRec("arm-p4a", { armMissionSha256: dc })], [aP4a!], "CAD", "MISSION_DIGEST_MISMATCH"],
           [[mkRec("arm-a", { apiEquivalentTotal: 99 })], [a1!], "CAD", "COST_CONFLICT"],
           [[mkRec("arm-badpt")], [aBadPt!], undefined, "BAD_ENUM"],
           [[mkRec("arm-badfx", { calls: 1, costBasisItems: 1, apiEquivalentTotal: 1 })], [aBadFx!],
