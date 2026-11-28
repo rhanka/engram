@@ -13,6 +13,7 @@ import {
   LABEL_COLUMN_HEIGHT_PAD, LABEL_COLUMN_LINE_GAP, LABEL_COLUMN_MARGIN_PAD, LABEL_COLUMN_OFFSET_X,
   placeRightGutterColumn,
 } from "../src/bench-dossier/label-column.js";
+import { GREEDY_ANGLE_COUNT, GREEDY_DISTANCES, findBestGreedyPlacement } from "../src/bench-dossier/label-greedy.js";
 
 function refuse(fn: () => unknown, code: string, path: string): void {
   let caught: unknown;
@@ -226,6 +227,70 @@ describe("BD-7 text-width model, capped tie-merging and dynamic column fallback"
       for (let j = i + 1; j < col.placed.length; j++) {
         expect(boxOverlapArea(col.placed[i]!.box, col.placed[j]!.box)).toBe(0);
       }
+    }
+  });
+
+  it("evaluates 24x9 greedy placement, all 9 distance rings and cost penalties", () => {
+    expect(GREEDY_DISTANCES).toEqual([5, 11, 18, 26, 36, 48, 62, 78, 96]);
+    expect(GREEDY_ANGLE_COUNT).toBe(24);
+    const frame = { x1: 50, y1: 20, x2: 500, y2: 400 };
+    const clear = findBestGreedyPlacement({
+      x: 200, y: 200, radius: 6, width: 17.2, height: 14, ownMarkerIndex: 0, frame,
+      placedBoxes: [], markerBoxes: [markerBox(200, 200, 6)], haloBoxes: [markerBox(200, 200, 13)],
+      lineDots: [], leaderDots: [],
+    });
+    expect(clear).toEqual({
+      box: { x1: 211, y1: 193, x2: 228.2, y2: 207 }, distance: 5, angleIndex: 0, cost: 4.5,
+      leader: { sx: 207.5, sy: 200, tx: 211, ty: 200, length: 11 },
+    });
+    const ownLeader = findBestGreedyPlacement({
+      x: 200, y: 200, radius: 6, width: 17.2, height: 14, ownMarkerIndex: 0, frame,
+      placedBoxes: [{ x1: 211, y1: 193, x2: 228.2, y2: 207 }], markerBoxes: [markerBox(200, 200, 6)],
+      haloBoxes: [null], lineDots: [], leaderDots: [],
+    });
+    expect([ownLeader?.distance, ownLeader?.angleIndex, ownLeader?.cost]).toEqual([5, 3, 4.5]);
+    const avoidHalo = findBestGreedyPlacement({
+      x: 200, y: 200, radius: 6, width: 17.2, height: 14, ownMarkerIndex: 0, frame,
+      placedBoxes: [], markerBoxes: [markerBox(200, 200, 6), markerBox(236, 200, 6)],
+      haloBoxes: [markerBox(200, 200, 13), markerBox(236, 200, 13)], lineDots: [], leaderDots: [],
+    });
+    expect([avoidHalo?.distance, avoidHalo?.angleIndex, Number(avoidHalo?.box.x1.toFixed(1))]).toEqual([5, 4, 205.5]);
+    const dots = sampleSegmentBoxes(208, 200, 235, 200);
+    const avoidLine = findBestGreedyPlacement({
+      x: 200, y: 200, radius: 6, width: 17.2, height: 14, ownMarkerIndex: 0, frame,
+      placedBoxes: [], markerBoxes: [markerBox(200, 200, 6)], haloBoxes: [null], lineDots: dots, leaderDots: [],
+    });
+    const avoidLeader = findBestGreedyPlacement({
+      x: 200, y: 200, radius: 6, width: 17.2, height: 14, ownMarkerIndex: 0, frame,
+      placedBoxes: [], markerBoxes: [markerBox(200, 200, 6)], haloBoxes: [null], lineDots: [], leaderDots: dots,
+    });
+    expect([avoidLine?.angleIndex, avoidLeader?.angleIndex]).toEqual([2, 2]);
+    const leadPlaced = findBestGreedyPlacement({
+      x: 200, y: 200, radius: 6, width: 12, height: 14, ownMarkerIndex: 0,
+      frame: { x1: 150, y1: 192, x2: 300, y2: 208 },
+      placedBoxes: [{ x1: 208, y1: 198, x2: 210, y2: 202 }],
+      markerBoxes: [markerBox(200, 200, 6)], haloBoxes: [null], lineDots: [], leaderDots: [],
+    });
+    expect([leadPlaced?.distance, leadPlaced?.angleIndex]).toEqual([5, 12]);
+    const leadMarker = findBestGreedyPlacement({
+      x: 200, y: 200, radius: 6, width: 12, height: 14, ownMarkerIndex: 0,
+      frame: { x1: 150, y1: 192, x2: 300, y2: 208 }, placedBoxes: [],
+      markerBoxes: [markerBox(200, 200, 6), { x1: 208, y1: 198, x2: 210, y2: 202 }],
+      haloBoxes: [null, null], lineDots: [], leaderDots: [],
+    });
+    expect([leadMarker?.distance, leadMarker?.angleIndex]).toEqual([5, 12]);
+    const expectedRings = [
+      [121, 5, 121], [122, 11, 127], [128, 18, 134], [135, 26, 142],
+      [143, 36, 152], [153, 48, 164], [165, 62, 178], [179, 78, 194], [195, 96, 212],
+    ] as const;
+    for (const [obsEnd, expectedDist, expectedX1] of expectedRings) {
+      const placed = findBestGreedyPlacement({
+        x: 110, y: 45, radius: 6, width: 20, height: 14, ownMarkerIndex: 0,
+        frame: { x1: 100, y1: 38, x2: 300, y2: 52 },
+        placedBoxes: [{ x1: 120, y1: 38, x2: obsEnd, y2: 41 }],
+        markerBoxes: [markerBox(110, 45, 6)], haloBoxes: [null], lineDots: [], leaderDots: [],
+      });
+      expect([placed?.distance, placed?.angleIndex, placed?.box.x1]).toEqual([expectedDist, 0, expectedX1]);
     }
   });
 });
