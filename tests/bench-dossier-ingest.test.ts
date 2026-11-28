@@ -10,9 +10,11 @@ import {
   BenchIngestError, isBenchIngestUsageError, loadCheckedMission, loadSeatMap,
   normalizeDigest, readCheckedBuf, readConvergeGolden, sha256Hex,
 } from "../src/bench-dossier/ingest-golden.js";
+import { runScrapScore } from "../src/bench-dossier/ingest.js";
 import { loadArmBundles, readCaptureStats } from "../src/bench-dossier/ingest-io.js";
 import { resolveSealedArmCost } from "../src/bench-dossier/ingest-sealed.js";
-import { BenchInvariantError, compatibleMissionFieldShape } from "../src/bench-dossier/invariants.js";
+import { BenchInvariantError, compatibleMissionFieldShape, wilson95 } from "../src/bench-dossier/invariants.js";
+import { readBenchResultsFile } from "../src/bench-dossier/results-contract.js";
 import { BenchResultsValidationError } from "../src/bench-dossier/results-guards.js";
 
 function catchError(action: () => unknown): unknown {
@@ -604,6 +606,74 @@ describe("BD-5 tree-10: resolveSealedArmCost price_table, digest & provenance", 
         [rec, { ...rec, field: "zip", ...conflictPatch }], baseArm, "USD", dc, undefined, pt,
       )) as BenchIngestError;
       expect([err instanceof BenchIngestError, err.code]).toEqual([true, "COST_CONFLICT"]);
+    }
+  });
+});
+
+describe("BD-5 tree-13: runScrapScore e2e literal campaign & #509 corpus projections", () => {
+  it("scores scalar+record+#509 campaign e2e, writes out, and projects all corpus fields", async () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "bd5-s-"));
+    try {
+      const mObj = (ins: string, mv: number, inRate: number) => ({ instruction: ins,
+        fields: ["city", { name: "office", kind: "record", max_values: mv, fields: [{ name: "postal_code" }] }],
+        price_table: { source: "pt", as_of: "2026-11-22", currency: "USD", status: "primary",
+          per_million: { input: inRate, output: 0 } } });
+      const [mg, mc] = ["mg", "mc"].map((name) => join(tmpDir, `${name}.json`)) as string[];
+      writeFileSync(mg!, JSON.stringify(mObj("g", 2, 1)));
+      writeFileSync(mc!, JSON.stringify(mObj("c", 2, 1)));
+      const [gd, cd] = [loadCheckedMission(mg!).digest, loadCheckedMission(mc!).digest];
+      const gRows = [
+        { id: "1", fields: { city: { verdict: "unanimous", value: "MTL", n_answered: 2 },
+          office: { verdict: "unanimous", n_answered: 2,
+            aligned: [{ fields: { postal_code: { verdict: "unanimous", value: "H2Y 1S1" } } }] } } },
+        { id: "2", fields: { city: { verdict: "absent", value: null, n_answered: 2 },
+          office: { verdict: "absent", n_answered: 2, aligned: [], unmatched: [] } } },
+        { id: "3", fields: { city: { verdict: "insufficient", value: null, n_answered: 1 },
+          office: { verdict: "insufficient", n_answered: 1, aligned: [], unmatched: [] } } },
+        { type: "summary", runs: ["r1", "r2"], mission_digest: gd, ids: 3, missing_digest_runs: ["r1"],
+          run_stats: { r1: { answered: 2, failed: 1, missing: 0, failed_by_code: { llm_error: 1 } } },
+          fields: { city: { krippendorff_alpha: 1 },
+            office: { subfields: { postal_code: { krippendorff_alpha: 0.8 } } } } },
+      ];
+      const gText = `${gRows.map((row) => JSON.stringify(row)).join("\n")}\n`;
+      const [gPath, capDir, arm1] = ["converge.ndjson", "cap", "a1"].map((n) => join(tmpDir, n)) as string[];
+      writeFileSync(gPath!, gText);
+      mkdirSync(capDir!);
+      writeFileSync(join(capDir!, "state.jsonl"),
+        `${JSON.stringify({ id: "1", status: "ok" })}\n${JSON.stringify({ id: "2", status: "dns" })}\n`);
+      mkdirSync(arm1!);
+      writeFileSync(join(arm1!, "arm.json"), JSON.stringify({ schemaId: "urn:engram:bench-arm-manifest:1.0.0",
+        armId: "arm-a", provider: "OpenAI", model: "gpt-6-astra", modelLabel: "Astra", proseName: "OpenAI Astra",
+        effort: "low", isCascade: false }));
+      const aRows = [
+        { id: "1", fields: { city: { value: "mtl" }, office: { values: [{ postal_code: { value: "h2y 1s1" } }] } } },
+        { id: "2", fields: { city: { value: null }, office: { values: [] } } },
+        { id: "3", error: "llm_error", fields: null },
+        { type: "summary", ok: 2, failed: 1, calls_total: 3, mission_digest: cd,
+          tokens: { input: 500_000, output: 0, reasoning: 0, total: 500_000 } },
+      ];
+      writeFileSync(join(arm1!, "results.ndjson"), `${aRows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+      const outDef = join(tmpDir, "sub/def.json");
+      const resDef = await runScrapScore({
+        golden: gPath!, goldenMission: mg!, candidateMission: mc!, arms: [arm1!], out: outDef, campaignId: "lotb",
+        captureDir: capDir!,
+      });
+      expect(readBenchResultsFile(outDef)).toEqual(resDef);
+      expect([resDef.generatedAt.endsWith(".000Z"), resDef.corpus.partition, resDef.corpus.costBasisLabel,
+        resDef.corpus.currency, resDef.corpus.maxValuesChanged, resDef.corpus.goldenSha256,
+        resDef.corpus.annotatorCount, resDef.corpus.goldenMissionSha256, resDef.corpus.candidateMissionSha256,
+        resDef.corpus.captureSuppliedIds, resDef.corpus.captureAttemptedIds, resDef.corpus.captureOkIds,
+        resDef.corpus.missingDigestRuns, resDef.corpus.annotatorRunStats, resDef.corpus.krippendorffAlphaByField,
+        resDef.supportFloors, resDef.records[0]?.precisionInterval, resDef.records[1]?.precisionInterval.method,
+        resDef.records.map((r) => [r.field, r.tp, r.tn, r.insufficient, r.precision, r.cost.apiEquivalentTotal]),
+      ]).toEqual([false, "eval", "extracted_packet", "USD", undefined, sha256Hex(Buffer.from(gText)), 2, gd, cd,
+        2, 2, 1, ["r1"], { r1: { answered: 2, failed: 1, missing: 0 } }, { city: 1, "office.postal_code": 0.8 },
+        { recallMinPositives: 30, precisionMinPredictions: 30, failureCeiling: 0.05 },
+        { estimator: "unweighted", method: "wilson_95_unweighted", clustering: "independent_site", valid: true,
+          ...wilson95(1, 1) }, "none",
+        [["city", 1, 1, 1, 1, 0.5], ["office.postal_code", 1, 1, 1, 1, 0.5]]]);
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
     }
   });
 });
