@@ -8,10 +8,10 @@ import {
 } from "../src/bench-dossier/ingest-cli.js";
 import {
   BenchIngestError, isBenchIngestUsageError, loadCheckedMission, loadSeatMap,
-  normalizeDigest, readCheckedBuf, sha256Hex,
+  normalizeDigest, readCheckedBuf, readConvergeGolden, sha256Hex,
 } from "../src/bench-dossier/ingest-golden.js";
 import { loadArmBundles } from "../src/bench-dossier/ingest-io.js";
-import { BenchInvariantError } from "../src/bench-dossier/invariants.js";
+import { BenchInvariantError, compatibleMissionFieldShape } from "../src/bench-dossier/invariants.js";
 import { BenchResultsValidationError } from "../src/bench-dossier/results-guards.js";
 
 function catchError(action: () => unknown): unknown {
@@ -307,6 +307,40 @@ describe("BD-5 tree-05: loadArmBundles missionPath, price_table & digest normali
         seatMap: new Map(),
       })) as BenchIngestError;
       expect(sealedErr.code).toBe("MISSION_DIGEST_MISMATCH");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("BD-5 tree-07: readConvergeGolden digest, #509 stats, fields & refusals", () => {
+  const mission = {
+    instruction: "x",
+    fields: ["city", "toString", { name: "office", kind: "record" as const, max_values: 3, fields: [{ name: "zip" }] }],
+  };
+  const specs = compatibleMissionFieldShape(mission, mission).goldenSpecs;
+
+  it("extracts goldenSha256, #509 run_stats, missing_digest_runs, alphas & prototype keys", () => {
+    const dir = mkdtempSync(join(tmpdir(), "bdi-t7-"));
+    try {
+      const gPath = join(dir, "converge.ndjson");
+      const digest = "a".repeat(64);
+      const rows = [
+        { id: "1", fields: { city: { verdict: "unanimous", value: "MTL" } } },
+        { type: "summary", runs: ["r1", "r2"], mission_digest: `sha256:${digest.toUpperCase()}`, ids: 1,
+          missing_digest_runs: ["r1"],
+          run_stats: { r1: { answered: 1, failed: 0, missing: 0, failed_by_code: { llm_error: 0 } } },
+          fields: { city: { krippendorff_alpha: 0.75 },
+            office: { subfields: { zip: { krippendorff_alpha: 0.625 } } } } },
+      ];
+      const text = `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`;
+      writeFileSync(gPath, text);
+      const out = readConvergeGolden(gPath, digest, ["office.zip", "city", "toString"], specs);
+      expect([out.fields, out.annotatorCount, out.missingDigestRuns, out.goldenSha256]).toEqual([
+        ["office.zip", "city", "toString"], 2, ["r1"], sha256Hex(Buffer.from(text)),
+      ]);
+      expect(out.krippendorffAlphaByField).toEqual({ "office.zip": 0.625, city: 0.75, toString: null });
+      expect(out.annotatorRunStats).toEqual({ r1: { answered: 1, failed: 0, missing: 0 } });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
