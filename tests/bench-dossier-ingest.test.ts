@@ -4,6 +4,9 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { BenchCostSeatError } from "../src/bench-dossier/cost-seat.js";
 import {
+  parseImportMetricsOptions, parseScrapScoreOptions,
+} from "../src/bench-dossier/ingest-cli.js";
+import {
   BenchIngestError, isBenchIngestUsageError, loadCheckedMission,
   normalizeDigest, readCheckedBuf, sha256Hex,
 } from "../src/bench-dossier/ingest-golden.js";
@@ -72,5 +75,42 @@ describe("BD-5 tree-01: BenchIngestError, exit-2 guard & digest/IO loaders", () 
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("BD-5 tree-02: parseScrapScoreOptions & parseImportMetricsOptions positive defaults", () => {
+  const baseScore = {
+    golden: "g.ndjson", goldenMission: "mg.json", candidateMission: "mc.json",
+    arms: ["a1"], out: "out.json", campaignId: "lotb",
+  };
+  const baseImport = { metrics: "m.json", arms: ["a1"] };
+
+  it("parses omitted defaults, null-proto objects, undefined fields, and non-default values", () => {
+    const nullProto = Object.assign(Object.create(null), baseScore, { partition: undefined, recallFloor: undefined });
+    expect(parseScrapScoreOptions(nullProto)).toEqual({
+      ...baseScore, partition: undefined, goldenLabel: undefined, captureDir: undefined, currency: undefined,
+      costBasis: undefined, seatObservations: undefined, fields: undefined, recallFloor: undefined,
+      precisionFloor: undefined, failureCeiling: undefined, generatedAt: undefined, fieldLabels: undefined,
+    });
+    expect(parseScrapScoreOptions({
+      ...baseScore, arms: ["a1", "a2"], partition: "sealed", goldenLabel: "pass2", captureDir: "cap",
+      currency: "CAD", costBasis: "supplied_id", seatObservations: "seats.json", fields: ["office.city"],
+      recallFloor: "0", precisionFloor: 5, failureCeiling: ".5", generatedAt: "2026-11-27T12:00:00Z",
+      fieldLabels: { "office.city": { en: "city", fr: "ville" } },
+    })).toEqual({
+      ...baseScore, arms: ["a1", "a2"], partition: "sealed", goldenLabel: "pass2", captureDir: "cap",
+      currency: "CAD", costBasis: "supplied_id", seatObservations: "seats.json", fields: ["office.city"],
+      recallFloor: 0, precisionFloor: 5, failureCeiling: 0.5, generatedAt: "2026-11-27T12:00:00Z",
+      fieldLabels: { "office.city": { en: "city", fr: "ville" } },
+    });
+    expect(parseImportMetricsOptions({
+      ...baseImport, out: "out.json", golden: "g.ndjson", goldenMission: "mg.json", candidateMission: "mc.json",
+      failureCeiling: "1", maxValuesChanged: false,
+    })).toEqual({
+      ...baseImport, out: "out.json", golden: "g.ndjson", goldenMission: "mg.json", candidateMission: "mc.json",
+      captureDir: undefined, currency: undefined, costBasis: undefined, seatObservations: undefined,
+      recallFloor: undefined, precisionFloor: undefined, failureCeiling: 1, generatedAt: undefined,
+      fieldLabels: undefined, maxValuesChanged: false,
+    });
   });
 });
