@@ -968,3 +968,122 @@ describe("BD-5 tree-17: importCampaignMetrics mission digests, shape, G33/G37 & 
       } finally { rmSync(tmp, { recursive: true, force: true }); }
     });
 });
+
+describe("BD-5 tree-18: importCampaignMetrics sealed probes P1-P6, G22/G26, seats & CLI argv", () => {
+  it("merges sealed probes P1-P6, P4a-P4c, G22 m.currency, G26 arm.missionSha256, capture & CLI argv",
+    async () => {
+      const tmp = mkdtempSync(join(tmpdir(), "bd5-m3-"));
+      try {
+        const mObj = (rate: number, cur: "USD" | "EUR" = "USD") => ({ instruction: "x", fields: ["city"],
+          price_table: { source: "pt", as_of: "2026-11-22", currency: cur, status: "primary",
+            per_million: { input: rate, output: 0 } } });
+        const [mc, ma, mbadPt] = ["mc", "ma", "mbadpt"].map((n) => join(tmp, `${n}.json`)) as string[];
+        writeFileSync(mc!, JSON.stringify(mObj(1)));
+        writeFileSync(ma!, JSON.stringify(mObj(4)));
+        writeFileSync(mbadPt!, JSON.stringify(mObj(1, "EUR")));
+        const [dc, da] = [loadCheckedMission(mc!).digest, loadCheckedMission(ma!).digest];
+        const other = "b".repeat(64);
+        const [a1, a2, aP4a, aP4c, aP1c, aBadPt, aBadFx] = ["a1", "a2", "a4a", "a4c", "ap1c", "abpt", "abfx"]
+          .map((n) => join(tmp, n)) as string[];
+        const mkA = (dir: string, id: string, pn: string, ex: Record<string, unknown>) => {
+          mkdirSync(dir);
+          writeFileSync(join(dir, "arm.json"), JSON.stringify({ schemaId: "urn:engram:bench-arm-manifest:1.0.0",
+            armId: id, provider: "OpenAI", model: "gpt-6-astra", modelLabel: "Astra", proseName: pn,
+            effort: "low", isCascade: false, ...ex }));
+        };
+        const fx = { from: "USD", to: "CAD", rate: 2, source: "boc", asOf: "2026-11-22" };
+        mkA(a1!, "arm-a", "OpenAI Astra", { fx });
+        mkA(a2!, "arm-b", "OpenAI Astra Alt", { missionPath: "../ma.json", fx });
+        mkA(aP4a!, "arm-p4a", "OpenAI Astra Four A", { missionSha256: `SHA256:${other.toUpperCase()}`, fx });
+        mkA(aP4c!, "arm-p4c", "OpenAI Astra Four C", { fx });
+        mkA(aP1c!, "arm-p1c", "OpenAI Astra One C", { missionPath: "../ma.json" });
+        mkA(aBadPt!, "arm-badpt", "OpenAI Astra Bad Pt", { missionPath: "../mbadpt.json" });
+        mkA(aBadFx!, "arm-badfx", "OpenAI Astra Bad Fx",
+          { fx: { from: "USD", to: "USD", rate: 1, source: "boc", asOf: "2026-11-22" } });
+        writeFileSync(join(a1!, "results.ndjson"),
+          `${JSON.stringify({ id: "1", fields: {} })}\n${JSON.stringify({ id: "2", fields: {} })}\n`
+          + `${JSON.stringify({ type: "summary", ok: 2, failed: 0, calls_total: 2, mission_digest: dc,
+            tokens: { input: 500_000, output: 0, reasoning: 0, total: 500_000 } })}\n`);
+        const capD = join(tmp, "cap");
+        mkdirSync(capD);
+        writeFileSync(join(capD, "state.jsonl"),
+          `${JSON.stringify({ id: "1", status: "ok" })}\n${JSON.stringify({ id: "2", status: "timeout" })}\n`);
+        const seatObs = { windowMinutes: 10080, status: "measured", method: "weekly_burn_delta",
+          isolatedSeat: true, plan: "Pro", planMonthlyPrice: 487, planCurrency: "USD", planSource: "s",
+          planAsOf: "2026-11-22", remainingBefore: 0.75, remainingAfter: 0.25, observedItems: 8 };
+        const seatP = join(tmp, "seats.json");
+        writeFileSync(seatP, JSON.stringify({ schemaId: "urn:engram:seat-observation:1.0.0",
+          observations: { "arm-a": seatObs, "arm-b": seatObs, "arm-p4a": seatObs, "arm-p4c": seatObs } }));
+        const iv = { estimator: "unweighted", method: "wilson_95_unweighted", clustering: "independent_site",
+          valid: true, ...wilson95(1, 1) };
+        const mkRec = (armId: string, ex: Record<string, unknown> = {}) => ({ armId, field: "city",
+          comparator: "generic", isPrimaryComparator: true, failuresByCode: {}, attempted: 2, accepted: 2, failed: 0,
+          unverifiedQuotesNulled: 0, goldPositive: 1, unverifiedWholeRecordsDropped: null, goldAbsent: 1, tp: 1,
+          fp: 0, fpOnPresent: 0, fpOnAbsent: 0, fpElementsOnAbsent: 0, fn: 0, tn: 1, failedOnAbsent: 0,
+          unresolved: 0, insufficient: 0,
+          sitePresence: { goldPresentSites: 1, goldAbsentSites: 1, unresolvedSites: 0, insufficientSites: 0, tpSites: 1,
+            fnSites: 0, wrongValueOnPresentSites: 0, fpOnAbsentSites: 0, tnSites: 1, failedOnAbsentSites: 0,
+            siteRecall: 1, siteRecallInterval: iv, siteAbstentionSpecificity: 1, siteAbstentionInterval: iv },
+          unweighted: { precision: 1, recall: 1, f1: 1, precisionInterval: iv, recallInterval: iv },
+          weighted: null, ...ex });
+        let mi = 0;
+        const gPath = join(tmp, "g.ndjson");
+        writeFileSync(gPath, "{\"id\":\"1\"}\n");
+        const goldSha = sha256Hex(Buffer.from("{\"id\":\"1\"}\n"));
+        const mkM = (recs: unknown[], cur?: "CAD", floors?: Record<string, number>) => {
+          const p = join(tmp, `m${++mi}.json`);
+          writeFileSync(p, JSON.stringify({ schemaId: "urn:engram:bench-metrics-import:1.0.0", campaignId: "lotb",
+            partition: "sealed", primaryEstimator: "unweighted", fieldShapeVerified: true,
+            goldenSha256: `SHA256:${goldSha.toUpperCase()}`, goldenMissionSha256: dc, candidateMissionSha256: dc,
+            goldenIds: 2, annotatorCount: 1, fields: ["city"], krippendorffAlphaByField: { city: 0.9 },
+            ...(cur ? { currency: cur } : {}), ...(floors ? { supportFloors: floors } : {}), records: recs }));
+          return p;
+        };
+        const toks = { input: 250_000, output: 0, reasoning: 0, cached: "unknown", total: 250_000 };
+        const resCad = await importCampaignMetrics({
+          metrics: mkM([
+            mkRec("arm-a", { armMissionSha256: `SHA256:${dc.toUpperCase()}` }),
+            mkRec("arm-b", { calls: 2, costBasisItems: 2, tokens: toks }),
+            mkRec("arm-p4a", { armMissionSha256: `SHA256:${other.toUpperCase()}`, calls: 2, costBasisItems: 2 }),
+            mkRec("arm-p4c", { armMissionSha256: other, calls: 2, costBasisItems: 2, tokens: toks }),
+          ], "CAD", { recallMinPositives: 10, precisionMinPredictions: 20, failureCeiling: 0.1 }),
+          arms: [a1!, a2!, aP4a!, aP4c!], golden: gPath, candidateMission: mc!, seatObservations: seatP,
+          captureDir: capD, recallFloor: 5, failureCeiling: 0.25, fieldLabels: { city: { en: "City", fr: "Ville" } },
+        });
+        expect([resCad.corpus.currency, resCad.corpus.captureSuppliedIds, resCad.corpus.captureOkIds,
+          resCad.corpus.fieldLabels, resCad.supportFloors,
+          resCad.records.map((r) => [r.armId, r.armMissionSha256, r.cost.currency, r.cost.tariffStatus,
+            r.cost.apiEquivalentTotal, r.cost.costUnknownReason, r.cost.seatStatus, r.cost.seatCostPerItem]),
+        ]).toEqual(["CAD", 2, 1, { city: { en: "City", fr: "Ville" } },
+          { recallMinPositives: 5, precisionMinPredictions: 20, failureCeiling: 0.25 }, [
+            ["arm-a", dc, "CAD", "primary", 1, null, "measured", 14],
+            ["arm-b", da, "CAD", "primary", 2, null, "measured", 14],
+            ["arm-p4a", other, "CAD", "unknown", "unknown", "missing-usage", "measured", 14],
+            ["arm-p4c", other, "CAD", "unknown", "unknown", "unpriced-mission", "measured", 14],
+          ]]);
+        const resCli = await importCampaignMetrics(parseImportMetricsArgv([
+          "--metrics", mkM([mkRec("arm-p1c", { calls: 2, costBasisItems: 2, apiEquivalentTotal: 1 })]),
+          "--arms", aP1c!, "--out", join(tmp, "cli.json"), "--recall-floor", "0", "--precision-floor", "0",
+          "--failure-ceiling", "0",
+        ]));
+        expect([resCli.supportFloors, resCli.records[0]?.armMissionSha256, resCli.records[0]?.cost.tariffStatus,
+          resCli.records[0]?.cost.tariffSource, resCli.records[0]?.cost.apiEquivalentTotal,
+          resCli.records[0]?.cost.seatStatus]).toEqual([
+          { recallMinPositives: 0, precisionMinPredictions: 0, failureCeiling: 0 }, da, "primary", "pt", 1, "unknown",
+        ]);
+        for (const [recs, arms, cur, code] of [
+          [[mkRec("arm-b", { armMissionSha256: dc })], [a2!], "CAD", "MISSION_DIGEST_MISMATCH"],
+          [[mkRec("arm-a", { apiEquivalentTotal: 99 })], [a1!], "CAD", "COST_CONFLICT"],
+          [[mkRec("arm-badpt")], [aBadPt!], undefined, "BAD_ENUM"],
+          [[mkRec("arm-badfx", { calls: 1, costBasisItems: 1, apiEquivalentTotal: 1 })], [aBadFx!],
+            "CAD", "CURRENCY_MISMATCH"],
+          [[mkRec("arm-p4c", { calls: 3, costBasisItems: 0 })], [aP4c!], "CAD", "COST_BASIS"],
+        ] as const) {
+          let err: unknown;
+          try { await importCampaignMetrics({ metrics: mkM([...recs], cur), arms: [...arms], candidateMission: mc! });
+          } catch (e) { err = e; }
+          expect((err as { code?: string }).code).toBe(code);
+        }
+      } finally { rmSync(tmp, { recursive: true, force: true }); }
+    });
+});
