@@ -39,13 +39,10 @@ const LABELS = stringMapOf(objectSchema({ en: nonEmptyString, fr: nonEmptyString
 const INT_RE = /^(?:0|[1-9]\d*)$/;
 const UNIT_RE = /^(?:\d+(?:\.\d+)?|\.\d+)$/;
 const failUsage = (msg: string, cause?: unknown): never => { throw new BenchIngestError("BAD_USAGE", msg, cause); };
-const reqStr = (val: unknown, key: string) =>
-  typeof val === "string" && val.trim() ? val : failUsage(`${key} non-empty`);
+const reqStr = (val: unknown, key: string) => (typeof val === "string" && val.trim() ? val : failUsage(`${key} str`));
 const optStr = (val: unknown, key: string) => (val === undefined ? undefined : reqStr(val, key));
-const strArr = (val: unknown, key: string) =>
-  Array.isArray(val) && val.length > 0
-    ? val.map((item, idx) => reqStr(item, `${key}[${idx}]`))
-    : failUsage(`${key} non-empty array`);
+const strArr = (val: unknown, key: string) => Array.isArray(val) && val.length > 0
+  ? val.map((item, idx) => reqStr(item, `${key}[${idx}]`)) : failUsage(`${key} non-empty array`);
 const optEnum = <T extends string>(vals: readonly T[]) => (val: unknown, key: string) =>
   val === undefined ? undefined : (vals as readonly unknown[]).includes(val) ? (val as T) : failUsage(`${key} enum`);
 const optNum = (unit: boolean) => (val: unknown, key: string) => {
@@ -56,7 +53,7 @@ const optNum = (unit: boolean) => (val: unknown, key: string) => {
   return valid ? num : failUsage(`${key} invalid number`);
 };
 const optBool = (val: unknown, key: string) =>
-  val === undefined ? undefined : typeof val === "boolean" ? val : failUsage(`${key} must be boolean`);
+  val === undefined ? undefined : typeof val === "boolean" ? val : failUsage(`${key} bool`);
 function optLabels(val: unknown) {
   if (val === undefined) return undefined;
   try {
@@ -66,41 +63,40 @@ function optLabels(val: unknown) {
     return failUsage("invalid fieldLabels", err);
   }
 }
-const SHARED_KEYS = [
-  "arms", "captureDir", "currency", "costBasis", "seatObservations",
-  "recallFloor", "precisionFloor", "failureCeiling", "generatedAt", "fieldLabels",
-];
-const SCORE_KEYS = [
-  ...SHARED_KEYS, "golden", "goldenMission", "candidateMission",
-  "out", "campaignId", "partition", "goldenLabel", "fields",
-];
-const IMPORT_KEYS = [...SHARED_KEYS, "metrics", "out", "golden", "goldenMission", "candidateMission",
-  "maxValuesChanged"];
-const SCORE_REQ = new Set(["golden", "goldenMission", "candidateMission", "out", "campaignId"]);
-const PARSERS: Record<string, (val: unknown, key: string) => unknown> = {
+type FieldParser = (val: unknown, key: string) => unknown;
+const fieldsMap = (keys: readonly string[], fn: FieldParser) => Object.fromEntries(keys.map((key) => [key, fn]));
+const SHARED_SPEC: Record<string, FieldParser> = {
   arms: strArr,
+  ...fieldsMap(["captureDir", "seatObservations", "generatedAt"], optStr),
   currency: optEnum(R.CURRENCY_CODES),
   costBasis: optEnum(R.COST_BASIS_KINDS),
-  recallFloor: optNum(false),
-  precisionFloor: optNum(false),
+  ...fieldsMap(["recallFloor", "precisionFloor"], optNum(false)),
   failureCeiling: optNum(true),
   fieldLabels: optLabels,
+};
+const SCORE_SPEC: Record<string, FieldParser> = {
+  ...SHARED_SPEC,
+  ...fieldsMap(["golden", "goldenMission", "candidateMission", "out", "campaignId"], reqStr),
   partition: optEnum(R.PARTITION_KINDS),
+  goldenLabel: optStr,
   fields: (val, key) => (val === undefined ? undefined : strArr(val, key)),
+};
+const IMPORT_SPEC: Record<string, FieldParser> = {
+  ...SHARED_SPEC,
+  metrics: reqStr,
+  ...fieldsMap(["out", "golden", "goldenMission", "candidateMission"], optStr),
   maxValuesChanged: optBool,
 };
-function parseOptions<T>(raw: unknown, allowed: readonly string[], reqKeys: ReadonlySet<string>): T {
+function parseOptions<T>(raw: unknown, spec: Record<string, FieldParser>): T {
   const proto = raw && typeof raw === "object" ? Object.getPrototypeOf(raw) : 0;
   if (proto !== Object.prototype && proto !== null) failUsage("options must be plain object");
   const obj = raw as Record<string, unknown>;
-  for (const key of Object.keys(obj)) if (!allowed.includes(key)) failUsage(`unknown option: ${key}`);
-  const entries = allowed.map((key) => [key, (PARSERS[key] ?? (reqKeys.has(key) ? reqStr : optStr))(obj[key], key)]);
-  return Object.fromEntries(entries) as T;
+  for (const key of Object.keys(obj)) if (!Object.hasOwn(spec, key)) failUsage(`unknown option: ${key}`);
+  return Object.fromEntries(Object.keys(spec).map((key) => [key, spec[key]!(obj[key], key)])) as T;
 }
 
 /** Validate programmatic options for `runScrapScore`. */
-export const parseScrapScoreOptions = (raw: unknown) => parseOptions<ScrapScoreOptions>(raw, SCORE_KEYS, SCORE_REQ);
+export const parseScrapScoreOptions = (raw: unknown) => parseOptions<ScrapScoreOptions>(raw, SCORE_SPEC);
 
 /** Validate programmatic options for `importCampaignMetrics`. */
-export const parseImportMetricsOptions = (raw: unknown) =>
-  parseOptions<ImportCampaignMetricsOptions>(raw, IMPORT_KEYS, new Set(["metrics"]));
+export const parseImportMetricsOptions = (raw: unknown) => parseOptions<ImportCampaignMetricsOptions>(raw, IMPORT_SPEC);

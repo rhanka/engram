@@ -113,4 +113,34 @@ describe("BD-5 tree-02: parseScrapScoreOptions & parseImportMetricsOptions posit
       fieldLabels: undefined, maxValuesChanged: false,
     });
   });
+
+  it("refuses malformed objects, unknown keys, missing strings, nullables, enums, and bounds", () => {
+    const checkBadScore = (raw: unknown) => {
+      const err = catchError(() => parseScrapScoreOptions(raw)) as BenchIngestError;
+      expect([err instanceof BenchIngestError, err.code]).toEqual([true, "BAD_USAGE"]);
+    };
+    for (const bad of [null, Object.assign([], baseScore), "x", Object.assign(new Date(), baseScore)]) {
+      checkBadScore(bad);
+    }
+    for (const key of ["golden", "goldenMission", "candidateMission", "out", "campaignId"] as const) {
+      for (const bad of [undefined, null, "", "   ", 1]) checkBadScore({ ...baseScore, [key]: bad });
+    }
+    for (const badArms of [undefined, null, [], ["a", "  "], "a1"]) checkBadScore({ ...baseScore, arms: badArms });
+    const badScorePatches: Record<string, unknown>[] = [
+      { extra: 1 }, { goldenLabel: null }, { goldenLabel: " " }, { captureDir: "" }, { seatObservations: null },
+      { generatedAt: "" }, { partition: "bogus" }, { partition: null }, { currency: "EUR" }, { costBasis: "bad" },
+      { fields: [] }, { fields: [""] }, { fields: null }, { recallFloor: -1 }, { recallFloor: 1.5 },
+      { recallFloor: "05" }, { recallFloor: " 5" }, { recallFloor: Number.MAX_SAFE_INTEGER + 1 }, { recallFloor: null },
+      { precisionFloor: "-1" }, { failureCeiling: -0.1 }, { failureCeiling: 1.01 }, { failureCeiling: "0." },
+      { failureCeiling: "bad" }, { failureCeiling: null }, { fieldLabels: { c: { en: "x" } } },
+      { fieldLabels: { c: { fr: "x" } } }, { fieldLabels: null }, { partition: { toString: () => "eval" } },
+    ];
+    for (const patch of badScorePatches) checkBadScore({ ...baseScore, ...patch });
+    for (const patch of [{ extra: 1 }, { metrics: " " }, { metrics: null }, { arms: [] }, { out: "" },
+      { golden: null }, { goldenMission: "" }, { candidateMission: " " }, { maxValuesChanged: "true" },
+      { maxValuesChanged: null }]) {
+      const err = catchError(() => parseImportMetricsOptions({ ...baseImport, ...patch })) as BenchIngestError;
+      expect([err instanceof BenchIngestError, err.code]).toEqual([true, "BAD_USAGE"]);
+    }
+  });
 });
