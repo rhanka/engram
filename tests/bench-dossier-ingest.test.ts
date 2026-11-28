@@ -869,3 +869,102 @@ describe("BD-5 tree-16: importCampaignMetrics weighted import, digests & options
     } finally { rmSync(tmp, { recursive: true, force: true }); }
   });
 });
+
+describe("BD-5 tree-17: importCampaignMetrics mission digests, shape, G33/G37 & Probe P8", () => {
+  it("verifies mission digests, field shape (incl. single-mission P8/G33), candM price_table & MAX_VALUES_CONFLICT",
+    async () => {
+      const tmp = mkdtempSync(join(tmpdir(), "bd5-m2-"));
+      try {
+        const mObj = (mv: number, r: number, ins = "x", extra = "tags") => ({ instruction: ins,
+          fields: ["city", { name: extra, kind: "scalar", max_values: mv }],
+          price_table: { source: "pt", as_of: "2026-11-22", currency: "USD", status: "primary",
+            per_million: { input: r, output: 0 } } });
+        const [mg, mc, md, mb, mdot] = [mObj(2, 1), mObj(2, 1, "y"), mObj(3, 4), mObj(1, 1), mObj(2, 1, "z", "a.b")]
+          .map((obj, i) => {
+            const p = join(tmp, `m${i}.json`);
+            writeFileSync(p, JSON.stringify(obj));
+            return p;
+          }) as string[];
+        const [dg, dc, dd, db, ddot] = [mg!, mc!, md!, mb!, mdot!].map((p) => loadCheckedMission(p).digest) as string[];
+        const mkArm = (dir: string, ex: Record<string, unknown>, sha: string) => {
+          mkdirSync(dir);
+          writeFileSync(join(dir, "arm.json"), JSON.stringify({ schemaId: "urn:engram:bench-arm-manifest:1.0.0",
+            armId: "arm-a", provider: "OpenAI", model: "gpt-6-astra", modelLabel: "Astra", proseName: "OpenAI Astra",
+            effort: "low", isCascade: false, ...ex }));
+          writeFileSync(join(dir, "results.ndjson"),
+            `${JSON.stringify({ id: "1", fields: {} })}\n${JSON.stringify({ id: "2", fields: {} })}\n`
+            + `${JSON.stringify({ type: "summary", ok: 2, failed: 0, calls_total: 2, mission_digest: sha,
+              tokens: { input: 500_000, output: 0, reasoning: 0, total: 500_000 } })}\n`);
+        };
+        const [a1, a3, a4, aBad] = ["a1", "a3", "a4", "aBad"].map((n) => join(tmp, n)) as string[];
+        mkArm(a1!, {}, dc!);
+        mkArm(a3!, { missionPath: "../m2.json" }, dd!);
+        mkArm(a4!, {}, dd!);
+        mkArm(aBad!, { missionPath: "../m3.json" }, db!);
+        const iv = { estimator: "unweighted", method: "wilson_95_unweighted", clustering: "independent_site",
+          valid: true, ...wilson95(1, 1) };
+        const none = { ...iv, method: "none", clustering: "clustered_record_invalid", valid: false,
+          low: null, high: null };
+        const rec = (bad = false) => ({ armId: "arm-a", field: "city", comparator: "generic",
+          isPrimaryComparator: true, failuresByCode: {}, attempted: 2, accepted: 2, failed: 0,
+          unverifiedQuotesNulled: 0, goldPositive: 1, unverifiedWholeRecordsDropped: null, goldAbsent: 1, tp: 1,
+          fp: bad ? 2 : 0, fpOnPresent: 0, fpOnAbsent: bad ? 1 : 0, fpElementsOnAbsent: bad ? 2 : 0, fn: 0,
+          tn: bad ? 0 : 1, failedOnAbsent: 0, unresolved: 0, insufficient: 0,
+          sitePresence: { goldPresentSites: 1, goldAbsentSites: 1, unresolvedSites: 0, insufficientSites: 0, tpSites: 1,
+            fnSites: 0, wrongValueOnPresentSites: 0, fpOnAbsentSites: bad ? 1 : 0, tnSites: bad ? 0 : 1,
+            failedOnAbsentSites: 0, siteRecall: 1, siteRecallInterval: iv, siteAbstentionSpecificity: bad ? 0 : 1,
+            siteAbstentionInterval: bad ? { ...iv, ...wilson95(0, 1) } : iv },
+          unweighted: { precision: bad ? 1 / 3 : 1, recall: 1, f1: bad ? 0.5 : 1,
+            precisionInterval: bad ? none : iv, recallInterval: bad ? none : iv }, weighted: null });
+        let mi = 0;
+        const mkM = (patch: Record<string, unknown> = {}) => {
+          const p = join(tmp, `k${++mi}.json`);
+          writeFileSync(p, JSON.stringify({ schemaId: "urn:engram:bench-metrics-import:1.0.0", campaignId: "lotb",
+            partition: "eval", primaryEstimator: "unweighted", fieldShapeVerified: true, goldenSha256: "a".repeat(64),
+            goldenMissionSha256: `SHA256:${dg!.toUpperCase()}`, candidateMissionSha256: dc!, goldenIds: 2,
+            annotatorCount: 1, fields: ["city"], krippendorffAlphaByField: { city: 0.9 },
+            records: [rec()], ...patch }));
+          return p;
+        };
+        const [m0, mdM, mbM, badM, gDotM, cDotM] = [mkM(), mkM({ candidateMissionSha256: dd! }),
+          mkM({ candidateMissionSha256: db! }), mkM({ records: [rec(true)] }),
+          mkM({ goldenMissionSha256: ddot! }), mkM({ candidateMissionSha256: ddot! })] as string[];
+        const rEq = await importCampaignMetrics({
+          metrics: m0!, arms: [a1!], goldenMission: mg!, candidateMission: mc!,
+        });
+        const rDf = await importCampaignMetrics({
+          metrics: mdM!, arms: [a4!], goldenMission: mg!, candidateMission: md!,
+        });
+        const rArmChg = await importCampaignMetrics({ metrics: m0!, arms: [a3!], goldenMission: mg! });
+        expect([rEq.corpus.maxValuesChanged, rEq.records[0]?.cost.apiEquivalentTotal, rDf.corpus.maxValuesChanged,
+          rDf.records[0]?.cost.apiEquivalentTotal, rArmChg.corpus.maxValuesChanged])
+          .toEqual([undefined, 0.5, true, 2, true]);
+        for (const [opts, code] of [
+          [{ metrics: m0!, arms: [a1!], goldenMission: md! }, "GOLDEN_MISSION_DIGEST_MISMATCH"],
+          [{ metrics: m0!, arms: [a1!], candidateMission: mg! }, "CANDIDATE_MISSION_DIGEST_MISMATCH"],
+          [{ metrics: m0!, arms: [a1!], goldenMission: mg!, candidateMission: mc!, maxValuesChanged: true },
+            "MAX_VALUES_CONFLICT"],
+          [{ metrics: mdM!, arms: [a4!], goldenMission: mg!, candidateMission: md!, maxValuesChanged: false },
+            "MAX_VALUES_CONFLICT"],
+          [{ metrics: m0!, arms: [a3!], goldenMission: mg!, maxValuesChanged: false }, "MAX_VALUES_CONFLICT"],
+        ] as const) {
+          let err: unknown;
+          try { await importCampaignMetrics(opts); } catch (e) { err = e; }
+          expect((err as BenchIngestError).code).toBe(code);
+        }
+        for (const [opts, inv] of [
+          [{ metrics: mbM!, arms: [a1!], goldenMission: mg!, candidateMission: mb! }, "MISSION_FIELD_SHAPE"],
+          [{ metrics: m0!, arms: [aBad!], goldenMission: mg! }, "MISSION_FIELD_SHAPE"],
+          [{ metrics: m0!, arms: [aBad!], candidateMission: mc! }, "MISSION_FIELD_SHAPE"],
+          [{ metrics: gDotM!, arms: [a1!], goldenMission: mdot! }, "FIELD_NAME_DOT"],
+          [{ metrics: cDotM!, arms: [a1!], candidateMission: mdot! }, "FIELD_NAME_DOT"],
+          [{ metrics: badM!, arms: [a1!], goldenMission: mg! }, "COUNT_IDENTITY"],
+          [{ metrics: badM!, arms: [a1!], candidateMission: mc! }, "COUNT_IDENTITY"],
+        ] as const) {
+          let err: unknown;
+          try { await importCampaignMetrics(opts); } catch (e) { err = e; }
+          expect((err as BenchInvariantError).invariant).toBe(inv);
+        }
+      } finally { rmSync(tmp, { recursive: true, force: true }); }
+    });
+});
