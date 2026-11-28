@@ -62,7 +62,8 @@ describe("BD-7 text-width model, capped tie-merging and dynamic column fallback"
     const pt = (text: string, x = 100, y = 200, extra: Partial<LabelPointInput> = {}): LabelPointInput =>
       ({ x, y, text, color: "#4E79A7", ...extra });
     expect(mergeCoincidentTies([])).toEqual({ clusters: [], tieFootnotes: [] });
-    expect(mergeCoincidentTies([pt("A", 100, 200, { radius: 9 }), pt("B"), pt("C")]).clusters[0]).toEqual({
+    expect(mergeCoincidentTies([pt("A"), pt("B", 100, 200, { radius: 9 }), pt("C", 100, 200, { radius: 7 })])
+      .clusters[0]).toEqual({
       clusterIndex: 0, x: 100, y: 200, color: "#4E79A7", highlighted: false, radius: 9, priority: 0,
       displayText: "A / B / C", parts: [
         { text: "A", color: "#4E79A7", highlighted: false }, { text: "B", color: "#4E79A7", highlighted: false },
@@ -85,10 +86,27 @@ describe("BD-7 text-width model, capped tie-merging and dynamic column fallback"
     expect(dual.clusters[1]?.clusterIndex).toBe(1);
     expect([dual.clusters[1]?.displayText, dual.clusters[1]?.tieFootnoteId]).toEqual(["B1 / B2 (+3 tied, see #2)", 2]);
     expect(dual.tieFootnotes).toEqual([
-      { id: 1, tag: "#1", names: ["Top", "Bold", "Low", "Fourth"], items: dual.clusters[0]!.parts,
-        text: "#1: Top / Bold / Low / Fourth" },
-      { id: 2, tag: "#2", names: ["B1", "B2", "B3", "B4", "B5"], items: dual.clusters[1]!.parts,
-        text: "#2: B1 / B2 / B3 / B4 / B5" },
+      {
+        id: 1, tag: "#1", names: ["Top", "Bold", "Low", "Fourth"],
+        items: [
+          { text: "Top", color: "#222", highlighted: false },
+          { text: "Bold", color: "#333", highlighted: true },
+          { text: "Low", color: "#111", highlighted: false },
+          { text: "Fourth", color: "#444", highlighted: false },
+        ],
+        text: "#1: Top / Bold / Low / Fourth",
+      },
+      {
+        id: 2, tag: "#2", names: ["B1", "B2", "B3", "B4", "B5"],
+        items: [
+          { text: "B1", color: "#555", highlighted: false },
+          { text: "B2", color: "#666", highlighted: false },
+          { text: "B3", color: "#777", highlighted: false },
+          { text: "B4", color: "#888", highlighted: false },
+          { text: "B5", color: "#999", highlighted: false },
+        ],
+        text: "#2: B1 / B2 / B3 / B4 / B5",
+      },
     ]);
   });
 
@@ -776,5 +794,50 @@ describe("BD-7 text-width model, capped tie-merging and dynamic column fallback"
       + ' text-anchor="start" fill="var(--st-semantic-data-category1, #4E79A7)">GPT-6 Astra medium</text>',
     );
     expect(costRes.svg).toBe(placeChartLabels(costInput).svg);
+  });
+
+  it("preserves interior column y-positions, odd lineGap topPad rounding and cluster-only density", () => {
+    const midCol = placeRightGutterColumn(
+      [
+        { clusterIndex: 0, x: 100, y: 120, width: 40, height: 15 },
+        { clusterIndex: 1, x: 100, y: 125, width: 40, height: 15 },
+        { clusterIndex: 2, x: 100, y: 195, width: 40, height: 15 },
+        { clusterIndex: 3, x: 100, y: 300, width: 40, height: 15 },
+      ],
+      { ml: 50, mt: 20, baseIw: 200, baseIh: 200, baseMr: 30 },
+      11,
+    );
+    expect([midCol.plotHeight, midCol.placed[0]!.box.y1, midCol.placed[3]!.box.y2]).toEqual([200, 112.5, 210.5]);
+    expect(midCol.placed.map((item) => item.polyline)).toEqual([
+      [[100, 120], [254, 120], [264, 120]],
+      [[100, 125], [254, 137], [264, 137]],
+      [[100, 195], [254, 186], [264, 186]],
+      [[100, 300], [254, 203], [264, 203]],
+    ]);
+    const col29 = placeRightGutterColumn(
+      [
+        { clusterIndex: 0, x: 100, y: 0, width: 40, height: 33 },
+        { clusterIndex: 1, x: 100, y: 0, width: 40, height: 33 },
+      ],
+      { ml: 50, mt: 20, baseIw: 100, baseIh: 10, baseMr: 20 },
+      29,
+    );
+    expect([col29.plotHeight, col29.placed[0]!.box.y1, col29.placed[1]!.box.y2]).toEqual([83, 20.5, 86.5]);
+    const clusterDens = placeChartLabels({
+      layout: { ml: 50, mt: 30, baseIw: 300, baseIh: 30, baseMr: 20 },
+      fontSize: 10,
+      points: [
+        { x: 130, y: 45, text: "WWWW", color: "#111" },
+        { x: 200, y: 45, text: "WWWWW", color: "#222" },
+        { x: 230, y: 45, text: "WWW", color: "#333" },
+      ],
+      obstacles: [],
+    });
+    expect([
+      clusterDens.labels[0]?.distance, clusterDens.labels[0]?.angleIndex,
+      clusterDens.labels[1]?.distance, clusterDens.labels[1]?.angleIndex,
+    ]).toEqual([5, 11, 5, 11]);
+    expect([clusterDens.labels[2]?.distance, clusterDens.labels[2]?.angleIndex, clusterDens.labels[2]?.box])
+      .toEqual([5, 0, { x1: 241, y1: 38, x2: 270.8, y2: 52 }]);
   });
 });

@@ -1,6 +1,5 @@
 import { DS_VARS, escapeXml, fmtSvgNum, renderSvgText } from "./svg-primitives.js";
-import type { LabelBox, LabelPart, LeaderSegment } from "./label-types.js";
-import type { LabelTieFootnote } from "./label-text.js";
+import type { LabelBox, LabelPart, LabelTieFootnote, LeaderSegment } from "./label-types.js";
 import type { ColumnPolyline } from "./label-column.js";
 import { boxOverlapArea } from "./label-geometry.js";
 

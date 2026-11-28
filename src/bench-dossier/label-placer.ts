@@ -1,4 +1,4 @@
-import type { PlaceLabelsInput } from "./label-types.js";
+import type { LabelBox, PlaceLabelsInput } from "./label-types.js";
 import { estimateLabelBoxSize } from "./label-text.js";
 import { type ColumnFallbackInputItem, placeRightGutterColumn } from "./label-column.js";
 import {
@@ -7,7 +7,6 @@ import {
   markerBox,
   sampleSegmentBoxes,
 } from "./label-greedy.js";
-import type { LabelBox } from "./label-types.js";
 import {
   auditLabelOverlaps,
   type PlacedLabel,
