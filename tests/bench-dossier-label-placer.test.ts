@@ -371,4 +371,24 @@ describe("BD-7 text-width model, capped tie-merging and dynamic column fallback"
       + '<text x="113" y="103.5" font-size="12" font-weight="700" text-anchor="start" fill="c&quot;1">A&amp;B</text>',
     );
   });
+
+  it("renders multi-part tie and column polyline SVG with DS tokens and escaping", () => {
+    expect(renderLabelXml({
+      clusterIndex: 1, mode: "column", x: 50, y: 60,
+      box: { x1: 200, y1: 30, x2: 300, y2: 45 }, textX: 202, textY: 41.85,
+      displayText: "A / B (+2 tied, see #1)", parts: [
+        { text: "A<1>", color: 'c"1', highlighted: false }, { text: "B&2", color: "c'2", highlighted: false },
+        { text: "C", color: "#333", highlighted: false }, { text: "D", color: "#444", highlighted: false },
+      ],
+      highlighted: false, color: 'c"1', tieCount: 4, tieFootnoteId: 1, tieNoteSuffix: " (+2 tied, see #1)",
+      distance: null, angleIndex: null, leader: null, columnPolyline: [[50, 60], [188, 38], [198, 38]],
+    }, 11)).toBe(
+      '<polyline points="50,60 188,38 198,38" fill="none" stroke="var(--st-semantic-text-muted, #64748b)"'
+      + ' stroke-width="0.8" opacity="0.7"/><text x="202" y="41.85" font-size="11" font-weight="400"'
+      + ' text-anchor="start"><tspan fill="c&quot;1">A&lt;1&gt;</tspan>'
+      + '<tspan fill="var(--st-semantic-text-secondary, #475569)"> / </tspan>'
+      + '<tspan fill="c&#39;2">B&amp;2</tspan>'
+      + '<tspan fill="var(--st-semantic-text-secondary, #475569)"> (+2 tied, see #1)</tspan></text>',
+    );
+  });
 });
