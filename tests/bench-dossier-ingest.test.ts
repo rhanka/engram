@@ -573,4 +573,37 @@ describe("BD-5 tree-10: resolveSealedArmCost price_table, digest & provenance", 
       resolveSealedArmCost([{ ...baseRec }], baseArm, "USD", dc, undefined, undefined),
     ]).toEqual([2, 2, 4, "missing-usage", "unknown", "unknown", "estimated", undefined, undefined]);
   });
+
+  it("enforces multi-record COST_CONFLICT per field and per tokensEqual key (I29-I32)", () => {
+    const dc = "c".repeat(64);
+    const other = "d".repeat(64);
+    const tokA = { input: 100, output: 10, reasoning: 5, cached: 2, total: 115 };
+    const tokB = { total: 115, cached: 2, reasoning: 5, output: 10, input: 100 };
+    const rec = {
+      ...baseRec, armMissionSha256: `SHA256:${dc.toUpperCase()}`, calls: 4, costBasisItems: 2,
+      apiEquivalentTotal: 1, tokens: tokA,
+    };
+    const ok = resolveSealedArmCost([rec, { ...rec, field: "zip", armMissionSha256: dc, tokens: tokB }],
+      baseArm, "USD", dc, undefined, pt);
+    expect([ok?.calls, ok?.callsPerItem, ok?.tokens, ok?.cost.apiEquivalentTotal, ok?.cost.apiEquivalentPerItem])
+      .toEqual([4, 2, tokA, 1, 0.5]);
+    for (const conflictPatch of [
+      { calls: 5 },
+      { costBasisItems: 3 },
+      { apiEquivalentTotal: 2 },
+      { armMissionSha256: other },
+      { tokens: { ...tokA, input: 101 } },
+      { tokens: { ...tokA, output: 11 } },
+      { tokens: { ...tokA, reasoning: 6 } },
+      { tokens: { ...tokA, cached: 3 } },
+      { tokens: { ...tokA, cached: "unknown" as const } },
+      { tokens: { ...tokA, total: 116 } },
+      { tokens: undefined },
+    ]) {
+      const err = catchError(() => resolveSealedArmCost(
+        [rec, { ...rec, field: "zip", ...conflictPatch }], baseArm, "USD", dc, undefined, pt,
+      )) as BenchIngestError;
+      expect([err instanceof BenchIngestError, err.code]).toEqual([true, "COST_CONFLICT"]);
+    }
+  });
 });
