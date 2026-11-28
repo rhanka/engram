@@ -15,6 +15,7 @@ import {
 } from "../src/bench-dossier/label-column.js";
 import { GREEDY_ANGLE_COUNT, GREEDY_DISTANCES, findBestGreedyPlacement } from "../src/bench-dossier/label-greedy.js";
 import { auditLabelOverlaps, renderLabelXml } from "../src/bench-dossier/label-render.js";
+import { parsePlaceLabelsInput } from "../src/bench-dossier/label-input.js";
 
 function refuse(fn: () => unknown, code: string, path: string): void {
   let caught: unknown;
@@ -390,5 +391,71 @@ describe("BD-7 text-width model, capped tie-merging and dynamic column fallback"
       + '<tspan fill="c&#39;2">B&amp;2</tspan>'
       + '<tspan fill="var(--st-semantic-text-secondary, #475569)"> (+2 tied, see #1)</tspan></text>',
     );
+  });
+
+  it("validates placeChartLabels layout symmetry, optional arrays and 4-form input guards", () => {
+    const layout = { ml: 78, mt: 30, baseIw: 400, baseIh: 120, baseMr: 30 };
+    const pt = { x: 200, y: 80, text: "P", color: "#111" };
+    const zeroMargins = parsePlaceLabelsInput({
+      layout: { ml: 0, mt: 0, baseIw: 100, baseIh: 100, baseMr: 0 }, points: [],
+    });
+    expect([zeroMargins.layout, zeroMargins.fontSize]).toEqual([
+      { ml: 0, mt: 0, baseIw: 100, baseIh: 100, baseMr: 0 }, 11,
+    ]);
+    const undInput = parsePlaceLabelsInput({
+      layout,
+      points: [{ ...pt, highlighted: undefined, radius: undefined, priority: undefined }],
+      fontSize: undefined,
+      obstacles: [{ x: 10, y: 20 }, { x: 30, y: 40, radius: undefined }],
+      segments: undefined,
+    });
+    expect([undInput.fontSize, undInput.obstacles, undInput.segments]).toEqual([
+      11, [{ x: 10, y: 20, radius: 6 }, { x: 30, y: 40, radius: 6 }], [],
+    ]);
+    for (const [badInput, code, path] of [
+      [null, "NOT_OBJECT", "input"],
+      [{ layout: null, points: [] }, "NOT_OBJECT", "input.layout"],
+      [{ layout: { ...layout, ml: Number.NaN }, points: [] }, "BAD_NUMBER", "input.layout.ml"],
+      [{ layout: { ...layout, ml: -0.1 }, points: [] }, "BAD_NUMBER", "input.layout.ml"],
+      [{ layout: { ...layout, mt: Number.POSITIVE_INFINITY }, points: [] }, "BAD_NUMBER", "input.layout.mt"],
+      [{ layout: { ...layout, mt: -0.1 }, points: [] }, "BAD_NUMBER", "input.layout.mt"],
+      [{ layout: { ...layout, baseIw: 0 }, points: [] }, "NON_POSITIVE", "input.layout.baseIw"],
+      [{ layout: { ...layout, baseIh: -1 }, points: [] }, "NON_POSITIVE", "input.layout.baseIh"],
+      [{ layout: { ...layout, baseMr: -0.1 }, points: [] }, "BAD_NUMBER", "input.layout.baseMr"],
+      [{ layout, points: [], fontSize: null }, "BAD_NUMBER", "input.fontSize"],
+      [{ layout, points: [], fontSize: "unknown" }, "BAD_NUMBER", "input.fontSize"],
+      [{ layout, points: [], fontSize: 0 }, "NON_POSITIVE", "input.fontSize"],
+      [{ layout, points: null }, "NOT_ARRAY", "input.points"],
+      [{ layout, points: "unknown" }, "NOT_ARRAY", "input.points"],
+      [{ layout, points: [null] }, "NOT_OBJECT", "input.points[0]"],
+      [{ layout, points: [{ ...pt, x: Number.NaN }] }, "BAD_NUMBER", "input.points[0].x"],
+      [{ layout, points: [pt, { ...pt, x: Number.NaN }] }, "BAD_NUMBER", "input.points[1].x"],
+      [{ layout, points: [], obstacles: null }, "NOT_ARRAY", "input.obstacles"],
+      [{ layout, points: [], obstacles: "unknown" }, "NOT_ARRAY", "input.obstacles"],
+      [{ layout, points: [], obstacles: [null] }, "NOT_OBJECT", "input.obstacles[0]"],
+      [{ layout, points: [], obstacles: [{ x: Number.NaN, y: 1 }] }, "BAD_NUMBER", "input.obstacles[0].x"],
+      [{ layout, points: [], obstacles: [{ x: 1, y: 1 }, { x: Number.NaN, y: 1 }] },
+        "BAD_NUMBER", "input.obstacles[1].x"],
+      [{ layout, points: [], obstacles: [{ x: 1, y: Number.NaN }] }, "BAD_NUMBER", "input.obstacles[0].y"],
+      [{ layout, points: [], obstacles: [{ x: 1, y: 1, radius: 0 }] }, "NON_POSITIVE", "input.obstacles[0].radius"],
+      [{ layout, points: [], obstacles: [{ x: 1, y: 1, radius: null }] }, "BAD_NUMBER", "input.obstacles[0].radius"],
+      [{ layout, points: [], obstacles: [{ x: 1, y: 1, radius: "unknown" }] },
+        "BAD_NUMBER", "input.obstacles[0].radius"],
+      [{ layout, points: [], segments: null }, "NOT_ARRAY", "input.segments"],
+      [{ layout, points: [], segments: "unknown" }, "NOT_ARRAY", "input.segments"],
+      [{ layout, points: [], segments: [null] }, "NOT_OBJECT", "input.segments[0]"],
+      [{ layout, points: [], segments: [{ x1: Number.NaN, y1: 0, x2: 1, y2: 1 }] },
+        "BAD_NUMBER", "input.segments[0].x1"],
+      [{ layout, points: [], segments: [{ x1: 0, y1: 0, x2: 1, y2: 1 }, { x1: Number.NaN, y1: 0, x2: 1, y2: 1 }] },
+        "BAD_NUMBER", "input.segments[1].x1"],
+      [{ layout, points: [], segments: [{ x1: 0, y1: Number.NaN, x2: 1, y2: 1 }] },
+        "BAD_NUMBER", "input.segments[0].y1"],
+      [{ layout, points: [], segments: [{ x1: 0, y1: 0, x2: Number.NaN, y2: 1 }] },
+        "BAD_NUMBER", "input.segments[0].x2"],
+      [{ layout, points: [], segments: [{ x1: 0, y1: 0, x2: 1, y2: Number.NaN }] },
+        "BAD_NUMBER", "input.segments[0].y2"],
+    ] as const) {
+      refuse(() => parsePlaceLabelsInput(badInput as never), code, path);
+    }
   });
 });
