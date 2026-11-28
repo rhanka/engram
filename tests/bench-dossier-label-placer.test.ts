@@ -14,6 +14,7 @@ import {
   placeRightGutterColumn,
 } from "../src/bench-dossier/label-column.js";
 import { GREEDY_ANGLE_COUNT, GREEDY_DISTANCES, findBestGreedyPlacement } from "../src/bench-dossier/label-greedy.js";
+import { auditLabelOverlaps, renderLabelXml } from "../src/bench-dossier/label-render.js";
 
 function refuse(fn: () => unknown, code: string, path: string): void {
   let caught: unknown;
@@ -351,5 +352,23 @@ describe("BD-7 text-width model, capped tie-merging and dynamic column fallback"
     });
     expect(k5?.angleIndex).toBe(5);
     expect(k5?.box.x1).toBeCloseTo(196.847, 2);
+  });
+
+  it("audits overlaps and renders single highlighted XML-escaped SVG", () => {
+    expect(auditLabelOverlaps(
+      [{ x1: 0, y1: 0, x2: 10, y2: 10 }, { x1: 5, y1: 5, x2: 15, y2: 15 }],
+      [{ x1: 0, y1: 0, x2: 4, y2: 4 }],
+    )).toEqual({ labelOverlaps: 1, markerOverlaps: 1 });
+    expect(renderLabelXml({
+      clusterIndex: 0, mode: "greedy", x: 100, y: 100,
+      box: { x1: 111, y1: 93, x2: 130, y2: 107 }, textX: 113, textY: 103.5,
+      displayText: "A&B", parts: [{ text: "A&B", color: 'c"1', highlighted: true }],
+      highlighted: true, color: 'c"1', tieCount: 1, tieFootnoteId: null, tieNoteSuffix: null,
+      distance: 5, angleIndex: 0, leader: { sx: 107.5, sy: 100, tx: 111, ty: 100, length: 11 },
+      columnPolyline: null,
+    }, 12)).toBe(
+      '<path d="M107.5 100 L111 100" fill="none" stroke="c&quot;1" stroke-width="1"/>'
+      + '<text x="113" y="103.5" font-size="12" font-weight="700" text-anchor="start" fill="c&quot;1">A&amp;B</text>',
+    );
   });
 });

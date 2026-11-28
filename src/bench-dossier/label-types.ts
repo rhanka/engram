@@ -82,3 +82,24 @@ export interface GreedySearchContext {
   readonly lineDots: readonly LabelBox[];
   readonly leaderDots: readonly LabelBox[];
 }
+
+export interface LabelObstacleInput {
+  readonly x: number;
+  readonly y: number;
+  readonly radius?: number;
+}
+
+export interface LabelSegmentInput {
+  readonly x1: number;
+  readonly y1: number;
+  readonly x2: number;
+  readonly y2: number;
+}
+
+export interface PlaceLabelsInput {
+  readonly layout: LabelLayout;
+  readonly points: readonly LabelPointInput[];
+  readonly fontSize?: number;
+  readonly obstacles?: readonly LabelObstacleInput[];
+  readonly segments?: readonly LabelSegmentInput[];
+}
