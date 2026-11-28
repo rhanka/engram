@@ -484,4 +484,122 @@ describe("BD-7 text-width model, capped tie-merging and dynamic column fallback"
     expect([single.fallbackCount, single.labelOverlaps, single.markerOverlaps, single.totalWidth])
       .toEqual([0, 0, 0, 508]);
   });
+
+  it("renders exact single-part bold 1.06x, multi-part tie and XML-escaped placeChartLabels SVG", () => {
+    const layout = { ml: 78, mt: 30, baseIw: 400, baseIh: 200, baseMr: 30 };
+    const boldSingle = placeChartLabels({
+      layout, fontSize: 10, points: [{ x: 200, y: 100, text: "MM", color: "#4E79A7", highlighted: true }],
+    });
+    expect(boldSingle.labels[0]).toEqual({
+      clusterIndex: 0, x: 200, y: 100, color: "#4E79A7", highlighted: true, radius: 6, priority: 0,
+      displayText: "MM", parts: [{ text: "MM", color: "#4E79A7", highlighted: true }],
+      tieCount: 1, tieFootnoteId: null, tieNoteSuffix: null, mode: "greedy",
+      box: { x1: 211, y1: 93, x2: 233.232, y2: 107 }, textX: 213, textY: 103.5, distance: 5, angleIndex: 0,
+      leader: { sx: 207.5, sy: 100, tx: 211, ty: 100, length: 11 }, columnPolyline: null,
+      svg: '<path d="M207.5 100 L211 100" fill="none" stroke="#4E79A7" stroke-width="1"/>'
+        + '<text x="213" y="103.5" font-size="10" font-weight="700" text-anchor="start" fill="#4E79A7">MM</text>',
+    });
+    const res = placeChartLabels({
+      layout, fontSize: 10, points: [
+        { x: 200, y: 100, text: "AA", color: "#4E79A7" },
+        { x: 300, y: 100, text: "B", color: "#F28E2B" },
+        { x: 300.5, y: 100, text: "C", color: "#59A14F", highlighted: true },
+      ],
+    });
+    expect(res.labels[1]).toEqual({
+      clusterIndex: 1, x: 300, y: 100, color: "#59A14F", highlighted: true, radius: 6, priority: 0,
+      displayText: "C / B",
+      parts: [{ text: "C", color: "#59A14F", highlighted: true }, { text: "B", color: "#F28E2B", highlighted: false }],
+      tieCount: 2, tieFootnoteId: null, tieNoteSuffix: null, mode: "greedy",
+      box: { x1: 311, y1: 93, x2: 341.394, y2: 107 }, textX: 313, textY: 103.5, distance: 5, angleIndex: 0,
+      leader: { sx: 307.5, sy: 100, tx: 311, ty: 100, length: 11 }, columnPolyline: null,
+      svg: '<path d="M307.5 100 L311 100" fill="none" stroke="#59A14F" stroke-width="1"/>'
+        + '<text x="313" y="103.5" font-size="10" font-weight="700" text-anchor="start">'
+        + '<tspan fill="#59A14F">C</tspan><tspan fill="var(--st-semantic-text-secondary, #475569)"> / </tspan>'
+        + '<tspan fill="#F28E2B">B</tspan></text>',
+    });
+    expect(res.svg).toBe(
+      '<path d="M207.5 100 L211 100" fill="none" stroke="#4E79A7" stroke-width="1"/>'
+      + '<text x="213" y="103.5" font-size="10" font-weight="400" text-anchor="start" fill="#4E79A7">AA</text>'
+      + '<path d="M307.5 100 L311 100" fill="none" stroke="#59A14F" stroke-width="1"/>'
+      + '<text x="313" y="103.5" font-size="10" font-weight="700" text-anchor="start">'
+      + '<tspan fill="#59A14F">C</tspan><tspan fill="var(--st-semantic-text-secondary, #475569)"> / </tspan>'
+      + '<tspan fill="#F28E2B">B</tspan></text>',
+    );
+    const escTie = placeChartLabels({
+      layout, fontSize: 10, points: [
+        { x: 200, y: 80, text: "A&B<1>", color: 'c"1\'' },
+        { x: 200, y: 80, text: "D>E", color: "c&2" },
+        { x: 320, y: 80, text: "Z\'", color: "<z>" },
+      ],
+    });
+    expect(escTie.svg).toBe(
+      '<path d="M207.5 80 L211 80" fill="none" stroke="c&quot;1&#39;" stroke-width="1"/>'
+      + '<text x="213" y="83.5" font-size="10" font-weight="400" text-anchor="start">'
+      + '<tspan fill="c&quot;1&#39;">A&amp;B&lt;1&gt;</tspan>'
+      + '<tspan fill="var(--st-semantic-text-secondary, #475569)"> / </tspan>'
+      + '<tspan fill="c&amp;2">D&gt;E</tspan></text>'
+      + '<path d="M327.5 80 L331 80" fill="none" stroke="&lt;z&gt;" stroke-width="1"/>'
+      + '<text x="333" y="83.5" font-size="10" font-weight="400" text-anchor="start" fill="&lt;z&gt;">Z&#39;</text>',
+    );
+  });
+
+  it("pins MARKER_HALO_PX=7, DENSITY_RADIUS_PX=70 and exact placement coordinates", () => {
+    expect([MARKER_HALO_PX, DENSITY_RADIUS_PX]).toEqual([7, 70]);
+    const layout = { ml: 78, mt: 30, baseIw: 400, baseIh: 120, baseMr: 30 };
+    const haloIn = placeChartLabels({
+      layout, fontSize: 10, points: [
+        { x: 200, y: 80, text: "AA", color: "#111", priority: 1 },
+        { x: 241, y: 80, text: "BB", color: "#222", priority: 0 },
+      ],
+    });
+    const haloOut = placeChartLabels({
+      layout, fontSize: 10, points: [
+        { x: 200, y: 80, text: "AA", color: "#111", priority: 1 },
+        { x: 242, y: 80, text: "BB", color: "#222", priority: 0 },
+      ],
+    });
+    expect([haloIn.labels[0]?.distance, haloIn.labels[0]?.angleIndex, haloOut.labels[0]?.angleIndex])
+      .toEqual([5, 1, 0]);
+    expect(haloOut.labels[0]?.box).toEqual({ x1: 211, y1: 73, x2: 228.2, y2: 87 });
+    const pt = { x: 200, y: 80, text: "P", color: "#111" };
+    const obsDef = placeChartLabels({ layout, points: [pt], obstacles: [{ x: 216, y: 89 }] }).labels[0]!;
+    const obsSm = placeChartLabels({ layout, points: [pt], obstacles: [{ x: 216, y: 89, radius: 1 }] }).labels[0]!;
+    expect([obsDef.distance, obsDef.angleIndex, obsSm.distance, obsSm.angleIndex]).toEqual([5, 5, 5, 0]);
+    expect(obsSm.box).toEqual({ x1: 211, y1: 72.5, x2: 222.26, y2: 87.5 });
+    const prio = placeChartLabels({
+      layout: { ml: 50, mt: 48, baseIw: 185, baseIh: 120, baseMr: 20 }, fontSize: 10,
+      points: [{ x: 200, y: 80, text: "Lo", color: "#111", priority: 0 },
+        { x: 218, y: 56, text: "Hi", color: "#222", priority: 1 }],
+    });
+    expect([prio.labels[0]?.distance, prio.labels[0]?.angleIndex, prio.labels[1]?.distance, prio.labels[1]?.angleIndex])
+      .toEqual([5, 2, 5, 5]);
+    const compLayout = { ml: 50, mt: 30, baseIw: 300, baseIh: 30, baseMr: 20 };
+    const compPts = [{ x: 150, y: 45, text: "WWW", color: "#111" }, { x: 215, y: 45, text: "WWW", color: "#222" }];
+    const baseObs = [{ x: 120, y: 45 }, { x: 245, y: 45 }, { x: 215, y: 100 }];
+    for (const obstacles of [
+      baseObs,
+      [...baseObs, { x: 150, y: 115 }],
+      [...baseObs, { x: 145, y: 120 }, { x: 144, y: 120 }],
+    ]) {
+      const dens = placeChartLabels({ layout: compLayout, fontSize: 10, points: compPts, obstacles });
+      expect([dens.labels[0]?.distance, dens.labels[0]?.angleIndex, dens.labels[1]?.distance,
+        dens.labels[1]?.angleIndex]).toEqual([36, 12, 5, 11]);
+    }
+    const densTie = placeChartLabels({
+      layout: compLayout, fontSize: 10, points: compPts, obstacles: [{ x: 120, y: 45 }, { x: 245, y: 45 }],
+    });
+    expect([densTie.labels[0]?.distance, densTie.labels[0]?.angleIndex, densTie.labels[0]?.box]).toEqual([
+      5, 0, { x1: 161, y1: 38, x2: 190.8, y2: 52 },
+    ]);
+    const lead = placeChartLabels({
+      layout: { ml: 180, mt: 40, baseIw: 100, baseIh: 68, baseMr: 20 }, fontSize: 10,
+      points: [{ x: 190, y: 80, text: "Lead", color: "#111", priority: 2 },
+        { x: 208, y: 103, text: "a", color: "#222", priority: 0 }],
+      obstacles: [{ x: 204, y: 65, radius: 12 }, { x: 224, y: 100, radius: 10 }, { x: 192, y: 100, radius: 8 }],
+    });
+    expect([lead.labels[1]?.distance, lead.labels[1]?.angleIndex]).toEqual([36, 20]);
+    const seg = placeChartLabels({ layout, points: [pt], segments: [{ x1: 208, y1: 80, x2: 240, y2: 80 }] });
+    expect([seg.labels[0]?.distance, seg.labels[0]?.angleIndex]).toEqual([5, 2]);
+  });
 });
