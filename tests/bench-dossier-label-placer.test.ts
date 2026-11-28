@@ -665,4 +665,116 @@ describe("BD-7 text-width model, capped tie-merging and dynamic column fallback"
     });
     expect([hugeFont.fallbackCount, hugeFont.plotHeight, hugeFont.labels[0]?.box.y1]).toEqual([2, 85, 20]);
   });
+
+  it("places all 42 immo v12 arms on P-R and F1-cost with effort segments, 0 overlaps and 0 throws", () => {
+    type Row = readonly [string, string, string, number, number | null, number, number | null, number | null, boolean];
+    const rows: readonly Row[] = [
+      ["GPT-6 Astra medium", "OpenAI", "medium", 0.534, 0.371, 0.438, 0.4689, 0.0207, false],
+      ["CP actuel", "Cascades", "cascade", 0.533, 0.484, 0.507, 0.4813, 0.0212, false],
+      ["CP-low", "Cascades", "cascade", 0.491, 0.479, 0.485, null, null, false],
+      ["GPT-6 Astra low", "OpenAI", "low", 0.491, 0.373, 0.424, 0.4072, 0.018, false],
+      ["GPT-5.6 Sol xhigh", "OpenAI", "xhigh", 0.488, 0.308, 0.378, 0.5498, 0.0243, false],
+      ["Gemini 4 Argon low", "Google", "low", 0.429, 0.33, 0.373, 0.2074, 0.00801, false],
+      ["GPT-5.6 Sol medium", "OpenAI", "medium", 0.398, 0.444, 0.42, 0.2686, 0.0119, false],
+      ["GPT-5.6 Sol low", "OpenAI", "low", 0.358, 0.465, 0.404, 0.1967, 0.0087, false],
+      ["C2", "Cascades", "cascade", 0.358, 0.456, 0.401, 0.0689, 0.00277, false],
+      ["C3", "Cascades", "cascade", 0.353, 0.461, 0.4, 0.0543, 0.00211, false],
+      ["GPT-5.6 Sol high", "OpenAI", "high", 0.337, 0.377, 0.356, 0.346, 0.0153, false],
+      ["Muse Wonder 1.0 low", "Meta", "low", 0.333, 0.361, 0.346, 0.2731, null, false],
+      ["Opus 5.5 medium", "Anthropic", "medium", 0.311, 0.328, 0.319, 0.4999, 0.0151, false],
+      ["Gemini 3.8 Flash low", "Google", "low", 0.3, 0.475, 0.368, 0.0376, 0.00143, false],
+      ["GPT-6 Astra xhigh", "OpenAI", "xhigh", 0.297, 0.252, 0.273, 0.9929, 0.0439, false],
+      ["Opus 5 low", "Anthropic", "low", 0.292, 0.35, 0.319, 0.3976, 0.012, false],
+      ["GPT-6 Astra high", "OpenAI", "high", 0.26, 0.289, 0.274, 0.5896, 0.0261, false],
+      ["Opus 5 off", "Anthropic", "off", 0.258, 0.314, 0.283, 0.6507, 0.0197, false],
+      ["Opus 5 high", "Anthropic", "high", 0.251, 0.318, 0.28, 0.6472, 0.0196, false],
+      ["Muse Ember 1.0 max (v12)", "Meta", "max", 0.24, 0.271, 0.255, 0.0116, null, true],
+      ["Muse Spark 1.3 xhigh", "Meta", "xhigh", 0.225, 0.302, 0.258, 0.0343, null, false],
+      ["Gemini 3.8 Flash medium", "Google", "medium", 0.223, 0.449, 0.298, 0.0539, 0.00204, false],
+      ["Opus 5.5 low", "Anthropic", "low", 0.217, 0.325, 0.26, 0.4239, 0.0128, false],
+      ["Muse Spark 1.3 medium", "Meta", "medium", 0.207, 0.355, 0.262, 0.0305, null, false],
+      ["Muse Ember 1.0 xhigh (v12)", "Meta", "xhigh", 0.194, 0.243, 0.215, 0.00991, null, true],
+      ["Sonnet 5 high", "Anthropic", "high", 0.193, 0.33, 0.243, 0.2295, 0.00694, false],
+      ["GPT-5.6 Luna high", "OpenAI", "high", 0.185, 0.371, 0.247, 0.0199, 0.00088, false],
+      ["Sonnet 5 off", "Anthropic", "off", 0.185, 0.333, 0.238, 0.2307, 0.00698, false],
+      ["GPT-5.6 Luna medium", "OpenAI", "medium", 0.175, 0.454, 0.252, 0.0117, 0.00052, false],
+      ["Muse Spark 1.3 low", "Meta", "low", 0.17, 0.347, 0.228, 0.0284, null, false],
+      ["Muse Spark 1.3 high", "Meta", "high", 0.155, 0.297, 0.204, 0.031, null, false],
+      ["GPT-5.6 Luna xhigh", "OpenAI", "xhigh", 0.147, 0.24, 0.182, 0.0346, 0.00153, false],
+      ["Gemini 3.8 Flash high", "Google", "high", 0.141, 0.386, 0.206, 0.1123, 0.00426, false],
+      ["Sonnet 5 low", "Anthropic", "low", 0.136, 0.393, 0.203, 0.1114, 0.00337, false],
+      ["GPT-5.6 Luna low", "OpenAI", "low", 0.109, 0.448, 0.176, 0.00949, 0.00042, false],
+      ["Muse Spark 1.3 minimal", "Meta", "minimal", 0.102, 0.385, 0.161, 0.0279, null, false],
+      ["Sonnet 4.6 off", "Anthropic", "off", 0.096, 0.307, 0.146, 0.175, null, false],
+      ["Sonnet 4.6 low", "Anthropic", "low", 0.058, 0.453, 0.102, 0.1478, null, false],
+      ["Muse Spark 1.3 max", "Meta", "max", 0.03, 0.606, 0.056, null, null, false],
+      ["GPT-4.1 off", "OpenAI", "off", 0.013, 0.048, 0.021, 0.0542, null, false],
+      ["Mistral Small 4 off", "Mistral", "off", 0.007, 0.227, 0.014, 0.005, null, false],
+      ["Sonnet 4.6 high", "Anthropic", "high", 0, null, 0, null, null, false],
+    ];
+    expect(rows).toHaveLength(42);
+    const layout = { ml: 78, mt: 30, baseIw: 1332, baseIh: 760, baseMr: 30 };
+    const xPr = (r: number) => 78 + ((r + 0.02) / 0.64) * 1332;
+    const yPr = (p: number) => 30 + 760 - ((p + 0.02) / 0.68) * 760;
+    const lo = Math.log10(0.0003);
+    const hi = Math.log10(2.0);
+    const xCost = (c: number) => 78 + ((Math.log10(c) - lo) / (hi - lo)) * 1332;
+    const yCost = (f: number) => 30 + 760 - ((f + 0.03) / 0.6) * 760;
+    const effortSegs = (subset: readonly Row[], gx: (r: Row) => number, gy: (r: Row) => number) => {
+      const byModel = new Map<string, Row[]>();
+      for (const row of subset) {
+        if (row[1] !== "Cascades") {
+          const fam = row[0].replace(/ \([^)]+\)$/, "").replace(/ \S+$/, "");
+          byModel.set(fam, [...(byModel.get(fam) ?? []), row]);
+        }
+      }
+      return [...byModel.values()].flatMap((list) => {
+        const sorted = [...list].sort((a, b) =>
+          effortProgressionRank(a[2] as never) - effortProgressionRank(b[2] as never));
+        return sorted.slice(1).map((r, i) => ({ x1: gx(sorted[i]!), y1: gy(sorted[i]!), x2: gx(r), y2: gy(r) }));
+      });
+    };
+    const prRows = rows.filter((r) => r[4] !== null);
+    const prRes = placeChartLabels({
+      layout, fontSize: 11.5, segments: effortSegs(prRows, (r) => xPr(r[3]), (r) => yPr(r[4]!)),
+      points: prRows.map(([t, prov, , r, p, , , , hl]) => ({
+        x: xPr(r), y: yPr(p!), text: t, color: resolveArmColor(prov, prov === "Cascades"), highlighted: hl,
+        radius: 6, priority: hl ? 2 : prov === "Cascades" ? 1 : 0,
+      })),
+    });
+    expect([
+      prRes.labels.length, prRes.fallbackCount, prRes.labelOverlaps, prRes.markerOverlaps,
+      prRes.plotHeight, prRes.rightMargin, prRes.totalWidth,
+    ]).toEqual([41, 0, 0, 0, 760, 30, 1440]);
+    expect(prRes.labels[0]?.svg).toBe(
+      '<path d="M1238.51 353 L1242.01 353" fill="none" stroke="var(--st-semantic-data-category1, #4E79A7)"'
+      + ' stroke-width="1"/><text x="1244.01" y="357.03" font-size="11.5" font-weight="400"'
+      + ' text-anchor="start" fill="var(--st-semantic-data-category1, #4E79A7)">GPT-6 Astra medium</text>',
+    );
+    const costRows = rows.filter((r) => r[6] !== null && r[6] > 0);
+    const costInput = {
+      layout, fontSize: 12,
+      obstacles: costRows.filter((r) => r[7] !== null).map((r) => ({ x: xCost(r[7]!), y: yCost(r[5]), radius: 6 })),
+      segments: [
+        ...effortSegs(costRows, (r) => xCost(r[6]!), (r) => yCost(r[5])),
+        ...costRows.filter((r) => r[7] !== null).map((r) =>
+          ({ x1: xCost(r[7]!), y1: yCost(r[5]), x2: xCost(r[6]!), y2: yCost(r[5]) })),
+      ],
+      points: costRows.map(([t, prov, , , , f1, api, , hl]) => ({
+        x: xCost(api!), y: yCost(f1), text: t, color: resolveArmColor(prov, prov === "Cascades"), highlighted: hl,
+        radius: 7, priority: hl ? 2 : prov === "Cascades" ? 1 : 0,
+      })),
+    };
+    const costRes = placeChartLabels(costInput);
+    expect([
+      costRes.labels.length, costRes.fallbackCount, costRes.labelOverlaps, costRes.markerOverlaps,
+      costRes.plotHeight, costRes.rightMargin, costRes.totalWidth,
+    ]).toEqual([39, 0, 0, 0, 760, 30, 1440]);
+    expect(costRes.labels[0]?.svg).toBe(
+      '<path d="M1199.07 197.2 L1202.57 197.2" fill="none" stroke="var(--st-semantic-data-category1, #4E79A7)"'
+      + ' stroke-width="1"/><text x="1204.57" y="201.4" font-size="12" font-weight="400"'
+      + ' text-anchor="start" fill="var(--st-semantic-data-category1, #4E79A7)">GPT-6 Astra medium</text>',
+    );
+    expect(costRes.svg).toBe(placeChartLabels(costInput).svg);
+  });
 });
