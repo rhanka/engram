@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -10,6 +10,7 @@ import {
   BenchIngestError, isBenchIngestUsageError, loadCheckedMission,
   normalizeDigest, readCheckedBuf, sha256Hex,
 } from "../src/bench-dossier/ingest-golden.js";
+import { loadArmBundles } from "../src/bench-dossier/ingest-io.js";
 import { BenchInvariantError } from "../src/bench-dossier/invariants.js";
 import { BenchResultsValidationError } from "../src/bench-dossier/results-guards.js";
 
@@ -187,6 +188,62 @@ describe("BD-5 tree-04: CLI argv option parsers", () => {
     ]) {
       const err = catchError(() => parseImportMetricsArgv(bad)) as BenchIngestError;
       expect([err instanceof BenchIngestError, err.code]).toEqual([true, "BAD_USAGE"]);
+    }
+  });
+});
+
+describe("BD-5 tree-05: loadArmBundles missionPath, price_table & digest normalization", () => {
+  const mkM = (p: string, maxValues: number, inRate: number) => {
+    writeFileSync(p, JSON.stringify({
+      instruction: "x", fields: [{ name: "tags", kind: "scalar", max_values: maxValues }],
+      price_table: { source: "p", as_of: "2026-11-22", currency: "USD", status: "primary",
+        per_million: { input: inRate, output: 0 } },
+    }));
+    return loadCheckedMission(p);
+  };
+  const armBase = {
+    schemaId: "urn:engram:bench-arm-manifest:1.0.0", provider: "OpenAI", model: "gpt-6-astra-low",
+    modelLabel: "Astra", proseName: "OpenAI Astra", effort: "low", isCascade: false,
+  };
+  const mkArm = (dir: string, arm: Record<string, unknown>, rows?: Record<string, unknown>[]) => {
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "arm.json"), JSON.stringify({ ...armBase, ...arm }));
+    if (rows) writeFileSync(join(dir, "results.ndjson"), `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+  };
+  const rowOk = (digest?: string) => [
+    { id: "1", fields: { tags: { values: [] } } },
+    { type: "summary", ok: 1, failed: 0, calls_total: 1, ...(digest !== undefined ? { mission_digest: digest } : {}),
+      tokens: { input: 1_000_000, output: 0, reasoning: 0, total: 1_000_000 } },
+  ];
+
+  it("loads arm.missionPath, normalizes digests, overrides price_table, and propagates seats", () => {
+    const dir = mkdtempSync(join(tmpdir(), "bdi-t5-"));
+    try {
+      const refM = mkM(join(dir, "gold.json"), 2, 1);
+      const defM = mkM(join(dir, "cand.json"), 2, 1);
+      const armM = mkM(join(dir, "arm-m.json"), 3, 4);
+      const a1 = join(dir, "a1");
+      const a2 = join(dir, "a2");
+      const a3 = join(dir, "a3");
+      mkArm(a1, { armId: "arm-1", missionPath: "../arm-m.json", missionSha256: `SHA256:${armM.digest.toUpperCase()}` },
+        rowOk(`sha256:${armM.digest.toUpperCase()}`));
+      mkArm(a2, { armId: "arm-2", allowLegacyMissingMissionDigest: true }, rowOk());
+      mkArm(a3, { armId: "arm-3", missionSha256: `SHA256:${"c".repeat(64).toUpperCase()}` });
+      const seatMap = new Map([["arm-1", { status: "unknown" as const, reason: "shared-seat-concurrent" as const }]]);
+      const res = loadArmBundles({
+        armDirs: [a1, a2], refMission: refM, defaultMission: defM, requireResults: true, currency: "USD", seatMap,
+      });
+      expect([res.maxValuesChanged, res.bundles[0]?.armCost?.cost.apiEquivalentTotal,
+        res.bundles[0]?.armCost?.cost.seatUnknownReason, res.bundles[1]?.armCost?.cost.apiEquivalentTotal])
+        .toEqual([true, 4, "shared-seat-concurrent", 1]);
+      const sealed = loadArmBundles({
+        armDirs: [a3], refMission: refM, defaultMission: defM, requireResults: false, currency: "USD",
+        seatMap: new Map(),
+      });
+      expect([sealed.bundles[0]?.armCost, sealed.bundles[0]?.expectedDigest, sealed.bundles[0]?.priceTable])
+        .toEqual([undefined, "c".repeat(64), undefined]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });
