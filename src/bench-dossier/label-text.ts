@@ -11,6 +11,7 @@ import type {
 } from "./label-types.js";
 
 export type { LabelPart, LabelPointInput, LabelTieFootnote, MergedLabelCluster };
+export * from "./label-ties.js";
 
 export const DEFAULT_LABEL_FONT_SIZE = 11;
 export const LABEL_BOX_PADDING_PX = 4;
