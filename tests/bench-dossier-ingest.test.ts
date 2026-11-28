@@ -10,7 +10,7 @@ import {
   BenchIngestError, isBenchIngestUsageError, loadCheckedMission, loadSeatMap,
   normalizeDigest, readCheckedBuf, readConvergeGolden, sha256Hex,
 } from "../src/bench-dossier/ingest-golden.js";
-import { runScrapScore } from "../src/bench-dossier/ingest.js";
+import { importCampaignMetrics, runScrapScore } from "../src/bench-dossier/ingest.js";
 import { loadArmBundles, readCaptureStats } from "../src/bench-dossier/ingest-io.js";
 import {
   buildImportedArmInputs, normalizeMetricsDigests, resolveSealedArmCost,
@@ -811,5 +811,61 @@ describe("BD-5 tree-15: normalizeMetricsDigests & buildImportedArmInputs", () =>
       out.armCosts["a-un"]?.calls, out.armCosts["a-sha"], out.armCosts["a-seal"]?.cost.apiEquivalentTotal,
       out.armCosts["a-seal"]?.cost.seatUnknownReason]).toEqual([d1, d2, undefined, 2, undefined, 1,
       "shared-seat-concurrent"]);
+  });
+});
+
+describe("BD-5 tree-16: importCampaignMetrics weighted import, digests & options", () => {
+  it("imports weighted metrics e2e, verifies --golden digest, normalizes digests & writes out", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "bd5-m1-"));
+    try {
+      const cd = "a".repeat(64);
+      const [gp, badG, mp, outP, a1] = ["g.ndjson", "bad.ndjson", "m.json", "sub/br.json", "a1"]
+        .map((n) => join(tmp, n)) as string[];
+      writeFileSync(gp!, "{\"id\":\"1\"}\n");
+      writeFileSync(badG!, "{\"id\":\"2\"}\n");
+      const goldSha = sha256Hex(Buffer.from("{\"id\":\"1\"}\n"));
+      mkdirSync(a1!);
+      writeFileSync(join(a1!, "arm.json"), JSON.stringify({ schemaId: "urn:engram:bench-arm-manifest:1.0.0",
+        armId: "arm-a", provider: "OpenAI", model: "gpt-6-astra", modelLabel: "Astra", proseName: "OpenAI Astra",
+        effort: "low", isCascade: false, tariffOverride: { status: "primary", source: "pt", asOf: "2026-11-22",
+          perMillion: { input: 1, output: 0 } } }));
+      writeFileSync(join(a1!, "results.ndjson"),
+        `${JSON.stringify({ id: "1", fields: {} })}\n${JSON.stringify({ id: "2", fields: {} })}\n`
+        + `${JSON.stringify({ type: "summary", ok: 2, failed: 0, calls_total: 2, mission_digest: cd,
+          tokens: { input: 500_000, output: 0, reasoning: 0, total: 500_000 } })}\n`);
+      const iv = { estimator: "unweighted", method: "wilson_95_unweighted", clustering: "independent_site",
+        valid: true, ...wilson95(1, 1) };
+      const wv = { estimator: "weighted", method: "design_bootstrap_95", clustering: "group_resampled",
+        valid: true, low: 0.75, high: 0.99 };
+      const rec = { armId: "arm-a", field: "city", comparator: "lotb_ca_post_v1", isPrimaryComparator: true,
+        failuresByCode: {}, attempted: 2, accepted: 2, failed: 0, unverifiedQuotesNulled: 0, goldPositive: 1,
+        unverifiedWholeRecordsDropped: null, goldAbsent: 1, tp: 1, fp: 0, fpOnPresent: 0, fpOnAbsent: 0,
+        fpElementsOnAbsent: 0, fn: 0, tn: 1, failedOnAbsent: 0, unresolved: 0, insufficient: 0,
+        sitePresence: { goldPresentSites: 1, goldAbsentSites: 1, unresolvedSites: 0, insufficientSites: 0, tpSites: 1,
+          fnSites: 0, wrongValueOnPresentSites: 0, fpOnAbsentSites: 0, tnSites: 1, failedOnAbsentSites: 0,
+          siteRecall: 1, siteRecallInterval: iv, siteAbstentionSpecificity: 1, siteAbstentionInterval: iv },
+        unweighted: { precision: 1, recall: 1, f1: 1, precisionInterval: iv, recallInterval: iv },
+        weighted: { scheme: "horvitz_thompson_s1_s2_v1", deff: 1.25, nEff: 1, precision: 0.875, recall: 1, f1: 0.9,
+          precisionInterval: wv, recallInterval: wv } };
+      writeFileSync(mp!, JSON.stringify({ schemaId: "urn:engram:bench-metrics-import:1.0.0", campaignId: "lotb",
+        partition: "eval", primaryEstimator: "weighted", fieldShapeVerified: true, goldenIds: 2, annotatorCount: 1,
+        goldenSha256: `SHA256:${goldSha.toUpperCase()}`, goldenMissionSha256: `SHA256:${cd.toUpperCase()}`,
+        candidateMissionSha256: `SHA256:${cd.toUpperCase()}`, fields: ["city"], krippendorffAlphaByField: { city: 0.9 },
+        records: [rec] }));
+      const defRes = await importCampaignMetrics({ metrics: mp!, arms: [a1!], golden: gp! });
+      expect([defRes.corpus.currency, defRes.corpus.costBasisLabel, defRes.corpus.maxValuesChanged,
+        defRes.corpus.goldenSha256, defRes.corpus.goldenMissionSha256, defRes.corpus.candidateMissionSha256,
+        defRes.records[0]?.precision, defRes.records[0]?.precisionInterval.estimator,
+        defRes.records[0]?.cost.apiEquivalentTotal, defRes.records[0]?.cost.currency]).toEqual([
+        "USD", "extracted_packet", undefined, goldSha, cd, cd, 0.875, "weighted", 0.5, "USD"]);
+      const nonRes = await importCampaignMetrics({ metrics: mp!, arms: [a1!], out: outP!, currency: "CAD",
+        costBasis: "supplied_id", maxValuesChanged: true, generatedAt: "2026-11-27T12:00:00Z" });
+      expect(readBenchResultsFile(outP!)).toEqual(nonRes);
+      expect([nonRes.generatedAt, nonRes.corpus.currency, nonRes.corpus.costBasisLabel, nonRes.corpus.maxValuesChanged,
+        nonRes.records[0]?.cost.currency]).toEqual(["2026-11-27T12:00:00Z", "CAD", "supplied_id", true, "CAD"]);
+      let badErr: unknown;
+      try { await importCampaignMetrics({ metrics: mp!, arms: [a1!], golden: badG! }); } catch (e) { badErr = e; }
+      expect((badErr as BenchIngestError).code).toBe("GOLDEN_DIGEST_MISMATCH");
+    } finally { rmSync(tmp, { recursive: true, force: true }); }
   });
 });

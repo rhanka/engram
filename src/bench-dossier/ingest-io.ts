@@ -3,7 +3,8 @@ import { isAbsolute, join, resolve } from "node:path";
 import type { LoadedMission, Mission } from "../scrap/extract.js";
 import * as companion from "./companion-contracts.js";
 import { computeArmCostAndSeat, parseResultsNdjson, summarizeInvocationUsage } from "./cost-seat.js";
-import { BenchIngestError, loadCheckedMission, normalizeDigest, readCheckedBuf } from "./ingest-golden.js";
+import { BenchIngestError, loadCheckedMission, normalizeDigest, readCheckedBuf,
+  type BenchIngestErrorCode } from "./ingest-golden.js";
 import { compatibleMissionFieldShape } from "./invariants.js";
 import type { ImportedArmCostInput } from "./metrics-records.js";
 import type { CurrencyCode } from "./results-contract.js";
@@ -50,10 +51,8 @@ export function loadArmBundles(input: LoadArmsInput) {
     const armMission = arm.missionPath
       ? loadCheckedMission(isAbsolute(arm.missionPath) ? arm.missionPath : resolve(armDir, arm.missionPath))
       : undefined;
-    if (armMission && input.refMission
-      && compatibleMissionFieldShape(input.refMission.mission, armMission.mission).maxValuesChanged) {
-      maxValuesChanged = true;
-    }
+    if (armMission && input.refMission && compatibleMissionFieldShape(input.refMission.mission,
+      armMission.mission).maxValuesChanged) maxValuesChanged = true;
     const armSha = arm.missionSha256 !== undefined ? normalizeDigest(arm.missionSha256) : undefined;
     const expectedDigest = armMission?.digest
       ?? (input.requireResults ? input.defaultMission!.digest : armSha ?? input.defaultDigest!);
@@ -69,9 +68,8 @@ export function loadArmBundles(input: LoadArmsInput) {
     }
     const resultRows = parseResultsNdjson(readCheckedBuf(resultsPath).toString("utf8"));
     const usage = summarizeInvocationUsage(resultRows);
-    if ((usage.summaryRows === 0 || usage.hasMissingDigest) && arm.allowLegacyMissingMissionDigest !== true) {
+    if ((usage.summaryRows === 0 || usage.hasMissingDigest) && arm.allowLegacyMissingMissionDigest !== true)
       throw new BenchIngestError("MISSING_ARM_DIGEST", arm.armId);
-    }
     if (usage.missionDigests.some((digest) => normalizeDigest(digest) !== expectedDigest)) failMismatch();
     const seatObservation = input.seatMap.get(arm.armId);
     const cost = computeArmCostAndSeat({ resultRows, arm, priceTable, currency: input.currency, seatObservation });
@@ -104,9 +102,17 @@ export function readCaptureStats(captureDir: string) {
     latest.set(row.id as string, row.status as string);
   });
   const statuses = [...latest.values()];
-  return {
-    captureSuppliedIds: latest.size + invalidInput,
+  return { captureSuppliedIds: latest.size + invalidInput,
     captureAttemptedIds: statuses.filter((status) => status !== "invalid_url").length,
-    captureOkIds: statuses.filter((status) => status === "ok").length,
-  };
+    captureOkIds: statuses.filter((status) => status === "ok").length };
+}
+
+/** Load an optional mission JSON file and verify its SHA-256 digest matches expectedDigest. */
+export function checkOptionalMission(
+  filePath: string | undefined, expectedDigest: string, code: BenchIngestErrorCode,
+): LoadedMission | undefined {
+  if (filePath === undefined) return undefined;
+  const loaded = loadCheckedMission(filePath);
+  if (loaded.digest !== normalizeDigest(expectedDigest)) throw new BenchIngestError(code, filePath);
+  return loaded;
 }
