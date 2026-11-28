@@ -16,6 +16,7 @@ import {
 import { GREEDY_ANGLE_COUNT, GREEDY_DISTANCES, findBestGreedyPlacement } from "../src/bench-dossier/label-greedy.js";
 import { auditLabelOverlaps, renderLabelXml } from "../src/bench-dossier/label-render.js";
 import { parsePlaceLabelsInput } from "../src/bench-dossier/label-input.js";
+import { DENSITY_RADIUS_PX, MARKER_HALO_PX, placeChartLabels } from "../src/bench-dossier/label-placer.js";
 
 function refuse(fn: () => unknown, code: string, path: string): void {
   let caught: unknown;
@@ -457,5 +458,30 @@ describe("BD-7 text-width model, capped tie-merging and dynamic column fallback"
     ] as const) {
       refuse(() => parsePlaceLabelsInput(badInput as never), code, path);
     }
+  });
+
+  it("orchestrates empty and deterministic greedy chart label placement with full object literals", () => {
+    const layout = { ml: 78, mt: 30, baseIw: 400, baseIh: 200, baseMr: 30 };
+    expect(placeChartLabels({ layout, points: [] })).toEqual({
+      labels: [], tieFootnotes: [], plotHeight: 200, rightMargin: 30, totalWidth: 508,
+      columnX: 496, fallbackCount: 0, labelOverlaps: 0, markerOverlaps: 0, svg: "",
+    });
+    const single = placeChartLabels({
+      layout, fontSize: 10, points: [{ x: 200, y: 100, text: "AA", color: "#4E79A7" }],
+    });
+    expect(single).toEqual(placeChartLabels({
+      layout, fontSize: 10, points: [{ x: 200, y: 100, text: "AA", color: "#4E79A7" }],
+    }));
+    expect(single.labels[0]).toEqual({
+      clusterIndex: 0, x: 200, y: 100, color: "#4E79A7", highlighted: false, radius: 6, priority: 0,
+      displayText: "AA", parts: [{ text: "AA", color: "#4E79A7", highlighted: false }],
+      tieCount: 1, tieFootnoteId: null, tieNoteSuffix: null, mode: "greedy",
+      box: { x1: 211, y1: 93, x2: 228.2, y2: 107 }, textX: 213, textY: 103.5, distance: 5, angleIndex: 0,
+      leader: { sx: 207.5, sy: 100, tx: 211, ty: 100, length: 11 }, columnPolyline: null,
+      svg: '<path d="M207.5 100 L211 100" fill="none" stroke="#4E79A7" stroke-width="1"/>'
+        + '<text x="213" y="103.5" font-size="10" font-weight="400" text-anchor="start" fill="#4E79A7">AA</text>',
+    });
+    expect([single.fallbackCount, single.labelOverlaps, single.markerOverlaps, single.totalWidth])
+      .toEqual([0, 0, 0, 508]);
   });
 });
