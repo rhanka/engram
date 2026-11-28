@@ -341,6 +341,56 @@ describe("BD-5 tree-07: readConvergeGolden digest, #509 stats, fields & refusals
       ]);
       expect(out.krippendorffAlphaByField).toEqual({ "office.zip": 0.625, city: 0.75, toString: null });
       expect(out.annotatorRunStats).toEqual({ r1: { answered: 1, failed: 0, missing: 0 } });
+      const minPath = join(dir, "min.ndjson");
+      writeFileSync(minPath, `${JSON.stringify({ type: "summary", runs: ["r1", "r2"], missionDigest: digest,
+        fields: { city: { krippendorff_alpha: null } } })}\n`);
+      const minOut = readConvergeGolden(minPath, digest, undefined, specs);
+      expect({ fields: minOut.fields, annotatorRunStats: minOut.annotatorRunStats,
+        missingDigestRuns: minOut.missingDigestRuns, annotatorCount: minOut.annotatorCount,
+        goldenRows: minOut.goldenRows }).toEqual({
+        fields: ["city", "toString", "office.zip"], annotatorRunStats: undefined, missingDigestRuns: undefined,
+        annotatorCount: 2, goldenRows: [],
+      });
+      expect(minOut.krippendorffAlphaByField).toEqual({ city: null, toString: null, "office.zip": null });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses missing/duplicate summary, bad/missing golden digest, id mismatch, and field errors", () => {
+    const dir = mkdtempSync(join(tmpdir(), "bdi-t8-"));
+    try {
+      const digest = "a".repeat(64);
+      const okSum = { type: "summary", runs: ["r1", "r2"], mission_digest: digest, ids: 0 };
+      const runGolden = (rows: unknown[], req?: string[]) => {
+        const p = join(dir, "g.ndjson");
+        writeFileSync(p, `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+        return readConvergeGolden(p, digest, req, specs);
+      };
+      for (const [rows, req, code] of [
+        [[{ id: "1" }], undefined, "MISSING_GOLDEN_SUMMARY"], [[okSum, okSum], undefined, "DUPLICATE_GOLDEN_SUMMARY"],
+        [[{ type: "summary", runs: ["r1"] }], undefined, "MISSING_GOLDEN_DIGEST"],
+        [[{ type: "summary", runs: ["r1"], mission_digest: "  " }], undefined, "MISSING_GOLDEN_DIGEST"],
+        [[{ type: "summary", runs: ["r1"], mission_digest: null }], undefined, "MISSING_GOLDEN_DIGEST"],
+        [[{ ...okSum, mission_digest: "b".repeat(64) }], undefined, "GOLDEN_MISSION_DIGEST_MISMATCH"],
+        [[{ ...okSum, ids: 2 }], undefined, "GOLDEN_IDS_MISMATCH"],
+        [[okSum], ["city", "city"], "DUPLICATE_FIELD"], [[okSum], ["office"], "UNKNOWN_FIELD"],
+      ] as const) {
+        const err = catchError(() => runGolden([...rows], req ? [...req] : undefined)) as BenchIngestError;
+        expect([err instanceof BenchIngestError, err.code]).toEqual([true, code]);
+      }
+      for (const [patch, code] of [
+        [{ mission_digest: 123 }, "WRONG_TYPE"], [{ runs: [] }, "BAD_SHAPE"], [{ ids: null }, "WRONG_TYPE"],
+        [{ missing_digest_runs: [""] }, "EMPTY_STRING"], [{ missing_digest_runs: null }, "NOT_ARRAY"],
+        [{ run_stats: { r1: { answered: -1, failed: 0, missing: 0 } } }, "BAD_COUNT"],
+        [{ run_stats: { r1: { answered: 0, failed: 0, missing: 0,
+          failed_by_code: { llm_error: -1 } } } }, "BAD_COUNT"],
+        [{ run_stats: null }, "NOT_OBJECT"], [{ fields: null }, "NOT_OBJECT"],
+        [{ fields: { city: { krippendorff_alpha: "nan" } } }, "WRONG_TYPE"],
+      ] as const) {
+        const err = catchError(() => runGolden([{ ...okSum, ...patch }])) as BenchResultsValidationError;
+        expect([err instanceof BenchResultsValidationError, err.code]).toEqual([true, code]);
+      }
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
