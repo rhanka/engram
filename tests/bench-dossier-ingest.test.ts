@@ -12,7 +12,9 @@ import {
 } from "../src/bench-dossier/ingest-golden.js";
 import { runScrapScore } from "../src/bench-dossier/ingest.js";
 import { loadArmBundles, readCaptureStats } from "../src/bench-dossier/ingest-io.js";
-import { resolveSealedArmCost } from "../src/bench-dossier/ingest-sealed.js";
+import {
+  buildImportedArmInputs, normalizeMetricsDigests, resolveSealedArmCost,
+} from "../src/bench-dossier/ingest-sealed.js";
 import { BenchInvariantError, compatibleMissionFieldShape, wilson95 } from "../src/bench-dossier/invariants.js";
 import { readBenchResultsFile } from "../src/bench-dossier/results-contract.js";
 import { BenchResultsValidationError } from "../src/bench-dossier/results-guards.js";
@@ -756,5 +758,58 @@ describe("BD-5 tree-13: runScrapScore e2e literal campaign & #509 corpus project
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("BD-5 tree-15: normalizeMetricsDigests & buildImportedArmInputs", () => {
+  it("normalizes metrics digests and separates unsealed, pinned, and unpinned sealed arms", () => {
+    const iv = { estimator: "unweighted" as const, method: "wilson_95_unweighted" as const,
+      clustering: "independent_site" as const, valid: true, low: 0.2, high: 0.9 };
+    const sp = { goldPresentSites: 1, goldAbsentSites: 1, unresolvedSites: 0, insufficientSites: 0, tpSites: 1,
+      fnSites: 0, wrongValueOnPresentSites: 0, fpOnAbsentSites: 0, tnSites: 1, failedOnAbsentSites: 0,
+      siteRecall: 1, siteRecallInterval: iv, siteAbstentionSpecificity: 1, siteAbstentionInterval: iv };
+    const [d1, d2, d3] = ["1".repeat(64), "2".repeat(64), "3".repeat(64)];
+    const recBase = { armId: "a-pin", field: "city", comparator: "generic", isPrimaryComparator: true,
+      failuresByCode: {}, attempted: 2, accepted: 2, failed: 0, unverifiedQuotesNulled: 0, goldPositive: 1,
+      unverifiedWholeRecordsDropped: null, goldAbsent: 1, tp: 1, fp: 0, fpOnPresent: 0, fpOnAbsent: 0,
+      fpElementsOnAbsent: 0, fn: 0, tn: 1, failedOnAbsent: 0, unresolved: 0, insufficient: 0, sitePresence: sp,
+      unweighted: { precision: 1, recall: 1, f1: 1, precisionInterval: iv, recallInterval: iv }, weighted: null };
+    const norm = normalizeMetricsDigests({
+      schemaId: "urn:engram:bench-metrics-import:1.0.0", campaignId: "lotb", partition: "sealed",
+      primaryEstimator: "unweighted", fieldShapeVerified: true, goldenSha256: `SHA256:${d1.toUpperCase()}`,
+      goldenMissionSha256: `sha256:${d2.toUpperCase()}`, candidateMissionSha256: `SHA256:${d3.toUpperCase()}`,
+      goldenIds: 2, annotatorCount: 1, fields: ["city"], krippendorffAlphaByField: { city: 0.9 },
+      records: [{ ...recBase, armMissionSha256: `SHA256:${d1.toUpperCase()}` }, { ...recBase, armId: "a-un" }],
+    }, d3);
+    expect([norm.goldenSha256, norm.goldenMissionSha256, norm.candidateMissionSha256,
+      norm.records.map((r) => r.armMissionSha256)]).toEqual([d1, d2, d3, [d1, undefined]]);
+    const armOf = (id: string, ex: Record<string, unknown> = {}) => ({
+      schemaId: "urn:engram:bench-arm-manifest:1.0.0" as const, armId: id, provider: "OpenAI",
+      model: "gpt-6-astra", modelLabel: "Astra", proseName: `OpenAI ${id}`, effort: "low" as const,
+      isCascade: false, ...ex });
+    const pt = { source: "pt", as_of: "2026-11-22", currency: "USD" as const, status: "primary" as const,
+      per_million: { input: 2, output: 0 } };
+    const loadedM = { mission: { instruction: "x", fields: ["city"], price_table: pt },
+      specs: [{ name: "city", kind: "scalar" as const, maxValues: 1 }], names: ["city"], digest: d1 };
+    const preCost = { armMissionSha256: d1, calls: 2, callsPerItem: 1, tokens: "unknown" as const, cost: {
+      currency: "USD" as const, costBasisItems: 2, costUnknownReason: "missing-usage" as const,
+      apiEquivalentTotal: "unknown" as const, apiEquivalentPerItem: "unknown" as const,
+      tariffStatus: "primary" as const, tariffSource: "pt", tariffAsOf: "2026-11-22", fxApplied: null,
+      seatStatus: "unknown" as const, seatMethod: "unknown" as const, seatUnknownReason: "missing-observation" as const,
+      seatSharePerItem: "unknown" as const, seatCostPerItem: "unknown" as const, seatPlan: null,
+      seatMonthlyPrice: null, seatLimitScale: null, seatPlanSource: null, seatPlanAsOf: null } };
+    const seat = { status: "unknown" as const, reason: "shared-seat-concurrent" as const };
+    const out = buildImportedArmInputs([
+      { armDir: "/d1", arm: armOf("a-un", { missionPath: "m.json" }), armMission: loadedM, expectedDigest: d1,
+        armCost: preCost },
+      { armDir: "/d2", arm: armOf("a-sha", { missionSha256: `SHA256:${d2.toUpperCase()}` }), expectedDigest: d2 },
+      { armDir: "/d3", arm: armOf("a-seal"), expectedDigest: d3, priceTable: pt },
+    ], [{ ...recBase, armId: "a-un", calls: 99 }, { ...recBase, armId: "a-seal", calls: 1, costBasisItems: 1,
+      tokens: { input: 500_000, output: 0, reasoning: 0, cached: 0, total: 500_000 } }],
+    "USD", new Map([["a-seal", seat]]));
+    expect([out.arms["a-un"]?.missionSha256, out.arms["a-sha"]?.missionSha256, out.arms["a-seal"]?.missionSha256,
+      out.armCosts["a-un"]?.calls, out.armCosts["a-sha"], out.armCosts["a-seal"]?.cost.apiEquivalentTotal,
+      out.armCosts["a-seal"]?.cost.seatUnknownReason]).toEqual([d1, d2, undefined, 2, undefined, 1,
+      "shared-seat-concurrent"]);
   });
 });

@@ -1,10 +1,13 @@
 import type { Mission, NormalizedPriceTable } from "../scrap/extract.js";
-import type { ArmManifestFile, MetricsImportRecord, SeatObservationInput } from "./companion-contracts.js";
+import type {
+  ArmManifestFile, BenchMetricsImportFile, MetricsImportRecord, SeatObservationInput,
+} from "./companion-contracts.js";
 import {
   convertCurrency, parseValidatedPriceTable, resolveApiCost, resolveSeat, summarizeInvocationUsage,
   type ApiResult,
 } from "./cost-seat.js";
 import { BenchIngestError, normalizeDigest } from "./ingest-golden.js";
+import type { LoadedArmBundle } from "./ingest-io.js";
 import { tokensEqual, type ImportedArmCostInput } from "./metrics-records.js";
 import { ensure } from "./metrics-unweighted.js";
 import {
@@ -86,4 +89,31 @@ export function resolveSealedArmCost(
     armMissionSha256: pinned ? digest : (firstSha ?? digest),
     calls, callsPerItem: calls === "unknown" ? "unknown" : basis === 0 ? 0 : calls / basis, tokens, cost,
   };
+}
+
+/** Normalize golden, candidate, and per-record SHA-256 digests in metrics.json to bare lowercase hex. */
+export function normalizeMetricsDigests(metrics: BenchMetricsImportFile, candidateDigest: string) {
+  return {
+    ...metrics, goldenSha256: normalizeDigest(metrics.goldenSha256),
+    goldenMissionSha256: normalizeDigest(metrics.goldenMissionSha256), candidateMissionSha256: candidateDigest,
+    records: metrics.records.map((rec) => (rec.armMissionSha256 === undefined
+      ? rec : { ...rec, armMissionSha256: normalizeDigest(rec.armMissionSha256) })),
+  };
+}
+
+/** Build normalized arm manifest map and sealed/unsealed armCosts inputs for mapMetricsImportToBenchResults. */
+export function buildImportedArmInputs(
+  bundles: readonly LoadedArmBundle[], records: readonly MetricsImportRecord[],
+  currency: CurrencyCode, seatMap: ReadonlyMap<string, SeatObservationInput>,
+) {
+  const arms = Object.fromEntries(bundles.map((bundle) => [bundle.arm.armId,
+    bundle.armMission || bundle.arm.missionSha256
+      ? { ...bundle.arm, missionSha256: bundle.expectedDigest } : bundle.arm]));
+  const armCosts = Object.fromEntries(bundles.flatMap((bundle) => {
+    const armRecords = records.filter((rec) => rec.armId === bundle.arm.armId);
+    const cost = bundle.armCost ?? resolveSealedArmCost(armRecords, bundle.arm, currency,
+      bundle.expectedDigest, seatMap.get(bundle.arm.armId), bundle.priceTable);
+    return cost ? [[bundle.arm.armId, cost] as const] : [];
+  }));
+  return { arms, armCosts };
 }
