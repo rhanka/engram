@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { isExtractUsageError, loadMission, type LoadedMission } from "../scrap/extract.js";
+import * as companion from "./companion-contracts.js";
 import { BenchResultsValidationError } from "./results-guards.js";
 
 export type BenchIngestErrorCode =
@@ -62,4 +63,10 @@ export function loadCheckedMission(filePath: string): LoadedMission {
     }
     throw new BenchIngestError("BAD_MISSION", `${filePath}: ${err?.message ?? String(cause)}`, cause);
   }
+}
+
+/** Load optional seat-observations JSON file into a Map keyed by armId. */
+export function loadSeatMap(seatPath?: string): Map<string, companion.SeatObservationInput> {
+  if (seatPath === undefined) return new Map();
+  return new Map(Object.entries(companion.readSeatObservationsFile(seatPath).observations));
 }

@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -7,7 +7,7 @@ import {
   parseImportMetricsArgv, parseImportMetricsOptions, parseScrapScoreArgv, parseScrapScoreOptions,
 } from "../src/bench-dossier/ingest-cli.js";
 import {
-  BenchIngestError, isBenchIngestUsageError, loadCheckedMission,
+  BenchIngestError, isBenchIngestUsageError, loadCheckedMission, loadSeatMap,
   normalizeDigest, readCheckedBuf, sha256Hex,
 } from "../src/bench-dossier/ingest-golden.js";
 import { loadArmBundles } from "../src/bench-dossier/ingest-io.js";
@@ -242,6 +242,71 @@ describe("BD-5 tree-05: loadArmBundles missionPath, price_table & digest normali
       });
       expect([sealed.bundles[0]?.armCost, sealed.bundles[0]?.expectedDigest, sealed.bundles[0]?.priceTable])
         .toEqual([undefined, "c".repeat(64), undefined]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("loads seat maps and refuses duplicate dir/symlink/armId, bad missionPath shape, and bad digests", () => {
+    expect(loadSeatMap(undefined).size).toBe(0);
+    const dir = mkdtempSync(join(tmpdir(), "bdi-t6-"));
+    try {
+      const seatPath = join(dir, "seats.json");
+      writeFileSync(seatPath, JSON.stringify({
+        schemaId: "urn:engram:seat-observation:1.0.0",
+        observations: { toString: { status: "unknown", reason: "shared-seat-concurrent" } },
+      }));
+      expect(loadSeatMap(seatPath).get("toString")).toEqual({ status: "unknown", reason: "shared-seat-concurrent" });
+      expect((catchError(() => loadSeatMap("")) as BenchResultsValidationError).errno).toBe("ENOENT");
+      const refM = mkM(join(dir, "gold.json"), 2, 1);
+      const defM = mkM(join(dir, "cand.json"), 2, 1);
+      const badShape = mkM(join(dir, "badshape.json"), 1, 1);
+      const a1 = join(dir, "a1");
+      const aDup = join(dir, "a1-dup");
+      const aSym = join(dir, "a1-sym");
+      mkArm(a1, { armId: "arm-1" }, rowOk(defM.digest));
+      mkArm(aDup, { armId: "arm-1" }, rowOk(defM.digest));
+      symlinkSync(a1, aSym);
+      for (const armDirs of [[a1, a1], [a1, aSym]]) {
+        const err = catchError(() => loadArmBundles({
+          armDirs, refMission: refM, defaultMission: defM, requireResults: true, currency: "USD", seatMap: new Map(),
+        })) as BenchIngestError;
+        expect([err instanceof BenchIngestError, err.code]).toEqual([true, "DUPLICATE_ARM_DIR"]);
+      }
+      const dupId = catchError(() => loadArmBundles({
+        armDirs: [a1, aDup], refMission: refM, defaultMission: defM, requireResults: true, currency: "USD",
+        seatMap: new Map(),
+      })) as BenchIngestError;
+      expect(dupId.code).toBe("DUPLICATE_ARM_ID");
+      const runArm = (arm: Record<string, unknown>, rows: Record<string, unknown>[]) => {
+        const armDir = join(dir, "x");
+        rmSync(armDir, { recursive: true, force: true });
+        mkArm(armDir, arm, rows);
+        return loadArmBundles({
+          armDirs: [armDir], refMission: refM, defaultMission: defM, requireResults: true, currency: "USD",
+          seatMap: new Map(),
+        });
+      };
+      const shpErr = catchError(() => runArm({ armId: "x", missionPath: "../badshape.json" },
+        rowOk(badShape.digest))) as BenchInvariantError;
+      expect(shpErr.invariant).toBe("MISSION_FIELD_SHAPE");
+      for (const [arm, rows, code] of [
+        [{ armId: "x", missionSha256: "f".repeat(64) }, rowOk("f".repeat(64)), "MISSION_DIGEST_MISMATCH"],
+        [{ armId: "x", missionSha256: "f".repeat(64) }, rowOk(defM.digest), "MISSION_DIGEST_MISMATCH"],
+        [{ armId: "x" }, [{ id: "1" }], "MISSING_ARM_DIGEST"],
+        [{ armId: "x", allowLegacyMissingMissionDigest: false }, rowOk(), "MISSING_ARM_DIGEST"],
+        [{ armId: "x", allowLegacyMissingMissionDigest: true }, rowOk("0".repeat(64)), "MISSION_DIGEST_MISMATCH"],
+      ] as const) {
+        const err = catchError(() => runArm(arm, [...rows])) as BenchIngestError;
+        expect([err instanceof BenchIngestError, err.code]).toEqual([true, code]);
+      }
+      const sealedDir = join(dir, "sealed-mis");
+      mkArm(sealedDir, { armId: "xs", missionPath: "../gold.json", missionSha256: "f".repeat(64) });
+      const sealedErr = catchError(() => loadArmBundles({
+        armDirs: [sealedDir], refMission: refM, defaultDigest: defM.digest, requireResults: false, currency: "USD",
+        seatMap: new Map(),
+      })) as BenchIngestError;
+      expect(sealedErr.code).toBe("MISSION_DIGEST_MISMATCH");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
