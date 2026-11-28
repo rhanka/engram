@@ -7,6 +7,7 @@ import { BenchIngestError, loadCheckedMission, normalizeDigest, readCheckedBuf }
 import { compatibleMissionFieldShape } from "./invariants.js";
 import type { ImportedArmCostInput } from "./metrics-records.js";
 import type { CurrencyCode } from "./results-contract.js";
+import { enumValue, fail, nonEmptyString } from "./results-guards.js";
 
 export interface LoadedArmBundle {
   readonly armDir: string;
@@ -78,4 +79,34 @@ export function loadArmBundles(input: LoadArmsInput) {
       armCost: { armMissionSha256: expectedDigest, ...cost } });
   }
   return { bundles, maxValuesChanged };
+}
+
+const CAPTURE_STATUS = enumValue([
+  "ok", "dns", "timeout", "http_4xx", "http_5xx",
+  "robots_denied", "blocked_antibot", "empty_js_shell", "invalid_url", "invalid_input",
+] as const);
+
+/** Read `<captureDir>/state.jsonl` (latest record per ID) into supplied/attempted/ok counts. */
+export function readCaptureStats(captureDir: string) {
+  const rows = parseResultsNdjson(readCheckedBuf(join(captureDir, "state.jsonl")).toString("utf8"));
+  const latest = new Map<string, string>();
+  let invalidInput = 0;
+  rows.forEach((row, idx) => {
+    const base = `$.state[${idx}]`;
+    if (!Object.hasOwn(row, "status")) fail("MISSING_KEY", `${base}.status`);
+    CAPTURE_STATUS(row.status, `${base}.status`);
+    if (row.status === "invalid_input") {
+      invalidInput++;
+      return;
+    }
+    if (!Object.hasOwn(row, "id")) fail("MISSING_KEY", `${base}.id`);
+    nonEmptyString(row.id, `${base}.id`);
+    latest.set(row.id as string, row.status as string);
+  });
+  const statuses = [...latest.values()];
+  return {
+    captureSuppliedIds: latest.size + invalidInput,
+    captureAttemptedIds: statuses.filter((status) => status !== "invalid_url").length,
+    captureOkIds: statuses.filter((status) => status === "ok").length,
+  };
 }

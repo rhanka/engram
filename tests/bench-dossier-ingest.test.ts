@@ -10,7 +10,7 @@ import {
   BenchIngestError, isBenchIngestUsageError, loadCheckedMission, loadSeatMap,
   normalizeDigest, readCheckedBuf, readConvergeGolden, sha256Hex,
 } from "../src/bench-dossier/ingest-golden.js";
-import { loadArmBundles } from "../src/bench-dossier/ingest-io.js";
+import { loadArmBundles, readCaptureStats } from "../src/bench-dossier/ingest-io.js";
 import { BenchInvariantError, compatibleMissionFieldShape } from "../src/bench-dossier/invariants.js";
 import { BenchResultsValidationError } from "../src/bench-dossier/results-guards.js";
 
@@ -389,6 +389,57 @@ describe("BD-5 tree-07: readConvergeGolden digest, #509 stats, fields & refusals
         [{ fields: { city: { krippendorff_alpha: "nan" } } }, "WRONG_TYPE"],
       ] as const) {
         const err = catchError(() => runGolden([{ ...okSum, ...patch }])) as BenchResultsValidationError;
+        expect([err instanceof BenchResultsValidationError, err.code]).toEqual([true, code]);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("BD-5 tree-09: readCaptureStats latest-status merge & guards", () => {
+  it("tracks all 10 ScrapStatus values, latest-status overwrite, and invalid_input without id", () => {
+    const dir = mkdtempSync(join(tmpdir(), "bdi-t9-"));
+    try {
+      const rows = [
+        { id: "u1", status: "ok" },
+        { id: "u1", status: "dns" },
+        { id: "u2", status: "ok" },
+        { id: "u3", status: "http_4xx" },
+        { id: "u4", status: "http_5xx" },
+        { id: "u5", status: "robots_denied" },
+        { id: "u6", status: "blocked_antibot" },
+        { id: "u7", status: "empty_js_shell" },
+        { id: "u8", status: "invalid_url" },
+        { id: "u9", status: "invalid_url" },
+        { id: "u9", status: "timeout" },
+        { id: "", status: "invalid_input" },
+        { status: "invalid_input" },
+      ];
+      writeFileSync(join(dir, "state.jsonl"), `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+      expect(readCaptureStats(dir)).toEqual({
+        captureSuppliedIds: 11, captureAttemptedIds: 8, captureOkIds: 1,
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses missing state.jsonl, missing status/id, empty id, and unknown status", () => {
+    const dir = mkdtempSync(join(tmpdir(), "bdi-t9b-"));
+    try {
+      const missingErr = catchError(() => readCaptureStats(dir)) as BenchResultsValidationError;
+      expect([missingErr.code, missingErr.errno, isBenchIngestUsageError(missingErr)]).toEqual([
+        "IO_ERROR", "ENOENT", true,
+      ]);
+      for (const [row, code] of [
+        [{ id: "1" }, "MISSING_KEY"],
+        [{ id: "1", status: "bogus" }, "BAD_ENUM"],
+        [{ status: "ok" }, "MISSING_KEY"],
+        [{ id: "  ", status: "ok" }, "EMPTY_STRING"],
+      ] as const) {
+        writeFileSync(join(dir, "state.jsonl"), `${JSON.stringify(row)}\n`);
+        const err = catchError(() => readCaptureStats(dir)) as BenchResultsValidationError;
         expect([err instanceof BenchResultsValidationError, err.code]).toEqual([true, code]);
       }
     } finally {
