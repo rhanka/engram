@@ -9,6 +9,10 @@ import {
 } from "../src/bench-dossier/label-ties.js";
 import type { LabelPointInput } from "../src/bench-dossier/label-types.js";
 import { boxOverlapArea, computeLeader, markerBox, sampleSegmentBoxes } from "../src/bench-dossier/label-geometry.js";
+import {
+  LABEL_COLUMN_HEIGHT_PAD, LABEL_COLUMN_LINE_GAP, LABEL_COLUMN_MARGIN_PAD, LABEL_COLUMN_OFFSET_X,
+  placeRightGutterColumn,
+} from "../src/bench-dossier/label-column.js";
 
 function refuse(fn: () => unknown, code: string, path: string): void {
   let caught: unknown;
@@ -169,5 +173,59 @@ describe("BD-7 text-width model, capped tie-merging and dynamic column fallback"
       { x1: 7.5, y1: 10.5, x2: 10.5, y2: 13.5 },
       { x1: 10.5, y1: 14.5, x2: 13.5, y2: 17.5 },
     ]);
+  });
+
+  it("places right-gutter column fallback with dynamic scaling, top clamp and sort tie-breakers", () => {
+    expect([
+      LABEL_COLUMN_OFFSET_X, LABEL_COLUMN_LINE_GAP, LABEL_COLUMN_HEIGHT_PAD, LABEL_COLUMN_MARGIN_PAD,
+    ]).toEqual([18, 17, 16, 28]);
+    const emptyCol = placeRightGutterColumn([], { ml: 50, mt: 20, baseIw: 400, baseIh: 10, baseMr: 5 }, 11);
+    expect(emptyCol).toEqual({ placed: [], plotHeight: 10, rightMargin: 5, columnX: 468 });
+    const topItem = placeRightGutterColumn(
+      [{ clusterIndex: 0, x: 100, y: 0, width: 40, height: 15 }],
+      { ml: 10, mt: 30, baseIw: 100, baseIh: 200, baseMr: 90 },
+      11,
+    );
+    expect([topItem.plotHeight, topItem.rightMargin, topItem.columnX]).toEqual([200, 90, 128]);
+    expect(topItem.placed[0]).toEqual({
+      clusterIndex: 0, textX: 128, textY: 49.85,
+      box: { x1: 126, y1: 38.5, x2: 166, y2: 53.5 }, polyline: [[100, 0], [114, 46], [124, 46]],
+    });
+    const gap135 = placeRightGutterColumn(
+      [
+        { clusterIndex: 5, x: 100, y: 0, width: 40, height: 17.5 },
+        { clusterIndex: 2, x: 100, y: 0, width: 40, height: 17.5 },
+        { clusterIndex: 9, x: 90, y: 0, width: 40, height: 17.5 },
+      ],
+      { ml: 50, mt: 30, baseIw: 100, baseIh: 10, baseMr: 10 },
+      13.5,
+    );
+    expect([gap135.plotHeight, gap135.rightMargin]).toEqual([70, 68]);
+    expect(gap135.placed.map((p) => p.clusterIndex)).toEqual([9, 2, 5]);
+    expect(gap135.placed[1]?.polyline).toEqual([[100, 0], [154, 64], [164, 64]]);
+    const col30 = placeRightGutterColumn(
+      [
+        { clusterIndex: 0, x: 100, y: 0, width: 40, height: 34 },
+        { clusterIndex: 1, x: 100, y: 0, width: 40, height: 34 },
+      ],
+      { ml: 50, mt: 20, baseIw: 100, baseIh: 10, baseMr: 20 },
+      30,
+    );
+    expect([col30.plotHeight, col30.placed[0]!.box.y1, col30.placed[1]!.box.y2]).toEqual([85, 20, 88]);
+    const items = Array.from({ length: 30 }, (_, i) => ({
+      clusterIndex: i, x: 200 + (i % 3), y: 140 - (i % 2), width: 60 + (i === 7 ? 32 : 0), height: 15,
+    }));
+    const col = placeRightGutterColumn(items, { ml: 78, mt: 30, baseIw: 600, baseIh: 120, baseMr: 30 }, 11);
+    expect([col.columnX, col.plotHeight, col.rightMargin, col.placed.length]).toEqual([696, 526, 120, 30]);
+    expect(col.placed[0]).toEqual({
+      clusterIndex: 3, textX: 696, textY: 49.85,
+      box: { x1: 694, y1: 38.5, x2: 754, y2: 53.5 }, polyline: [[200, 139], [682, 46], [692, 46]],
+    });
+    expect([col.placed[0]!.box.y1, col.placed[29]!.box.y2]).toEqual([38.5, 546.5]);
+    for (let i = 0; i < col.placed.length; i++) {
+      for (let j = i + 1; j < col.placed.length; j++) {
+        expect(boxOverlapArea(col.placed[i]!.box, col.placed[j]!.box)).toBe(0);
+      }
+    }
   });
 });
