@@ -602,4 +602,67 @@ describe("BD-7 text-width model, capped tie-merging and dynamic column fallback"
     const seg = placeChartLabels({ layout, points: [pt], segments: [{ x1: 208, y1: 80, x2: 240, y2: 80 }] });
     expect([seg.labels[0]?.distance, seg.labels[0]?.angleIndex]).toEqual([5, 2]);
   });
+
+  it("handles 20-way tie and 30-label column fallback with exact coordinates and SVG", () => {
+    const layout = { ml: 78, mt: 30, baseIw: 400, baseIh: 120, baseMr: 30 };
+    const tie20 = placeChartLabels({
+      layout, fontSize: 11,
+      points: Array.from({ length: 20 }, (_, i) => ({
+        x: 220 + (i % 2) * 0.4, y: 80 + (i % 3) * 0.2, text: `Arm${i + 1}`, color: "#4E79A7",
+      })),
+    });
+    expect([tie20.labels.length, tie20.fallbackCount, tie20.labelOverlaps, tie20.markerOverlaps]).toEqual([1, 0, 0, 0]);
+    expect(tie20.labels[0]?.displayText).toBe("Arm1 / Arm2 (+18 tied, see #1)");
+    expect(tie20.labels[0]?.svg).toBe(
+      '<path d="M227.5 80 L231 80" fill="none" stroke="#4E79A7" stroke-width="1"/>'
+      + '<text x="233" y="83.85" font-size="11" font-weight="400" text-anchor="start">'
+      + '<tspan fill="#4E79A7">Arm1</tspan>'
+      + '<tspan fill="var(--st-semantic-text-secondary, #475569)"> / </tspan>'
+      + '<tspan fill="#4E79A7">Arm2</tspan>'
+      + '<tspan fill="var(--st-semantic-text-secondary, #475569)"> (+18 tied, see #1)</tspan></text>',
+    );
+    const expectedTie20Names = Array.from({ length: 20 }, (_, i) => `Arm${i + 1}`);
+    expect(tie20.tieFootnotes).toEqual([{
+      id: 1, tag: "#1", names: expectedTie20Names,
+      items: expectedTie20Names.map((text) => ({ text, color: "#4E79A7", highlighted: false })),
+      text: `#1: ${expectedTie20Names.join(" / ")}`,
+    }]);
+    const tieSvg = placeChartLabels({ layout, points: [
+      { x: 200, y: 80, text: "P1", color: "#111" }, { x: 200, y: 80, text: "P2", color: "#222", highlighted: true },
+      { x: 200, y: 80, text: "P3", color: "#333" }, { x: 200, y: 80, text: "P4", color: "#444" },
+    ] });
+    expect(tieSvg.svg).toBe(
+      '<path d="M207.5 80 L211 80" fill="none" stroke="#222" stroke-width="1"/>'
+      + '<text x="213" y="83.85" font-size="11" font-weight="700" text-anchor="start">'
+      + '<tspan fill="#222">P2</tspan><tspan fill="var(--st-semantic-text-secondary, #475569)"> / </tspan>'
+      + '<tspan fill="#111">P1</tspan>'
+      + '<tspan fill="var(--st-semantic-text-secondary, #475569)"> (+2 tied, see #1)</tspan></text>',
+    );
+    const overflow30 = placeChartLabels({
+      layout: { ml: 50, mt: 20, baseIw: 160, baseIh: 120, baseMr: 20 }, fontSize: 11,
+      points: Array.from({ length: 30 }, (_, i) => ({
+        x: 110 + (i % 3) * 4, y: 36 + i * 2, text: `Model-${i + 1}`, color: "#F28E2B", highlighted: i === 5,
+      })),
+    });
+    expect([
+      overflow30.labels.length, overflow30.labelOverlaps, overflow30.markerOverlaps,
+      overflow30.fallbackCount, overflow30.plotHeight, overflow30.rightMargin, overflow30.totalWidth,
+      overflow30.columnX,
+    ]).toEqual([30, 0, 0, 18, 322, 82.38, 292.38, 228]);
+    expect(overflow30.labels[10]).toEqual({
+      clusterIndex: 10, x: 114, y: 56, color: "#F28E2B", highlighted: false, radius: 6, priority: 0,
+      displayText: "Model-11", parts: [{ text: "Model-11", color: "#F28E2B", highlighted: false }],
+      tieCount: 1, tieFootnoteId: null, tieNoteSuffix: null, mode: "column",
+      box: { x1: 226, y1: 28.5, x2: 274.44, y2: 43.5 }, textX: 228, textY: 39.85,
+      distance: null, angleIndex: null, leader: null, columnPolyline: [[114, 56], [214, 36], [224, 36]],
+      svg: '<polyline points="114,56 214,36 224,36" fill="none" stroke="var(--st-semantic-text-muted, #64748b)"'
+        + ' stroke-width="0.8" opacity="0.7"/>'
+        + '<text x="228" y="39.85" font-size="11" font-weight="400" text-anchor="start" fill="#F28E2B">Model-11</text>',
+    });
+    const hugeFont = placeChartLabels({
+      layout: { ml: 50, mt: 20, baseIw: 30, baseIh: 10, baseMr: 20 }, fontSize: 30,
+      points: [{ x: 65, y: 21, text: "Huge1", color: "#111" }, { x: 65, y: 23, text: "Huge2", color: "#222" }],
+    });
+    expect([hugeFont.fallbackCount, hugeFont.plotHeight, hugeFont.labels[0]?.box.y1]).toEqual([2, 85, 20]);
+  });
 });
