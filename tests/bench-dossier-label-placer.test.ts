@@ -56,6 +56,8 @@ describe("BD-7 text-width model, capped tie-merging and dynamic column fallback"
     refuse(() => estimateTextWidthPx("Aa", "unknown" as never, false), "BAD_NUMBER", "fontSize");
     refuse(() => estimateTextWidthPx("Aa", 10, null as never), "WRONG_TYPE", "bold");
     refuse(() => estimateTextWidthPx("Aa", 10, "unknown" as never), "WRONG_TYPE", "bold");
+    refuse(() => estimateLabelBoxSize("Aa", null as never, false), "BAD_NUMBER", "fontSize");
+    refuse(() => estimateLabelBoxSize("Aa", 10, null as never), "WRONG_TYPE", "bold");
   });
 
   it("merges coincident points (<1 px on both axes), caps at 3 inline and numbers dual footnotes", () => {
@@ -331,6 +333,12 @@ describe("BD-7 text-width model, capped tie-merging and dynamic column fallback"
       ...baseCtx, frame: { x1: 170, y1: 170, x2: 215, y2: 230 }, placedBoxes: [],
     });
     expect([rightEdge?.distance, rightEdge?.angleIndex]).toEqual([5, 5]);
+    const rightTouch = findBestGreedyPlacement({
+      ...baseCtx, frame: { x1: 180, y1: 170, x2: 231, y2: 230 }, placedBoxes: [],
+    });
+    expect([rightTouch?.distance, rightTouch?.angleIndex, rightTouch?.box]).toEqual([
+      5, 0, { x1: 211, y1: 193, x2: 231, y2: 207 },
+    ]);
     const topEdge = findBestGreedyPlacement({
       ...baseCtx, frame: { x1: 170, y1: 195, x2: 240, y2: 230 },
       placedBoxes: [{ x1: 208, y1: 190, x2: 240, y2: 230 }],
@@ -431,6 +439,8 @@ describe("BD-7 text-width model, capped tie-merging and dynamic column fallback"
     expect([undInput.fontSize, undInput.obstacles, undInput.segments]).toEqual([
       11, [{ x: 10, y: 20, radius: 6 }, { x: 30, y: 40, radius: 6 }], [],
     ]);
+    const obsUndef = parsePlaceLabelsInput({ layout, points: [], obstacles: undefined, segments: undefined });
+    expect([obsUndef.obstacles, obsUndef.segments]).toEqual([[], []]);
     for (const [badInput, code, path] of [
       [null, "NOT_OBJECT", "input"],
       [{ layout: null, points: [] }, "NOT_OBJECT", "input.layout"],
@@ -441,6 +451,7 @@ describe("BD-7 text-width model, capped tie-merging and dynamic column fallback"
       [{ layout: { ...layout, baseIw: 0 }, points: [] }, "NON_POSITIVE", "input.layout.baseIw"],
       [{ layout: { ...layout, baseIh: -1 }, points: [] }, "NON_POSITIVE", "input.layout.baseIh"],
       [{ layout: { ...layout, baseMr: -0.1 }, points: [] }, "BAD_NUMBER", "input.layout.baseMr"],
+      [{ layout: { ...layout, baseMr: Number.NaN }, points: [] }, "BAD_NUMBER", "input.layout.baseMr"],
       [{ layout, points: [], fontSize: null }, "BAD_NUMBER", "input.fontSize"],
       [{ layout, points: [], fontSize: "unknown" }, "BAD_NUMBER", "input.fontSize"],
       [{ layout, points: [], fontSize: 0 }, "NON_POSITIVE", "input.fontSize"],
@@ -839,5 +850,50 @@ describe("BD-7 text-width model, capped tie-merging and dynamic column fallback"
     ]).toEqual([5, 11, 5, 11]);
     expect([clusterDens.labels[2]?.distance, clusterDens.labels[2]?.angleIndex, clusterDens.labels[2]?.box])
       .toEqual([5, 0, { x1: 241, y1: 38, x2: 270.8, y2: 52 }]);
+  });
+
+  it("pins soft penalty cost weights, leader step=4 sampling and gutter marker overlap", () => {
+    const tightCtx = {
+      x: 200, y: 200, radius: 6, width: 12, height: 14, ownMarkerIndex: 0,
+      frame: { x1: 211, y1: 193, x2: 223, y2: 207 },
+    };
+    const overlapBox = { x1: 211, y1: 193, x2: 213, y2: 198 };
+    const haloCost = findBestGreedyPlacement({
+      ...tightCtx, placedBoxes: [], markerBoxes: [markerBox(200, 200, 6)],
+      haloBoxes: [null, overlapBox], lineDots: [], leaderDots: [],
+    })?.cost;
+    const lineCost = findBestGreedyPlacement({
+      ...tightCtx, placedBoxes: [], markerBoxes: [markerBox(200, 200, 6)],
+      haloBoxes: [null], lineDots: [overlapBox], leaderDots: [],
+    })?.cost;
+    const leaderDotsCost = findBestGreedyPlacement({
+      ...tightCtx, placedBoxes: [], markerBoxes: [markerBox(200, 200, 6)],
+      haloBoxes: [null], lineDots: [], leaderDots: [overlapBox],
+    })?.cost;
+    const leadPlacedCost = findBestGreedyPlacement({
+      ...tightCtx, placedBoxes: [{ x1: 208, y1: 198, x2: 210, y2: 202 }],
+      markerBoxes: [markerBox(200, 200, 6)], haloBoxes: [null], lineDots: [], leaderDots: [],
+    })?.cost;
+    expect([haloCost, lineCost, leaderDotsCost, leadPlacedCost]).toEqual([124.5, 34.5, 204.5, 94.5]);
+    const leaderStep = placeChartLabels({
+      layout: { ml: 90, mt: 90, baseIw: 70, baseIh: 70, baseMr: 20 }, fontSize: 10,
+      points: [
+        { x: 100, y: 100, text: "A", color: "#111", priority: 2 },
+        { x: 102, y: 120, text: "i", color: "#222", priority: 0 },
+      ],
+      obstacles: [
+        { x: 120, y: 100, radius: 13 }, { x: 100, y: 120, radius: 13 },
+        { x: 85, y: 100, radius: 15 }, { x: 100, y: 85, radius: 15 },
+      ],
+    });
+    expect([leaderStep.labels[1]?.distance, leaderStep.labels[1]?.angleIndex, leaderStep.labels[1]?.box])
+      .toEqual([18, 0, { x1: 126, y1: 113, x2: 133, y2: 127 }]);
+    const gutterObs = placeChartLabels({
+      layout: { ml: 50, mt: 20, baseIw: 30, baseIh: 100, baseMr: 20 }, fontSize: 11,
+      points: [{ x: 65, y: 40, text: "Gutter", color: "#111" }],
+      obstacles: [{ x: 105, y: 40, radius: 6 }],
+    });
+    expect([gutterObs.fallbackCount, gutterObs.labelOverlaps, gutterObs.markerOverlaps, gutterObs.labels[0]?.box])
+      .toEqual([1, 0, 1, { x1: 96, y1: 32.5, x2: 132.67, y2: 47.5 }]);
   });
 });
